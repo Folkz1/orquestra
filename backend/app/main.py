@@ -85,6 +85,7 @@ app.add_middleware(
 
 EXEMPT_PATHS = {
     "/api/health",
+    "/api/debug/db",
     "/api/webhook",
     "/docs",
     "/redoc",
@@ -128,6 +129,20 @@ async def health_check():
         "service": "orquestra",
         "version": "1.0.0",
     }
+
+
+@app.get("/api/debug/db")
+async def debug_db():
+    """Debug endpoint - check DB connectivity and table existence."""
+    from app.database import async_session_maker
+    from sqlalchemy import text
+    try:
+        async with async_session_maker() as session:
+            result = await session.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"))
+            tables = [row[0] for row in result.fetchall()]
+        return {"status": "ok", "tables": tables}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
 # -- Include Routers --
