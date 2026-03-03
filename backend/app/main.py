@@ -33,12 +33,14 @@ async def lifespan(app: FastAPI):
             ["alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
+            cwd="/app",
         )
         if result.returncode == 0:
-            logger.info("[MAIN] Alembic migrations OK: %s", result.stdout.strip()[:200])
+            logger.info("[MAIN] Alembic migrations OK: %s", (result.stdout + result.stderr).strip()[:300])
         else:
-            logger.error("[MAIN] Alembic migration failed: %s | %s", result.stdout[:200], result.stderr[:200])
+            logger.error("[MAIN] Alembic migration FAILED rc=%d: stdout=%s stderr=%s",
+                result.returncode, result.stdout[:300], result.stderr[:300])
     except Exception as exc:
         logger.error("[MAIN] Failed to run alembic: %s", exc)
 
