@@ -155,9 +155,9 @@ async def debug_db():
         async with async_session() as session:
             result = await session.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"))
             tables = [row[0] for row in result.fetchall()]
-        return {"status": "ok", "tables": tables, "alembic_rc": alembic_rc, "alembic_out": alembic_out[:1000]}
+        return {"status": "ok", "tables": tables, "alembic_rc": alembic_rc, "alembic_out": alembic_out}
     except Exception as e:
-        return {"status": "error", "error": str(e), "alembic_rc": alembic_rc, "alembic_out": alembic_out[:1000]}
+        return {"status": "error", "error": str(e), "alembic_rc": alembic_rc, "alembic_out": alembic_out}
 
 
 # -- Include Routers --
