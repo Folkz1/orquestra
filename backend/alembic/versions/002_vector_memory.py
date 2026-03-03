@@ -22,17 +22,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Try to enable pgvector extension (optional - may not be available on all Postgres images)
-    try:
-        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        _pgvector_available = True
-    except Exception:
-        _pgvector_available = False
+    # Check if pgvector is available BEFORE trying to use it
+    # (CREATE EXTENSION in a transaction aborts the transaction on failure)
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text("SELECT COUNT(*) FROM pg_available_extensions WHERE name = 'vector'")
+    )
+    count = result.scalar()
 
-    if not _pgvector_available:
-        # Skip memory_embeddings table - pgvector not available
-        # Use postgres:16-alpine with pgvector or switch to pgvector/pgvector:pg16 image
+    if not count:
+        # pgvector not available - skip vector memory table
+        # Switch DB to pgvector/pgvector:pg16 image to enable this feature
         return
+
+    # Enable pgvector extension
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     # ─── Memory Embeddings ─────────────────────────────────────────
     op.execute(
