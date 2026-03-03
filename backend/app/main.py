@@ -138,13 +138,26 @@ async def debug_db():
     """Debug endpoint - check DB connectivity and table existence."""
     from app.database import async_session
     from sqlalchemy import text
+    import subprocess
+    # Run alembic and capture output
+    try:
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            capture_output=True, text=True, timeout=120, cwd="/app",
+        )
+        alembic_out = result.stdout + result.stderr
+        alembic_rc = result.returncode
+    except Exception as e:
+        alembic_out = str(e)
+        alembic_rc = -1
+    # Check tables
     try:
         async with async_session() as session:
             result = await session.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"))
             tables = [row[0] for row in result.fetchall()]
-        return {"status": "ok", "tables": tables}
+        return {"status": "ok", "tables": tables, "alembic_rc": alembic_rc, "alembic_out": alembic_out[:1000]}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": str(e), "alembic_rc": alembic_rc, "alembic_out": alembic_out[:1000]}
 
 
 # -- Include Routers --
