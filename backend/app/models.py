@@ -1,6 +1,6 @@
 """
 Orquestra - SQLAlchemy Models
-All tables: contacts, messages, recordings, projects, daily_briefs
+All tables: contacts, messages, recordings, projects, daily_briefs, memory_embeddings
 IMPORTANT: Use CAST(:param AS uuid) syntax, NEVER ::uuid (asyncpg incompatibility)
 """
 
@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID, TIMESTAMP
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 
 from app.database import Base
 
@@ -182,6 +183,30 @@ class Recording(Base):
 
     def __repr__(self):
         return f"<Recording {self.title}>"
+
+
+class MemoryEmbedding(Base):
+    __tablename__ = "memory_embeddings"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    source_type = Column(String(20), nullable=False)  # 'message', 'recording', 'youtube'
+    source_id = Column(UUID(as_uuid=True), nullable=True)
+    content = Column(Text, nullable=False)
+    summary = Column(Text, nullable=True)
+    embedding = Column(Vector(1536), nullable=True)
+    metadata_ = Column("metadata", JSONB, server_default="{}")
+    contact_name = Column(String(255), nullable=True)
+    project_name = Column(String(255), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self):
+        return f"<MemoryEmbedding {self.source_type} {self.id}>"
 
 
 class DailyBrief(Base):

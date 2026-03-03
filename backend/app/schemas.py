@@ -186,3 +186,82 @@ class BriefGenerateRequest(BaseModel):
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     send_telegram: bool = True
+
+
+# ─── Memory Schemas ──────────────────────────────────────────────────────
+
+
+class MemoryIngestRequest(BaseModel):
+    content: str = Field(..., min_length=1, description="Text content to store")
+    source_type: str = Field(
+        default="message", max_length=20, description="Source type: message, recording, youtube"
+    )
+    source_id: Optional[str] = Field(None, description="UUID of the source record")
+    contact_name: Optional[str] = Field(None, max_length=255)
+    project_name: Optional[str] = Field(None, max_length=255)
+    metadata: Optional[dict[str, Any]] = None
+    summary: Optional[str] = None
+
+
+class MemorySearchResult(BaseModel):
+    id: str
+    source_type: str
+    source_id: Optional[str] = None
+    content: str
+    summary: Optional[str] = None
+    contact_name: Optional[str] = None
+    project_name: Optional[str] = None
+    metadata: Optional[dict[str, Any]] = None
+    created_at: Optional[str] = None
+    similarity: float = 0.0
+
+
+class MemorySearchResponse(BaseModel):
+    query: str
+    results: list[MemorySearchResult]
+    total: int
+
+
+class MemoryStatsResponse(BaseModel):
+    by_source: dict[str, int] = Field(default_factory=dict)
+    total: int = 0
+
+
+# ─── YouTube Schemas ─────────────────────────────────────────────────────
+
+
+class YouTubeAnalyzeRequest(BaseModel):
+    topics: Optional[list[str]] = Field(
+        default=None,
+        description="Topics to analyze (default: IA, automacao, licitacoes)",
+    )
+    sources: Optional[list[str]] = Field(
+        default=None,
+        description="Sources to consider (default: reddit, youtube, news)",
+    )
+
+
+class YouTubeAnalyzeResponse(BaseModel):
+    trends: list[dict[str, Any]] = Field(default_factory=list)
+    video_ideas: list[dict[str, Any]] = Field(default_factory=list)
+    market_insights: list[Any] = Field(default_factory=list)
+
+
+class YouTubeSendBriefRequest(BaseModel):
+    phone: str = Field(
+        default="5195318541", description="WhatsApp phone number"
+    )
+    topics: Optional[list[str]] = Field(
+        default=None,
+        description="Topics to analyze",
+    )
+    sources: Optional[list[str]] = Field(
+        default=None,
+        description="Sources to consider",
+    )
+
+
+class WhatsAppSendRequest(BaseModel):
+    phone: str = Field(..., description="Phone number with country code")
+    message: str = Field(..., description="Message text to send")
+    instance: Optional[str] = Field(None, description="Evolution API instance name")

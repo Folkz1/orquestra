@@ -27,6 +27,7 @@ from app.database import async_session, get_db
 from app.models import Recording
 from app.schemas import PaginatedResponse, RecordingResponse
 from app.services.llm import generate_meeting_summary
+from app.services.memory import store_memory
 from app.services.transcriber import transcribe_audio
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,37 @@ async def process_recording(recording_id: str):
                     )
 
             recording.processed = True
+
+            # Store transcription in vector memory
+            if recording.transcription and not recording.transcription.startswith(
+                "[Transcription error"
+            ):
+                try:
+                    memory_content = recording.transcription
+                    if recording.summary:
+                        memory_content = f"{recording.summary}\n\n{recording.transcription}"
+
+                    await store_memory(
+                        db,
+                        content=memory_content,
+                        source_type="recording",
+                        source_id=str(recording.id),
+                        project_name=None,  # Could resolve project name if needed
+                        metadata={
+                            "title": recording.title or "",
+                            "key_topics": recording.key_topics or [],
+                            "duration_seconds": recording.duration_seconds,
+                        },
+                        summary=recording.summary,
+                    )
+                    logger.info("[RECORDINGS] Stored recording in vector memory: %s", recording_id)
+                except Exception as exc:
+                    logger.error(
+                        "[RECORDINGS] Failed to store recording memory for %s: %s",
+                        recording_id,
+                        exc,
+                    )
+
             await db.commit()
             logger.info("[RECORDINGS] Processing complete for %s", recording_id)
 

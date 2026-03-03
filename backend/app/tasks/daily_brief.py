@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import settings
 from app.database import async_session
 from app.services.orchestrator import generate_daily_brief, send_telegram_brief
+from app.tasks.youtube_daily import daily_youtube_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ async def scheduled_daily_brief():
 
 
 def start_scheduler():
-    """Start the APScheduler with the daily brief job."""
+    """Start the APScheduler with the daily brief and YouTube analysis jobs."""
     scheduler.add_job(
         scheduled_daily_brief,
         "cron",
@@ -58,9 +59,21 @@ def start_scheduler():
         replace_existing=True,
         timezone="UTC",
     )
+
+    # YouTube daily analysis at 8:00 UTC (5:00 AM BRT)
+    scheduler.add_job(
+        daily_youtube_analysis,
+        "cron",
+        hour=8,
+        minute=0,
+        id="youtube_analysis",
+        replace_existing=True,
+        timezone="UTC",
+    )
+
     scheduler.start()
     logger.info(
-        "[DAILY_BRIEF] Scheduler started. Brief will run daily at %02d:00 UTC",
+        "[DAILY_BRIEF] Scheduler started. Brief at %02d:00 UTC, YouTube at 08:00 UTC",
         settings.BRIEFING_HOUR,
     )
 

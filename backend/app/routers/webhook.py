@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session, get_db
 from app.models import Contact, Message, Project
 from app.services.media import download_media_from_evolution, save_media
+from app.services.memory import store_memory
 from app.services.transcriber import describe_image, transcribe_audio
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,37 @@ async def _auto_associate_project(
     return None
 
 
+async def _store_message_memory(
+    db: AsyncSession, message_id: str, content: str, contact_name: str | None
+):
+    """Store a processed message in vector memory (within an existing session)."""
+    try:
+        if content and len(content.strip()) > 10:
+            await store_memory(
+                db,
+                content=content,
+                source_type="message",
+                source_id=message_id,
+                contact_name=contact_name,
+                metadata={"origin": "whatsapp"},
+            )
+    except Exception as exc:
+        logger.error("[WEBHOOK] Failed to store message memory: %s", exc)
+
+
+async def _store_text_message_memory(
+    message_id: str, content: str, contact_name: str | None
+):
+    """Background task: store a text message in vector memory with its own session."""
+    async with async_session() as db:
+        try:
+            await _store_message_memory(db, message_id, content, contact_name)
+            await db.commit()
+        except Exception as exc:
+            logger.error("[WEBHOOK] Failed to store text message memory: %s", exc)
+            await db.rollback()
+
+
 async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
     """
     Background task: download media from Evolution, save to disk,
@@ -168,6 +200,17 @@ async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
             if not message:
                 logger.error("[WEBHOOK] Message %s not found for media processing", message_id)
                 return
+
+            # Get contact name for memory storage
+            contact_name = None
+            if message.contact_id:
+                contact_stmt = select(Contact.name, Contact.push_name).where(
+                    Contact.id == message.contact_id
+                )
+                contact_result = await db.execute(contact_stmt)
+                contact_row = contact_result.first()
+                if contact_row:
+                    contact_name = contact_row.name or contact_row.push_name
 
             # Download media from Evolution API
             media_bytes = await download_media_from_evolution(evolution_msg_id)
@@ -194,6 +237,11 @@ async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
                     message.transcription = transcription
                     message.processed = True
                     logger.info("[WEBHOOK] Audio transcribed: %s", message_id)
+
+                    # Store transcription in vector memory
+                    await _store_message_memory(
+                        db, str(message.id), transcription, contact_name
+                    )
                 except Exception as exc:
                     logger.error("[WEBHOOK] Audio transcription failed: %s", exc)
                     message.processed = False
@@ -205,6 +253,11 @@ async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
                     message.transcription = description
                     message.processed = True
                     logger.info("[WEBHOOK] Image described: %s", message_id)
+
+                    # Store image description in vector memory
+                    await _store_message_memory(
+                        db, str(message.id), description, contact_name
+                    )
                 except Exception as exc:
                     logger.error("[WEBHOOK] Image description failed: %s", exc)
                     message.processed = False
@@ -337,6 +390,16 @@ async def evolution_webhook(
             str(msg.id),
             evolution_msg_id,
             simplified_type,
+        )
+
+    # Store text messages in vector memory (background task)
+    if processed and content and len(content.strip()) > 10:
+        contact_display = contact.name or contact.push_name or phone
+        background_tasks.add_task(
+            _store_text_message_memory,
+            str(msg.id),
+            content,
+            contact_display,
         )
 
     return {"status": "ok"}

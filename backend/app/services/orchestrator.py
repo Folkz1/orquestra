@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import Contact, DailyBrief, Message, Recording
 from app.services.llm import chat_completion, _parse_json_response
+from app.services.memory import get_context_for_brief
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,16 @@ async def generate_daily_brief(
         context_parts.append("Nenhuma gravacao no periodo.")
 
     raw_context = "\n".join(context_parts)
+
+    # -- 3b. Enrich with semantic memory context --
+    try:
+        memory_context = await get_context_for_brief(
+            db, "projetos decisoes acoes pendentes progresso", limit=15
+        )
+        if memory_context:
+            raw_context += "\n\n" + memory_context
+    except Exception as exc:
+        logger.warning("[ORCHESTRATOR] Could not fetch memory context: %s", exc)
 
     # -- 4. Call LLM --
     prompt_structure = (
