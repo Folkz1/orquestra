@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Model selection
     MODEL_VISION: str = "openai/gpt-4o-mini"
     MODEL_CHAT_CHEAP: str = "openai/gpt-4o-mini"
-    MODEL_CHAT_SMART: str = "anthropic/claude-sonnet-4-20250514"
+    MODEL_CHAT_SMART: str = "anthropic/claude-3.5-sonnet"
 
     # Groq (optional, for audio transcription)
     GROQ_API_KEY: str = ""
