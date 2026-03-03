@@ -26,6 +26,22 @@ async def lifespan(app: FastAPI):
     # Create upload directory
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
+    # Run Alembic migrations on startup
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.info("[MAIN] Alembic migrations OK: %s", result.stdout.strip()[:200])
+        else:
+            logger.error("[MAIN] Alembic migration failed: %s | %s", result.stdout[:200], result.stderr[:200])
+    except Exception as exc:
+        logger.error("[MAIN] Failed to run alembic: %s", exc)
+
     # Start APScheduler for daily briefs
     from app.tasks.daily_brief import start_scheduler, shutdown_scheduler
 
