@@ -28,19 +28,22 @@ async def lifespan(app: FastAPI):
 
     # Run Alembic migrations on startup
     try:
-        import subprocess
+        import subprocess, os as _os
+        env = _os.environ.copy()
+        env["PYTHONPATH"] = "/app"
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
             timeout=120,
             cwd="/app",
+            env=env,
         )
         if result.returncode == 0:
             logger.info("[MAIN] Alembic migrations OK: %s", (result.stdout + result.stderr).strip()[:300])
         else:
-            logger.error("[MAIN] Alembic migration FAILED rc=%d: stdout=%s stderr=%s",
-                result.returncode, result.stdout[:300], result.stderr[:300])
+            logger.error("[MAIN] Alembic migration FAILED rc=%d: %s",
+                result.returncode, (result.stdout + result.stderr)[:500])
     except Exception as exc:
         logger.error("[MAIN] Failed to run alembic: %s", exc)
 
@@ -141,9 +144,11 @@ async def debug_db():
     import subprocess
     # Run alembic and capture output
     try:
+        import os as _os2
+        env2 = _os2.environ.copy(); env2["PYTHONPATH"] = "/app"
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
-            capture_output=True, text=True, timeout=120, cwd="/app",
+            capture_output=True, text=True, timeout=120, cwd="/app", env=env2,
         )
         alembic_out = result.stdout + result.stderr
         alembic_rc = result.returncode
