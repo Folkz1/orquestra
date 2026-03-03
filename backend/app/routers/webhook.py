@@ -1,0 +1,342 @@
+"""
+Orquestra - Webhook Router
+Receives Evolution API webhook events and processes WhatsApp messages.
+"""
+
+import logging
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import async_session, get_db
+from app.models import Contact, Message, Project
+from app.services.media import download_media_from_evolution, save_media
+from app.services.transcriber import describe_image, transcribe_audio
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# Map Evolution message types to our simplified types
+MESSAGE_TYPE_MAP = {
+    "conversation": "text",
+    "extendedTextMessage": "text",
+    "audioMessage": "audio",
+    "imageMessage": "image",
+    "videoMessage": "video",
+    "documentMessage": "document",
+    "stickerMessage": "sticker",
+    "documentWithCaptionMessage": "document",
+    "viewOnceMessageV2": "image",
+}
+
+
+def _extract_phone(remote_jid: str) -> str:
+    """Extract phone number from WhatsApp JID (strip @s.whatsapp.net or @g.us)."""
+    return remote_jid.split("@")[0]
+
+
+def _is_group(remote_jid: str) -> bool:
+    """Check if JID is a group."""
+    return "@g.us" in remote_jid
+
+
+def _extract_content(message_data: dict, message_type: str) -> str | None:
+    """Extract text content from message payload based on type."""
+    if message_type == "conversation":
+        return message_data.get("conversation", "")
+    if message_type == "extendedTextMessage":
+        return message_data.get("extendedTextMessage", {}).get("text", "")
+    if message_type == "imageMessage":
+        return message_data.get("imageMessage", {}).get("caption", "")
+    if message_type == "videoMessage":
+        return message_data.get("videoMessage", {}).get("caption", "")
+    if message_type == "documentMessage":
+        return message_data.get("documentMessage", {}).get("fileName", "")
+    if message_type == "documentWithCaptionMessage":
+        inner = message_data.get("documentWithCaptionMessage", {}).get("message", {})
+        return inner.get("documentMessage", {}).get("caption", "")
+    if message_type == "viewOnceMessageV2":
+        inner = message_data.get("viewOnceMessageV2", {}).get("message", {})
+        return inner.get("imageMessage", {}).get("caption", "")
+    return None
+
+
+def _extract_mimetype(message_data: dict, message_type: str) -> str | None:
+    """Extract mimetype from media message."""
+    type_key = message_type
+    if type_key in message_data and isinstance(message_data[type_key], dict):
+        return message_data[type_key].get("mimetype")
+    return None
+
+
+def _extract_duration(message_data: dict, message_type: str) -> int | None:
+    """Extract duration (seconds) from audio/video messages."""
+    type_key = message_type
+    if type_key in message_data and isinstance(message_data[type_key], dict):
+        return message_data[type_key].get("seconds")
+    return None
+
+
+async def _upsert_contact(
+    db: AsyncSession,
+    phone: str,
+    push_name: str | None,
+    is_group: bool,
+) -> Contact:
+    """Find or create a contact by phone number."""
+    stmt = select(Contact).where(Contact.phone == phone)
+    result = await db.execute(stmt)
+    contact = result.scalar_one_or_none()
+
+    if contact:
+        # Update push_name if provided and different
+        if push_name and push_name != contact.push_name:
+            contact.push_name = push_name
+            if not contact.name:
+                contact.name = push_name
+        return contact
+
+    # Create new contact
+    contact = Contact(
+        phone=phone,
+        push_name=push_name,
+        name=push_name,
+        is_group=is_group,
+    )
+    db.add(contact)
+    await db.flush()
+    await db.refresh(contact)
+    logger.info("[WEBHOOK] Created new contact: %s (%s)", phone, push_name)
+    return contact
+
+
+async def _auto_associate_project(
+    db: AsyncSession,
+    contact: Contact,
+    content: str | None,
+) -> uuid.UUID | None:
+    """
+    Auto-associate a message to a project.
+    First checks contact's project, then keyword matching.
+    """
+    # If contact already has a project, use it
+    if contact.project_id:
+        return contact.project_id
+
+    if not content:
+        return None
+
+    # Keyword match against active projects
+    stmt = select(Project).where(Project.status == "active")
+    result = await db.execute(stmt)
+    projects = result.scalars().all()
+
+    content_lower = content.lower()
+    for project in projects:
+        if project.keywords:
+            for keyword in project.keywords:
+                if keyword.lower() in content_lower:
+                    logger.info(
+                        "[WEBHOOK] Auto-associated message to project '%s' via keyword '%s'",
+                        project.name,
+                        keyword,
+                    )
+                    return project.id
+
+    return None
+
+
+async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
+    """
+    Background task: download media from Evolution, save to disk,
+    transcribe (audio) or describe (image), and update the message.
+
+    Uses its own database session since this runs outside the request lifecycle.
+    """
+    async with async_session() as db:
+        try:
+            # Fetch the message by UUID
+            stmt = select(Message).where(Message.id == message_id)
+            result = await db.execute(stmt)
+            message = result.scalar_one_or_none()
+
+            if not message:
+                logger.error("[WEBHOOK] Message %s not found for media processing", message_id)
+                return
+
+            # Download media from Evolution API
+            media_bytes = await download_media_from_evolution(evolution_msg_id)
+
+            # Determine file extension
+            ext_map = {
+                "audio": ".ogg",
+                "image": ".jpg",
+                "video": ".mp4",
+                "document": ".pdf",
+                "sticker": ".webp",
+            }
+            ext = ext_map.get(msg_type, ".bin")
+            filename = f"{msg_type}_{message_id}{ext}"
+
+            # Save to disk
+            file_path = await save_media(media_bytes, filename)
+            message.media_local_path = file_path
+
+            # Process based on type
+            if msg_type == "audio":
+                try:
+                    transcription = await transcribe_audio(file_path)
+                    message.transcription = transcription
+                    message.processed = True
+                    logger.info("[WEBHOOK] Audio transcribed: %s", message_id)
+                except Exception as exc:
+                    logger.error("[WEBHOOK] Audio transcription failed: %s", exc)
+                    message.processed = False
+
+            elif msg_type == "image":
+                try:
+                    mimetype = message.media_mimetype or "image/jpeg"
+                    description = await describe_image(media_bytes, mimetype)
+                    message.transcription = description
+                    message.processed = True
+                    logger.info("[WEBHOOK] Image described: %s", message_id)
+                except Exception as exc:
+                    logger.error("[WEBHOOK] Image description failed: %s", exc)
+                    message.processed = False
+            else:
+                # For video/document/sticker, just mark as processed after saving
+                message.processed = True
+
+            await db.commit()
+
+        except Exception as exc:
+            logger.error("[WEBHOOK] Media processing failed for %s: %s", message_id, exc)
+            await db.rollback()
+
+
+@router.post("/evolution")
+async def evolution_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Receive Evolution API webhook events.
+    Only processes 'messages.upsert' events.
+    """
+    payload = await request.json()
+
+    # Evolution sends event type in the payload
+    event = payload.get("event")
+    if event != "messages.upsert":
+        logger.debug("[WEBHOOK] Ignoring event: %s", event)
+        return {"status": "ignored"}
+
+    data = payload.get("data", {})
+    key = data.get("key", {})
+    message_data = data.get("message", {})
+
+    # Extract fields
+    remote_jid = key.get("remoteJid", "")
+    from_me = key.get("fromMe", False)
+    evolution_msg_id = key.get("id", "")
+    push_name = data.get("pushName")
+    message_timestamp = data.get("messageTimestamp")
+
+    if not remote_jid:
+        logger.warning("[WEBHOOK] No remoteJid in payload")
+        return {"status": "error"}
+
+    # Parse phone and group status
+    phone = _extract_phone(remote_jid)
+    group = _is_group(remote_jid)
+
+    # Determine message type
+    raw_type = data.get("messageType", "")
+    # Also check for message keys as fallback
+    if not raw_type:
+        for key_name in MESSAGE_TYPE_MAP:
+            if key_name in message_data:
+                raw_type = key_name
+                break
+
+    simplified_type = MESSAGE_TYPE_MAP.get(raw_type, "text")
+
+    # Extract content
+    content = _extract_content(message_data, raw_type)
+    mimetype = _extract_mimetype(message_data, raw_type)
+    duration = _extract_duration(message_data, raw_type)
+
+    # Parse timestamp
+    if message_timestamp:
+        try:
+            ts = datetime.fromtimestamp(int(message_timestamp), tz=timezone.utc)
+        except (ValueError, TypeError, OSError):
+            ts = datetime.now(timezone.utc)
+    else:
+        ts = datetime.now(timezone.utc)
+
+    # Upsert contact
+    contact = await _upsert_contact(db, phone, push_name, group)
+
+    # Auto-associate project
+    project_id = await _auto_associate_project(db, contact, content)
+
+    # Determine direction
+    direction = "outgoing" if from_me else "incoming"
+
+    # Determine if this needs background processing
+    needs_media_processing = simplified_type in ("audio", "image", "video", "document")
+    processed = not needs_media_processing  # text/sticker = True immediately
+
+    # Check for duplicate (by evolution_message_id)
+    if evolution_msg_id:
+        dup_stmt = select(Message).where(Message.evolution_message_id == evolution_msg_id)
+        dup_result = await db.execute(dup_stmt)
+        if dup_result.scalar_one_or_none():
+            logger.debug("[WEBHOOK] Duplicate message ignored: %s", evolution_msg_id)
+            return {"status": "duplicate"}
+
+    # Create message
+    msg = Message(
+        contact_id=contact.id,
+        remote_jid=remote_jid,
+        direction=direction,
+        message_type=simplified_type,
+        content=content,
+        media_mimetype=mimetype,
+        media_duration_seconds=duration,
+        evolution_message_id=evolution_msg_id,
+        raw_payload=payload,
+        processed=processed,
+        project_id=project_id,
+        timestamp=ts,
+    )
+    db.add(msg)
+    await db.flush()
+    await db.refresh(msg)
+
+    logger.info(
+        "[WEBHOOK] Saved message: %s %s from %s (type=%s, processed=%s)",
+        direction,
+        simplified_type,
+        phone,
+        raw_type,
+        processed,
+    )
+
+    # Schedule background media processing if needed
+    if needs_media_processing and evolution_msg_id:
+        background_tasks.add_task(
+            process_media,
+            str(msg.id),
+            evolution_msg_id,
+            simplified_type,
+        )
+
+    return {"status": "ok"}
