@@ -74,17 +74,25 @@ async def chat_completion(
 
         except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout) as exc:
             last_exc = exc
+            # Log response body for HTTP errors to diagnose 400/401/etc
+            body = ""
+            if isinstance(exc, httpx.HTTPStatusError):
+                try:
+                    body = exc.response.text[:500]
+                except Exception:
+                    pass
             if attempt < MAX_RETRIES - 1:
                 wait = INITIAL_BACKOFF * (2 ** attempt)
                 logger.warning(
-                    "[LLM] Attempt %d failed (%s), retrying in %.1fs...",
+                    "[LLM] Attempt %d failed (%s) body=%s, retrying in %.1fs...",
                     attempt + 1,
                     str(exc)[:120],
+                    body,
                     wait,
                 )
                 await asyncio.sleep(wait)
             else:
-                logger.error("[LLM] All %d attempts failed", MAX_RETRIES)
+                logger.error("[LLM] All %d attempts failed. Last body: %s", MAX_RETRIES, body)
 
     raise last_exc  # type: ignore[misc]
 
