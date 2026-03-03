@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["gcc", "postgresql", "ffmpeg"]
-
-[phases.install]
-cmds = ["pip install --no-cache-dir -r requirements.txt"]
-
-[start]
-cmd = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
