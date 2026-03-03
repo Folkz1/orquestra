@@ -108,27 +108,32 @@ async def store_memory(
         except ValueError:
             logger.warning("[MEMORY] Invalid source_id: %s", source_id)
 
-    record = MemoryEmbedding(
-        source_type=source_type,
-        source_id=parsed_source_id,
-        content=content,
-        summary=summary,
-        embedding=embedding if embedding else None,
-        metadata_=metadata or {},
-        contact_name=contact_name,
-        project_name=project_name,
-    )
-    db.add(record)
-    await db.flush()
-    await db.refresh(record)
+    try:
+        record = MemoryEmbedding(
+            source_type=source_type,
+            source_id=parsed_source_id,
+            content=content,
+            summary=summary,
+            embedding=embedding if embedding else None,
+            metadata_=metadata or {},
+            contact_name=contact_name,
+            project_name=project_name,
+        )
+        db.add(record)
+        await db.flush()
+        await db.refresh(record)
 
-    logger.info(
-        "[MEMORY] Stored memory: id=%s, source=%s, has_embedding=%s",
-        record.id,
-        source_type,
-        bool(embedding),
-    )
-    return record
+        logger.info(
+            "[MEMORY] Stored memory: id=%s, source=%s, has_embedding=%s",
+            record.id,
+            source_type,
+            bool(embedding),
+        )
+        return record
+    except Exception as exc:
+        logger.warning("[MEMORY] Could not store memory (table may not exist): %s", exc)
+        await db.rollback()
+        return None
 
 
 async def search_memory(
