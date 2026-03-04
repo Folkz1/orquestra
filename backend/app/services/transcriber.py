@@ -1,10 +1,14 @@
 """
 Orquestra - Transcription & Vision Service
 Audio transcription via Groq Whisper, image description via OpenRouter.
+Supports chunking for long recordings (>25MB limit).
 """
 
 import base64
 import logging
+import os
+import subprocess
+import tempfile
 
 import httpx
 
@@ -12,33 +16,19 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Groq Whisper limit is 25MB. Use 20min chunks to stay safe.
+CHUNK_DURATION_SECONDS = 20 * 60  # 20 minutes
+MAX_FILE_SIZE_BYTES = 24 * 1024 * 1024  # 24MB (safe margin under 25MB)
 
-async def transcribe_audio(file_path: str) -> str:
-    """
-    Transcribe an audio file using Groq Whisper API (preferred) or raise error.
 
-    Args:
-        file_path: Path to the audio file on disk.
-
-    Returns:
-        Transcription text.
-
-    Raises:
-        RuntimeError: If no transcription API key is configured.
-        httpx.HTTPStatusError: If the API returns an error.
-    """
-    if not settings.GROQ_API_KEY:
-        raise RuntimeError(
-            "GROQ_API_KEY not configured. Audio transcription requires Groq Whisper."
-        )
-
+async def _transcribe_single(file_path: str) -> str:
+    """Transcribe a single audio file via Groq Whisper API."""
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
 
-    # Read the file and determine a sensible filename for the API
-    filename = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path.rsplit("\\", 1)[-1]
+    filename = os.path.basename(file_path)
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         with open(file_path, "rb") as audio_file:
             files = {
                 "file": (filename, audio_file, "audio/ogg"),
@@ -54,6 +44,133 @@ async def transcribe_audio(file_path: str) -> str:
     return text
 
 
+def _split_audio_chunks(file_path: str, chunk_seconds: int = CHUNK_DURATION_SECONDS) -> list[str]:
+    """
+    Split audio file into chunks using ffmpeg.
+    Returns list of chunk file paths.
+    """
+    tmp_dir = tempfile.mkdtemp(prefix="orquestra_chunks_")
+
+    # Get audio duration using ffprobe
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        duration = float(result.stdout.strip())
+    except Exception as exc:
+        logger.warning("[TRANSCRIBER] ffprobe failed, processing as single file: %s", exc)
+        return [file_path]
+
+    if duration <= chunk_seconds:
+        return [file_path]
+
+    # Split into chunks
+    chunk_paths = []
+    chunk_index = 0
+    start = 0
+
+    while start < duration:
+        chunk_path = os.path.join(tmp_dir, f"chunk_{chunk_index:03d}.ogg")
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", file_path,
+                    "-ss", str(start),
+                    "-t", str(chunk_seconds),
+                    "-vn",  # no video
+                    "-acodec", "libopus",
+                    "-b:a", "48k",  # compress to fit under limit
+                    chunk_path,
+                ],
+                capture_output=True, timeout=120,
+            )
+            if os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
+                chunk_paths.append(chunk_path)
+        except Exception as exc:
+            logger.error("[TRANSCRIBER] ffmpeg chunk %d failed: %s", chunk_index, exc)
+
+        start += chunk_seconds
+        chunk_index += 1
+
+    logger.info(
+        "[TRANSCRIBER] Split %.0fs audio into %d chunks",
+        duration, len(chunk_paths),
+    )
+    return chunk_paths if chunk_paths else [file_path]
+
+
+async def transcribe_audio(file_path: str) -> str:
+    """
+    Transcribe an audio file using Groq Whisper API.
+    Automatically chunks files >24MB or >20min for reliable transcription.
+
+    Args:
+        file_path: Path to the audio file on disk.
+
+    Returns:
+        Transcription text.
+    """
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError(
+            "GROQ_API_KEY not configured. Audio transcription requires Groq Whisper."
+        )
+
+    file_size = os.path.getsize(file_path)
+
+    # Small files: transcribe directly
+    if file_size <= MAX_FILE_SIZE_BYTES:
+        return await _transcribe_single(file_path)
+
+    # Large files: split into chunks and transcribe each
+    logger.info(
+        "[TRANSCRIBER] File %s is %.1fMB, splitting into chunks...",
+        os.path.basename(file_path),
+        file_size / (1024 * 1024),
+    )
+
+    chunks = _split_audio_chunks(file_path)
+    transcriptions = []
+
+    for i, chunk_path in enumerate(chunks):
+        try:
+            logger.info("[TRANSCRIBER] Transcribing chunk %d/%d...", i + 1, len(chunks))
+            text = await _transcribe_single(chunk_path)
+            if text:
+                transcriptions.append(text)
+        except Exception as exc:
+            logger.error("[TRANSCRIBER] Chunk %d failed: %s", i + 1, exc)
+            transcriptions.append(f"[Chunk {i + 1} falhou: {exc}]")
+        finally:
+            # Cleanup chunk file (but not original)
+            if chunk_path != file_path:
+                try:
+                    os.remove(chunk_path)
+                except OSError:
+                    pass
+
+    # Cleanup temp directory
+    for chunk_path in chunks:
+        tmp_dir = os.path.dirname(chunk_path)
+        if tmp_dir != os.path.dirname(file_path):
+            try:
+                os.rmdir(tmp_dir)
+            except OSError:
+                pass
+
+    full_text = " ".join(transcriptions)
+    logger.info(
+        "[TRANSCRIBER] Full transcription: %d chunks -> %d chars",
+        len(chunks), len(full_text),
+    )
+    return full_text
+
+
 async def describe_image(image_bytes: bytes, mimetype: str = "image/jpeg") -> str:
     """
     Describe an image using OpenRouter vision model.
@@ -64,9 +181,6 @@ async def describe_image(image_bytes: bytes, mimetype: str = "image/jpeg") -> st
 
     Returns:
         Description text in Portuguese.
-
-    Raises:
-        httpx.HTTPStatusError: If the API returns an error.
     """
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
     data_url = f"data:{mimetype};base64,{b64_image}"

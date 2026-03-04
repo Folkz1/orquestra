@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -12,6 +12,8 @@ export default function Memory() {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [stats, setStats] = useState(null)
+
+  useEffect(() => { loadStats() }, [])
 
   const search = async () => {
     if (!query.trim()) return
@@ -60,13 +62,21 @@ export default function Memory() {
       </div>
 
       {stats && (
-        <div className="card mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-          {Object.entries(stats).map(([key, val]) => (
-            <div key={key}>
-              <p className="text-lg font-bold text-primary">{typeof val === 'number' ? val : '-'}</p>
-              <p className="text-xs text-zinc-500">{key.replace(/_/g, ' ')}</p>
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-medium text-zinc-400">Total de memorias</p>
+            <p className="text-2xl font-bold text-primary">{stats.total || 0}</p>
+          </div>
+          {stats.by_source && (
+            <div className="grid grid-cols-3 gap-3">
+              {Object.entries(stats.by_source).map(([source, count]) => (
+                <div key={source} className="text-center bg-zinc-800/50 rounded-lg p-3">
+                  <p className="text-lg font-bold text-zinc-100">{count}</p>
+                  <p className="text-xs text-zinc-500">{source}</p>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
