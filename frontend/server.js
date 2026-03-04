@@ -1,10 +1,12 @@
 import { createServer } from 'http';
 import { createReadStream, existsSync, statSync } from 'fs';
-import { join, extname } from 'path';
+import { join, extname, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { request as httpRequest } from 'http';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 80;
-const DIST = join(import.meta.dirname, 'dist');
+const DIST = join(__dirname, 'dist');
 const BACKEND = process.env.BACKEND_URL || 'http://wordpress_orquestra-backend:8000';
 
 const MIME = {
