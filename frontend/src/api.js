@@ -155,3 +155,7 @@ export function importNotion(data) {
 export function getNotionStatus() {
   return request('/api/notion/status');
 }
+
+export function getWarTasks() {
+  return request('/api/notion/war-tasks');
+}

@@ -8,6 +8,7 @@ const navItems = [
   { to: '/memory', label: 'Memoria', icon: '🧠' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
+  { to: '/war-tasks', label: 'War Tasks', icon: '⚔️' },
   { to: '/settings', label: 'Config', icon: '⚙️' },
 ]
 
