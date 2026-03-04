@@ -80,13 +80,45 @@ export default function Recorder() {
       let stream
 
       if (mode === 'meeting') {
-        // System audio + video capture (screen share required for system audio)
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { width: 1, height: 1 },
+        // Capture system audio (via screen share) + microphone
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
           audio: true,
         })
-        // Stop video track - we only need audio
-        stream.getVideoTracks().forEach((t) => t.stop())
+
+        // Get microphone separately
+        const micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        })
+
+        // Stop video track immediately - we only need audio
+        displayStream.getVideoTracks().forEach((t) => t.stop())
+
+        // Merge system audio + mic into one stream using AudioContext
+        const audioCtx = new AudioContext()
+        const destination = audioCtx.createMediaStreamDestination()
+
+        // Add system audio (if available - user might not share audio)
+        const systemTracks = displayStream.getAudioTracks()
+        if (systemTracks.length > 0) {
+          const systemSource = audioCtx.createMediaStreamSource(
+            new MediaStream(systemTracks)
+          )
+          systemSource.connect(destination)
+        }
+
+        // Add microphone audio
+        const micSource = audioCtx.createMediaStreamSource(micStream)
+        micSource.connect(destination)
+
+        // Combined stream
+        stream = destination.stream
+
+        // Store refs for cleanup
+        streamRef.current = stream
+        streamRef.current._displayStream = displayStream
+        streamRef.current._micStream = micStream
+        streamRef.current._audioCtx = audioCtx
       } else {
         // Microphone capture
         stream = await navigator.mediaDevices.getUserMedia({
@@ -98,7 +130,7 @@ export default function Recorder() {
         })
       }
 
-      streamRef.current = stream
+      if (!streamRef.current) streamRef.current = stream
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -119,7 +151,11 @@ export default function Recorder() {
       }
 
       // If user stops screen share via browser UI, stop recording
-      stream.getTracks().forEach((track) => {
+      const allTracks = [
+        ...stream.getTracks(),
+        ...(streamRef.current._displayStream ? streamRef.current._displayStream.getTracks() : []),
+      ]
+      allTracks.forEach((track) => {
         track.onended = () => {
           if (mediaRecorderRef.current?.state === 'recording') {
             mediaRecorderRef.current.stop()
@@ -147,7 +183,18 @@ export default function Recorder() {
       mediaRecorderRef.current.stop()
     }
     if (streamRef.current) {
+      // Stop all tracks on main stream
       streamRef.current.getTracks().forEach((t) => t.stop())
+      // Stop display + mic streams (meeting mode)
+      if (streamRef.current._displayStream) {
+        streamRef.current._displayStream.getTracks().forEach((t) => t.stop())
+      }
+      if (streamRef.current._micStream) {
+        streamRef.current._micStream.getTracks().forEach((t) => t.stop())
+      }
+      if (streamRef.current._audioCtx) {
+        streamRef.current._audioCtx.close()
+      }
       streamRef.current = null
     }
   }
