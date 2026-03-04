@@ -1,4 +1,4 @@
-const CACHE_NAME = 'orquestra-v1';
+const CACHE_NAME = 'orquestra-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -30,24 +30,24 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // Skip non-http(s) requests (chrome-extension://, etc)
+  if (!url.protocol.startsWith('http')) return;
+
   // API requests: network only
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // App shell: cache first, fallback to network
+  // App shell: network first, fallback to cache
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      });
-    }).catch(() => caches.match('/index.html'))
+    fetch(event.request).then((response) => {
+      if (response.ok) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
   );
 });
 
