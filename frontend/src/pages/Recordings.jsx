@@ -110,7 +110,7 @@ export default function Recordings() {
   useEffect(() => {
     getRecordings()
       .then((data) => {
-        const list = Array.isArray(data) ? data : data.recordings || []
+        const list = Array.isArray(data) ? data : data.items || data.recordings || []
         list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
         setRecordings(list)
       })

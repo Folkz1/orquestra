@@ -35,6 +35,7 @@ class ContactBase(BaseModel):
     project_id: Optional[UUID] = None
     notes: Optional[str] = None
     is_group: bool = False
+    ignored: bool = False
 
 
 class ContactCreate(ContactBase):
@@ -49,6 +50,7 @@ class ContactUpdate(BaseModel):
     project_id: Optional[UUID] = None
     notes: Optional[str] = None
     is_group: Optional[bool] = None
+    ignored: Optional[bool] = None
 
 
 class ContactResponse(ContactBase):
@@ -57,6 +59,8 @@ class ContactResponse(ContactBase):
     updated_at: datetime
     message_count: int = 0
     last_message_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)
 

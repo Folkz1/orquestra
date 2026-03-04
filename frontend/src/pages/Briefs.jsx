@@ -127,7 +127,7 @@ export default function Briefs() {
     setLoading(true)
     try {
       const data = await getBriefs()
-      const list = Array.isArray(data) ? data : data.briefs || []
+      const list = Array.isArray(data) ? data : data.items || data.briefs || []
       // Sort by date DESC
       list.sort((a, b) => {
         const dateA = new Date(a.date || a.created_at || 0)

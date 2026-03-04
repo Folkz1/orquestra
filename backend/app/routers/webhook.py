@@ -392,8 +392,9 @@ async def evolution_webhook(
             simplified_type,
         )
 
-    # Store text messages in vector memory (background task)
-    if processed and content and len(content.strip()) > 10:
+    # Store text messages in vector memory (background task) - skip ignored contacts
+    is_ignored = getattr(contact, 'ignored', False)
+    if processed and content and len(content.strip()) > 10 and not is_ignored:
         contact_display = contact.name or contact.push_name or phone
         background_tasks.add_task(
             _store_text_message_memory,

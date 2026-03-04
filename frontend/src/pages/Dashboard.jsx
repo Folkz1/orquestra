@@ -57,7 +57,7 @@ export default function Dashboard() {
       if (dateTo) params.date_to = dateTo
 
       const data = await getMessages(params)
-      setMessages(Array.isArray(data) ? data : data.messages || [])
+      setMessages(Array.isArray(data) ? data : data.items || data.messages || [])
       setTotalPages(data.total_pages || 1)
     } catch (err) {
       console.error('[Dashboard] Failed to load messages:', err)

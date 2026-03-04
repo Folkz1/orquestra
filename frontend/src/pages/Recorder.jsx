@@ -80,11 +80,13 @@ export default function Recorder() {
       let stream
 
       if (mode === 'meeting') {
-        // System audio capture (screen sharing with audio)
+        // System audio + video capture (screen share required for system audio)
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: false,
+          video: { width: 1, height: 1 },
           audio: true,
         })
+        // Stop video track - we only need audio
+        stream.getVideoTracks().forEach((t) => t.stop())
       } else {
         // Microphone capture
         stream = await navigator.mediaDevices.getUserMedia({

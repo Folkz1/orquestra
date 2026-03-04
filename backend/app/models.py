@@ -76,6 +76,7 @@ class Contact(Base):
     )
     notes = Column(Text, nullable=True)
     is_group = Column(Boolean, server_default="false", nullable=False)
+    ignored = Column(Boolean, server_default="false", nullable=False)
     created_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
