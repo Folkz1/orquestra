@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 DIEGO_WHATSAPP = "5195318541"
 
 # Default topics for daily analysis
-DEFAULT_TOPICS = ["IA", "automacao", "licitacoes", "ChatGPT", "agentes de IA"]
-DEFAULT_SOURCES = ["reddit", "youtube", "news", "twitter/x"]
+DEFAULT_TOPICS = ["IA", "automacao", "ChatGPT", "agentes de IA", "Claude", "MCP"]
+DEFAULT_SOURCES = ["twitter/x", "reddit", "youtube", "news"]
 
 
 async def daily_youtube_analysis():

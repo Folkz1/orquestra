@@ -3,6 +3,9 @@ import { NavLink } from 'react-router-dom'
 const navItems = [
   { to: '/', label: 'Gravador', icon: '🎙️' },
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { to: '/contacts', label: 'Contatos', icon: '👥' },
+  { to: '/recordings', label: 'Gravacoes', icon: '🎧' },
+  { to: '/memory', label: 'Memoria', icon: '🧠' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
 ]
@@ -32,7 +35,7 @@ function NavItem({ to, label, icon, mobile = false }) {
   )
 }
 
-export default function Layout({ children }) {
+export default function Layout({ children, onLogout }) {
   return (
     <div className="min-h-screen flex">
       {/* Desktop Sidebar */}
@@ -50,8 +53,16 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-zinc-800">
-          <p className="text-xs text-zinc-600">v1.0.0</p>
+        <div className="p-4 border-t border-zinc-800 flex items-center justify-between">
+          <p className="text-xs text-zinc-600">v1.1.0</p>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+            >
+              Sair
+            </button>
+          )}
         </div>
       </aside>
 

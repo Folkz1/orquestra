@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 # GuyFolkz channel context
 CHANNEL_CONTEXT = """
 Canal: GuyFolkz
-Nicho: IA (Inteligencia Artificial), Automacao de processos, Bots para negocios, Licitacoes inteligentes
-Publico: Empreendedores brasileiros, gestores publicos, profissionais de TI, entusiastas de IA
+Nicho: IA (Inteligencia Artificial), Automacao de processos, Bots e Agentes de IA para negocios
+Publico: Empreendedores brasileiros, profissionais de TI, devs, entusiastas de IA, criadores de conteudo
 Tom: Direto, pratico, sem enrolacao. Foco em resultados e aplicacoes reais.
 Dono: Diego - especialista em automacao B2B (R$4-15k + recorrencia)
 Meta: Motor 100K (R$100k/mes)
-Fontes preferidas: Reddit (r/artificial, r/ChatGPT, r/automation, r/LocalLLaMA), YouTube trends, noticias tech BR/US
-Interseccao: IA + negocios + governo (licitacoes)
+Fontes preferidas: X/Twitter (@OpenAI, @anthropic, @xaborai, trending AI), Reddit (r/artificial, r/ChatGPT, r/automation, r/LocalLLaMA, r/singularity), YouTube trends, noticias tech BR/US
+Interseccao: IA + negocios + automacao + agentes autonomos
 """
 
 TREND_ANALYSIS_PROMPT = """Voce e um trend analyst especializado em YouTube brasileiro.
@@ -72,8 +72,8 @@ REGRAS:
 1. Titulos PROVOCATIVOS que geram cliques (padrao 9-15% CTR)
 2. Thumbnails: alto contraste, texto bold grande, rosto com expressao, fundo solido ou gradiente
 3. CTA sempre direciona para WhatsApp (captura de leads)
-4. Foco na interseccao IA + negocios + governo
-5. Considere Reddit como fonte primaria de tendencias (Diego ama Reddit)
+4. Foco na interseccao IA + negocios + automacao + agentes autonomos
+5. Considere X/Twitter e Reddit como fontes primarias de tendencias
 6. Gere exatamente 3-5 ideias de video
 7. Responda APENAS com o JSON.
 """
@@ -144,9 +144,9 @@ async def analyze_channel_trends(
         Dict with trends, video_ideas, and market_insights.
     """
     if not topics:
-        topics = ["IA", "automacao", "licitacoes", "ChatGPT", "agentes de IA"]
+        topics = ["IA", "automacao", "ChatGPT", "agentes de IA", "Claude", "MCP"]
     if not sources:
-        sources = ["reddit", "youtube", "news", "twitter/x"]
+        sources = ["twitter/x", "reddit", "youtube", "news"]
 
     prompt = TREND_ANALYSIS_PROMPT.format(
         channel_context=CHANNEL_CONTEXT,
