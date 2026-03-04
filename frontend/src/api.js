@@ -132,3 +132,26 @@ export function generateBrief() {
     method: 'POST',
   });
 }
+
+// Sync
+export function syncProjects() {
+  return request('/api/sync/projects', {
+    method: 'POST',
+  });
+}
+
+// Notion
+export function getNotionDatabases() {
+  return request('/api/notion/databases');
+}
+
+export function importNotion(data) {
+  return request('/api/notion/import', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function getNotionStatus() {
+  return request('/api/notion/status');
+}

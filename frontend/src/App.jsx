@@ -9,6 +9,7 @@ import Briefs from './pages/Briefs'
 import Contacts from './pages/Contacts'
 import Memory from './pages/Memory'
 import Recordings from './pages/Recordings'
+import Settings from './pages/Settings'
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/recordings" element={<Recordings />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
     </BrowserRouter>

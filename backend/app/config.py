@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
+    # Notion API
+    NOTION_API_KEY: str = ""
+    NOTION_API_VERSION: str = "2022-06-28"
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
