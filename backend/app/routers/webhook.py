@@ -183,7 +183,12 @@ async def _store_text_message_memory(
             await db.rollback()
 
 
-async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
+async def process_media(
+    message_id: str,
+    evolution_msg_id: str,
+    msg_type: str,
+    raw_payload: dict | None = None,
+):
     """
     Background task: download media from Evolution, save to disk,
     transcribe (audio) or describe (image), and update the message.
@@ -212,8 +217,24 @@ async def process_media(message_id: str, evolution_msg_id: str, msg_type: str):
                 if contact_row:
                     contact_name = contact_row.name or contact_row.push_name
 
-            # Download media from Evolution API
-            media_bytes = await download_media_from_evolution(evolution_msg_id)
+            # Try to get media bytes - prefer inline base64 from webhook payload
+            media_bytes = None
+
+            # 1) Check if base64 is already in the webhook payload
+            if raw_payload:
+                inline_b64 = raw_payload.get("data", {}).get("message", {}).get("base64")
+                if inline_b64:
+                    import base64 as b64mod
+                    if "," in inline_b64:
+                        inline_b64 = inline_b64.split(",", 1)[1]
+                    media_bytes = b64mod.b64decode(inline_b64)
+                    logger.info("[WEBHOOK] Got media from inline base64 (%d bytes)", len(media_bytes))
+
+            # 2) Fallback: download from Evolution API
+            if not media_bytes:
+                media_bytes = await download_media_from_evolution(
+                    evolution_msg_id, raw_payload
+                )
 
             # Determine file extension
             ext_map = {
@@ -390,6 +411,7 @@ async def evolution_webhook(
             str(msg.id),
             evolution_msg_id,
             simplified_type,
+            payload,
         )
 
     # Store text messages in vector memory (background task) - skip ignored contacts

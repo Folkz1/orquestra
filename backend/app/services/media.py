@@ -15,38 +15,72 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def download_media_from_evolution(message_id: str) -> bytes:
+async def download_media_from_evolution(
+    message_id: str, raw_payload: dict | None = None
+) -> bytes:
     """
-    Download media from Evolution API using getBase64 endpoint.
+    Download media from Evolution API.
+
+    Strategy (Evolution API v2):
+    1. POST /chat/getBase64FromMediaMessage/{instance} (v2 endpoint)
+    2. GET /message/getBase64/{instance}/{id} (v1 fallback)
 
     Args:
         message_id: The Evolution message ID to fetch media for.
+        raw_payload: Original webhook payload (used to extract remoteJid/fromMe for v2).
 
     Returns:
         Raw bytes of the media file.
-
-    Raises:
-        httpx.HTTPStatusError: If the API returns an error status.
-        ValueError: If the response does not contain valid base64 data.
     """
-    url = (
-        f"{settings.EVOLUTION_API_URL}/message/getBase64/"
-        f"{settings.EVOLUTION_INSTANCE}/{message_id}"
-    )
     headers = {"apikey": settings.EVOLUTION_API_KEY}
+    instance = settings.EVOLUTION_INSTANCE
 
+    # Try v2 endpoint: POST /chat/getBase64FromMediaMessage/{instance}
+    if raw_payload:
+        key = raw_payload.get("data", {}).get("key", {})
+        remote_jid = key.get("remoteJid", "")
+        from_me = key.get("fromMe", False)
+
+        if remote_jid:
+            v2_url = f"{settings.EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/{instance}"
+            v2_body = {
+                "message": {
+                    "key": {
+                        "id": message_id,
+                        "remoteJid": remote_jid,
+                        "fromMe": from_me,
+                    }
+                },
+                "convertToMp4": False,
+            }
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        v2_url, headers={**headers, "Content-Type": "application/json"}, json=v2_body
+                    )
+                    response.raise_for_status()
+
+                data = response.json()
+                b64_string = data if isinstance(data, str) else data.get("base64", "")
+                if b64_string:
+                    if "," in b64_string:
+                        b64_string = b64_string.split(",", 1)[1]
+                    logger.info("[MEDIA] Downloaded via v2 endpoint for %s", message_id)
+                    return base64.b64decode(b64_string)
+            except Exception as exc:
+                logger.warning("[MEDIA] v2 getBase64 failed for %s: %s, trying v1...", message_id, exc)
+
+    # Fallback: v1 endpoint GET /message/getBase64/{instance}/{id}
+    v1_url = f"{settings.EVOLUTION_API_URL}/message/getBase64/{instance}/{message_id}"
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.get(url, headers=headers)
+        response = await client.get(v1_url, headers=headers)
         response.raise_for_status()
 
     data = response.json()
-
-    # Evolution API returns {"base64": "..."} or the base64 string directly
     b64_string = data if isinstance(data, str) else data.get("base64", "")
     if not b64_string:
         raise ValueError(f"No base64 data in Evolution response for message {message_id}")
 
-    # Strip data URI prefix if present (e.g. "data:audio/ogg;base64,...")
     if "," in b64_string:
         b64_string = b64_string.split(",", 1)[1]
 
