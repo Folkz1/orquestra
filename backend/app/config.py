@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     MODEL_VISION: str = "openai/gpt-4o-mini"
     MODEL_CHAT_CHEAP: str = "openai/gpt-4o-mini"
     MODEL_CHAT_SMART: str = "openai/gpt-4o-mini"
+    MODEL_TRANSCRIPTION: str = "google/gemini-2.5-flash"
 
     # Groq (optional, for audio transcription)
     GROQ_API_KEY: str = ""
