@@ -143,6 +143,7 @@ async def update_video(
     video_index: int,
     chosen_title: Optional[str] = Form(None),
     status: Optional[str] = Form(None),
+    thumbnail_prompts_ptbr: Optional[str] = Form(None),
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -172,6 +173,13 @@ async def update_video(
 
     if status is not None:
         video["status"] = status
+
+    if thumbnail_prompts_ptbr is not None:
+        import json as _json
+        try:
+            video["thumbnail_prompts_ptbr"] = _json.loads(thumbnail_prompts_ptbr)
+        except (ValueError, TypeError):
+            pass
 
     # Handle thumbnail upload
     if thumbnail:
