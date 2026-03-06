@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import case, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -61,7 +61,7 @@ async def list_tasks(
 
     stmt = stmt.order_by(
         # Priority ordering: high=0, medium=1, low=2
-        func.case(
+        case(
             (ProjectTask.priority == "high", 0),
             (ProjectTask.priority == "medium", 1),
             else_=2,
