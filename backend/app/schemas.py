@@ -315,6 +315,7 @@ class TaskResponse(BaseModel):
     source: str
     assigned_to: str
     metadata_json: dict[str, Any] = Field(default_factory=dict)
+    project_credentials: dict[str, Any] = Field(default_factory=dict)
     completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime

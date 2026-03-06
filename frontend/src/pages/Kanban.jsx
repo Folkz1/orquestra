@@ -19,49 +19,259 @@ const ASSIGNEE_LABELS = {
   diego: { label: 'Diego', color: 'text-blue-400' },
 }
 
-function ReviewInfo({ meta }) {
-  if (!meta?.review_url && !meta?.review_changes && !meta?.review_files) return null
-
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (e) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
   return (
-    <div className="mt-2 pt-2 border-t border-zinc-700/50 space-y-1.5">
-      {meta.review_url && (
+    <button
+      onClick={handleCopy}
+      className="text-[10px] text-zinc-500 hover:text-zinc-300 px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors flex-shrink-0"
+      title="Copiar"
+    >
+      {copied ? '✓' : '⎘'}
+    </button>
+  )
+}
+
+function CredentialValue({ label, value }) {
+  if (!value || typeof value === 'object') return null
+  const isUrl = typeof value === 'string' && value.startsWith('http')
+  return (
+    <div className="flex items-center gap-1.5 py-0.5">
+      <span className="text-[10px] text-zinc-500 w-24 flex-shrink-0 font-mono uppercase">{label}</span>
+      {isUrl ? (
         <a
-          href={meta.review_url}
+          href={value}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          className="text-[11px] text-blue-400 hover:text-blue-300 truncate flex-1"
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="flex-shrink-0">🔗</span>
-          <span className="truncate">{meta.review_url.replace(/^https?:\/\//, '')}</span>
+          {value}
         </a>
+      ) : (
+        <span className="text-[11px] text-zinc-300 truncate flex-1 font-mono">{value}</span>
       )}
-      {meta.review_changes && (
-        <div className="flex items-start gap-1.5 text-xs text-zinc-400">
-          <span className="flex-shrink-0 mt-0.5">📝</span>
-          <span className="line-clamp-2">{meta.review_changes}</span>
-        </div>
-      )}
-      {meta.review_files && (
-        <div className="flex items-start gap-1.5 text-xs text-zinc-500">
-          <span className="flex-shrink-0 mt-0.5">📁</span>
-          <span className="line-clamp-2">{meta.review_files}</span>
-        </div>
-      )}
-      {meta.review_date && (
-        <div className="text-[10px] text-zinc-600 text-right">
-          {meta.review_date}
-        </div>
-      )}
+      <CopyButton text={value} />
     </div>
   )
 }
 
-function TaskCard({ task, onDragStart, onEdit, onDelete }) {
+function CredentialsSection({ credentials }) {
+  if (!credentials || Object.keys(credentials).length === 0) return null
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(credentials).map(([provider, values]) => {
+        if (!values || typeof values !== 'object') return null
+        return (
+          <div key={provider}>
+            <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500/60" />
+              {provider}
+            </div>
+            <div className="bg-zinc-900/80 rounded-lg p-2 border border-zinc-800/50">
+              {Object.entries(values).map(([key, val]) => {
+                if (typeof val === 'object' && val !== null) {
+                  return Object.entries(val).map(([subKey, subVal]) => (
+                    <CredentialValue key={`${key}.${subKey}`} label={`${key}.${subKey}`} value={String(subVal)} />
+                  ))
+                }
+                return <CredentialValue key={key} label={key} value={String(val)} />
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ReviewDetailModal({ task, onClose }) {
+  if (!task) return null
+  const meta = task.metadata_json || {}
+  const creds = task.project_credentials || {}
+  const urls = creds.urls || {}
+  const easypanel = creds.easypanel || {}
+  const github = creds.github || {}
+
+  const productionUrl = meta.review_url || urls.production || urls.frontend || urls.app || ''
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-fade-in shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 rounded-t-2xl z-10">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-amber-400">🔍</span>
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Review / Teste</span>
+              </div>
+              <h2 className="text-lg font-bold text-zinc-100 leading-snug">{task.title}</h2>
+              {task.project_name && (
+                <span
+                  className="inline-block text-xs px-2 py-0.5 rounded-md mt-1.5 font-medium"
+                  style={{
+                    backgroundColor: (task.project_color || '#3b82f6') + '20',
+                    color: task.project_color || '#3b82f6',
+                  }}
+                >
+                  {task.project_name}
+                </span>
+              )}
+            </div>
+            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 p-1 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Quick Access - Production URL */}
+          {productionUrl && (
+            <a
+              href={productionUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500/15 transition-colors group"
+            >
+              <span className="text-2xl">🌐</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-blue-400 font-semibold uppercase tracking-wider">Abrir em Producao</div>
+                <div className="text-sm text-blue-300 truncate group-hover:text-blue-200">{productionUrl}</div>
+              </div>
+              <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          )}
+
+          {/* EasyPanel Quick Access */}
+          {easypanel.server_url && (
+            <a
+              href={easypanel.server_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl hover:bg-purple-500/15 transition-colors group"
+            >
+              <span className="text-2xl">⚙️</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-purple-400 font-semibold uppercase tracking-wider">EasyPanel Dashboard</div>
+                <div className="text-sm text-purple-300 truncate group-hover:text-purple-200">
+                  {easypanel.project}/{easypanel.service || easypanel.backend_service || '...'}
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-purple-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          )}
+
+          {/* GitHub Quick Access */}
+          {github.repo && (
+            <a
+              href={`https://github.com/${github.repo}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl hover:bg-zinc-800 transition-colors group"
+            >
+              <span className="text-2xl">🐙</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-zinc-400 font-semibold uppercase tracking-wider">GitHub Repo</div>
+                <div className="text-sm text-zinc-300 truncate group-hover:text-zinc-200">{github.repo} ({github.branch || 'main'})</div>
+              </div>
+              <svg className="w-5 h-5 text-zinc-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          )}
+
+          {/* What Changed */}
+          {(meta.review_changes || meta.review_files) && (
+            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/30">
+              <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <span>📝</span> O que mudou
+              </div>
+              {meta.review_changes && (
+                <p className="text-sm text-zinc-200 mb-1.5">{meta.review_changes}</p>
+              )}
+              {meta.review_files && (
+                <p className="text-xs text-zinc-500 font-mono">{meta.review_files}</p>
+              )}
+              {meta.review_date && (
+                <p className="text-[10px] text-zinc-600 mt-1.5">Commit em {meta.review_date}</p>
+              )}
+            </div>
+          )}
+
+          {/* Description */}
+          {task.description && (
+            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/30">
+              <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <span>📄</span> Descricao
+              </div>
+              <p className="text-sm text-zinc-300 whitespace-pre-wrap">{task.description}</p>
+            </div>
+          )}
+
+          {/* All Credentials / ENV */}
+          {Object.keys(creds).length > 0 && (
+            <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700/30">
+              <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <span>🔑</span> Credenciais / ENV do Projeto
+              </div>
+              <CredentialsSection credentials={creds} />
+            </div>
+          )}
+
+          {/* Task Info */}
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="bg-zinc-800/30 rounded-lg p-2.5">
+              <span className="text-zinc-500 block mb-0.5">Prioridade</span>
+              <span className={`font-medium ${PRIORITY_COLORS[task.priority]?.text || 'text-zinc-300'}`}>
+                {PRIORITY_COLORS[task.priority]?.label || task.priority}
+              </span>
+            </div>
+            <div className="bg-zinc-800/30 rounded-lg p-2.5">
+              <span className="text-zinc-500 block mb-0.5">Responsavel</span>
+              <span className={`font-medium ${ASSIGNEE_LABELS[task.assigned_to]?.color || 'text-zinc-300'}`}>
+                {ASSIGNEE_LABELS[task.assigned_to]?.label || task.assigned_to}
+              </span>
+            </div>
+            <div className="bg-zinc-800/30 rounded-lg p-2.5">
+              <span className="text-zinc-500 block mb-0.5">Fonte</span>
+              <span className="text-zinc-300 font-mono">{task.source}</span>
+            </div>
+            <div className="bg-zinc-800/30 rounded-lg p-2.5">
+              <span className="text-zinc-500 block mb-0.5">Criada em</span>
+              <span className="text-zinc-300">{new Date(task.created_at).toLocaleDateString('pt-BR')}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TaskCard({ task, onDragStart, onEdit, onDelete, onOpenReview }) {
   const priority = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium
   const assignee = ASSIGNEE_LABELS[task.assigned_to] || { label: task.assigned_to, color: 'text-zinc-400' }
   const isReview = task.status === 'review'
   const meta = task.metadata_json || {}
+  const creds = task.project_credentials || {}
+  const urls = creds.urls || {}
+  const reviewUrl = meta.review_url || urls.production || urls.frontend || ''
 
   return (
     <div
@@ -129,8 +339,35 @@ function TaskCard({ task, onDragStart, onEdit, onDelete }) {
         )}
       </div>
 
-      {/* Review info */}
-      {isReview && <ReviewInfo meta={meta} />}
+      {/* Review quick info + open detail button */}
+      {isReview && (
+        <div className="mt-2.5 pt-2 border-t border-zinc-700/50">
+          {reviewUrl && (
+            <a
+              href={reviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors mb-1.5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span>🌐</span>
+              <span className="truncate">{reviewUrl.replace(/^https?:\/\//, '')}</span>
+            </a>
+          )}
+          {meta.review_changes && (
+            <p className="text-xs text-zinc-500 mb-2 line-clamp-1">📝 {meta.review_changes}</p>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenReview(task) }}
+            className="w-full text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg py-1.5 px-3 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            Abrir Review Completo
+          </button>
+        </div>
+      )}
 
       {/* Done timestamp */}
       {task.status === 'done' && task.completed_at && (
@@ -142,7 +379,7 @@ function TaskCard({ task, onDragStart, onEdit, onDelete }) {
   )
 }
 
-function KanbanColumn({ column, tasks, onDrop, onDragStart, onEdit, onDelete }) {
+function KanbanColumn({ column, tasks, onDrop, onDragStart, onEdit, onDelete, onOpenReview }) {
   const [isDragOver, setIsDragOver] = useState(false)
   const count = tasks.length
 
@@ -180,6 +417,7 @@ function KanbanColumn({ column, tasks, onDrop, onDragStart, onEdit, onDelete }) 
             onDragStart={onDragStart}
             onEdit={onEdit}
             onDelete={onDelete}
+            onOpenReview={onOpenReview}
           />
         ))}
         {tasks.length === 0 && (
@@ -200,6 +438,7 @@ export default function Kanban() {
   const [projectFilter, setProjectFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
+  const [reviewTask, setReviewTask] = useState(null)
   const [form, setForm] = useState({
     title: '', description: '', project_id: '', priority: 'medium', assigned_to: 'claude', status: 'backlog',
   })
@@ -287,7 +526,6 @@ export default function Kanban() {
     }
   }
 
-  // Drag and drop
   const onDragStart = (e, task) => {
     setDraggedTask(task)
     e.dataTransfer.effectAllowed = 'move'
@@ -456,6 +694,9 @@ export default function Kanban() {
         </div>
       )}
 
+      {/* Review Detail Modal */}
+      <ReviewDetailModal task={reviewTask} onClose={() => setReviewTask(null)} />
+
       {/* Kanban Board */}
       {loading ? (
         <div className="flex justify-center py-16">
@@ -472,6 +713,7 @@ export default function Kanban() {
               onDragStart={onDragStart}
               onEdit={openEdit}
               onDelete={handleDelete}
+              onOpenReview={setReviewTask}
             />
           ))}
         </div>
