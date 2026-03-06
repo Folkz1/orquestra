@@ -102,46 +102,123 @@ function VideoDetail({ video, index, onUpdate, onClose }) {
             )}
             {video.formato && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400">{video.formato}</span>}
             {video.duracao && <span className="text-[10px] text-zinc-500">{video.duracao}</span>}
-            {video.potencial_views && <span className="text-[10px] text-zinc-500">~{video.potencial_views} views</span>}
           </div>
           <h1 className="text-2xl font-bold text-zinc-100 leading-tight">{video.chosen_title || video.title}</h1>
+          {/* Quick stats */}
+          <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-500">
+            {video.potencial_views && <span>Potencial: <span className="text-zinc-300">{video.potencial_views} views</span></span>}
+            {video.potencial_b2b && <span>B2B: <span className="text-zinc-300">{video.potencial_b2b}</span></span>}
+            {video.duracao && <span>Duracao: <span className="text-zinc-300">{video.duracao}</span></span>}
+          </div>
         </div>
 
-        {/* ─── SECTION: Contexto do Video ─── */}
-        <Section title="Contexto do Video" icon="info">
+        {/* ─── SECTION 1: Sobre o que e esse video ─── */}
+        <Section title="Sobre o Video - Contexto Completo">
+          {/* Hook = o que vai prender a atencao */}
           {video.hook && (
-            <div className="mb-3">
-              <label className="text-[10px] text-zinc-500 uppercase font-semibold">Hook (primeiros 30s)</label>
-              <p className="text-sm text-zinc-200 italic mt-1 bg-zinc-800/60 rounded-lg p-3 border-l-2 border-amber-500/50">{video.hook}</p>
+            <div className="mb-4">
+              <label className="text-[10px] text-amber-400 uppercase font-semibold tracking-wider">O que falar nos primeiros 30 segundos (Hook)</label>
+              <p className="text-sm text-zinc-100 mt-1.5 bg-amber-500/5 rounded-lg p-3 border-l-2 border-amber-500/50 leading-relaxed italic">
+                "{video.hook}"
+              </p>
             </div>
           )}
+
+          {/* Roteiro = estrutura completa do video */}
           {video.roteiro && Object.keys(video.roteiro).length > 0 && (
-            <div className="mb-3">
-              <label className="text-[10px] text-zinc-500 uppercase font-semibold">Roteiro 3 Atos</label>
-              <div className="space-y-2 mt-1">
-                {Object.entries(video.roteiro).map(([key, val]) => (
-                  <div key={key} className="bg-zinc-800/60 rounded-lg p-3">
-                    <span className="text-[10px] font-semibold text-amber-400 uppercase">{key}</span>
-                    <p className="text-sm text-zinc-300 mt-1">{val}</p>
-                  </div>
-                ))}
+            <div className="mb-4">
+              <label className="text-[10px] text-amber-400 uppercase font-semibold tracking-wider">Estrutura do Video (Roteiro)</label>
+              <div className="space-y-2 mt-1.5">
+                {Object.entries(video.roteiro).map(([key, val]) => {
+                  const icons = { 'Problema': '1', 'Execucao': '2', 'CTA': '3' }
+                  const num = key.includes('Problema') ? '1' : key.includes('Execu') ? '2' : key.includes('CTA') ? '3' : ''
+                  return (
+                    <div key={key} className="bg-zinc-800/60 rounded-lg p-3 flex gap-3">
+                      {num && <span className="text-amber-400 font-bold text-lg leading-none mt-0.5">{num}</span>}
+                      <div>
+                        <span className="text-[10px] font-semibold text-amber-400 uppercase">{key}</span>
+                        <p className="text-sm text-zinc-300 mt-1 leading-relaxed">{val}</p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
+
+          {/* Keywords */}
           {video.keywords?.length > 0 && (
-            <div>
-              <label className="text-[10px] text-zinc-500 uppercase font-semibold">Keywords SEO</label>
-              <div className="flex flex-wrap gap-1.5 mt-1">
+            <div className="mb-4">
+              <label className="text-[10px] text-zinc-500 uppercase font-semibold">Keywords SEO (para descricao e tags)</label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {video.keywords.map((kw, i) => (
-                  <span key={i} className="text-xs bg-zinc-700/50 text-zinc-300 px-2 py-1 rounded-md">{kw}</span>
+                  <span key={i} className="text-xs bg-zinc-700/50 text-zinc-300 px-2.5 py-1 rounded-md">{kw}</span>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Potencial & formato */}
+          <div className="grid grid-cols-2 gap-3">
+            {video.formato && (
+              <div className="bg-zinc-800/60 rounded-lg p-3">
+                <label className="text-[10px] text-zinc-500 uppercase">Formato</label>
+                <p className="text-sm text-zinc-200 mt-0.5 font-medium">{video.formato}</p>
+              </div>
+            )}
+            {video.duracao && (
+              <div className="bg-zinc-800/60 rounded-lg p-3">
+                <label className="text-[10px] text-zinc-500 uppercase">Duracao sugerida</label>
+                <p className="text-sm text-zinc-200 mt-0.5 font-medium">{video.duracao}</p>
+              </div>
+            )}
+            {video.potencial_views && (
+              <div className="bg-zinc-800/60 rounded-lg p-3">
+                <label className="text-[10px] text-zinc-500 uppercase">Potencial de views</label>
+                <p className="text-sm text-zinc-200 mt-0.5 font-medium">{video.potencial_views}</p>
+              </div>
+            )}
+            {video.potencial_b2b && (
+              <div className="bg-zinc-800/60 rounded-lg p-3">
+                <label className="text-[10px] text-zinc-500 uppercase">Potencial B2B</label>
+                <p className="text-sm text-zinc-200 mt-0.5 font-medium">{video.potencial_b2b}</p>
+              </div>
+            )}
+          </div>
         </Section>
 
-        {/* ─── SECTION: Escolha do Titulo ─── */}
-        <Section title="Escolha o Titulo" icon="title">
+        {/* ─── SECTION 2: Links Uteis ─── */}
+        <Section title="Links Uteis">
+          <div className="grid grid-cols-1 gap-2">
+            <a href="https://labs.google/fx/tools/whisk" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-3 bg-zinc-800/60 rounded-lg p-3 hover:bg-zinc-800 transition-colors">
+              <span className="text-lg">🎨</span>
+              <div>
+                <p className="text-sm text-blue-400 font-medium">Google Whisk</p>
+                <p className="text-[10px] text-zinc-500">Gerar thumbnail com IA (cole os prompts abaixo)</p>
+              </div>
+            </a>
+            <a href="https://www.youtube.com/@guyfolkz" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-3 bg-zinc-800/60 rounded-lg p-3 hover:bg-zinc-800 transition-colors">
+              <span className="text-lg">📺</span>
+              <div>
+                <p className="text-sm text-red-400 font-medium">Canal GuyFolkz</p>
+                <p className="text-[10px] text-zinc-500">Ver videos publicados e estilo do canal</p>
+              </div>
+            </a>
+            <a href="https://www.canva.com" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-3 bg-zinc-800/60 rounded-lg p-3 hover:bg-zinc-800 transition-colors">
+              <span className="text-lg">🖼</span>
+              <div>
+                <p className="text-sm text-purple-400 font-medium">Canva</p>
+                <p className="text-[10px] text-zinc-500">Editar e finalizar thumbnail (1280x720)</p>
+              </div>
+            </a>
+          </div>
+        </Section>
+
+        {/* ─── SECTION 3: Escolha do Titulo ─── */}
+        <Section title="Escolha o Titulo">
           <div className="space-y-2">
             {allTitles.map((t, i) => (
               <label key={i} className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${
