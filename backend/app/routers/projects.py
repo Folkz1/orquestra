@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models import Message, Project, Recording
@@ -212,9 +213,10 @@ async def merge_credentials(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    current = project.credentials or {}
+    current = dict(project.credentials or {})
     current.update(data)
     project.credentials = current
+    flag_modified(project, "credentials")
     await db.flush()
     await db.refresh(project)
 
