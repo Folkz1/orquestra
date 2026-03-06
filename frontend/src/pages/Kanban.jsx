@@ -19,6 +19,24 @@ const ASSIGNEE_LABELS = {
   diego: { label: 'Diego', color: 'text-blue-400' },
 }
 
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const now = new Date()
+  const date = new Date(dateStr)
+  const diffMs = now - date
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return 'agora'
+  if (diffMin < 60) return `${diffMin}min atras`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24) return `${diffH}h atras`
+  const diffD = Math.floor(diffH / 24)
+  if (diffD === 1) return 'ontem'
+  if (diffD < 30) return `${diffD}d atras`
+  const diffM = Math.floor(diffD / 30)
+  if (diffM < 12) return `${diffM} mes${diffM > 1 ? 'es' : ''} atras`
+  return new Date(dateStr).toLocaleDateString('pt-BR')
+}
+
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
   const handleCopy = (e) => {
@@ -369,12 +387,28 @@ function TaskCard({ task, onDragStart, onEdit, onDelete, onOpenReview }) {
         </div>
       )}
 
-      {/* Done timestamp */}
-      {task.status === 'done' && task.completed_at && (
-        <div className="mt-2 text-[10px] text-zinc-600">
-          Concluido em {new Date(task.completed_at).toLocaleDateString('pt-BR')}
-        </div>
-      )}
+      {/* Timestamps */}
+      <div className="flex items-center gap-2 mt-2 text-[10px] text-zinc-600">
+        {task.status === 'done' && task.completed_at ? (
+          <span title={new Date(task.completed_at).toLocaleString('pt-BR')}>
+            Concluido {timeAgo(task.completed_at)}
+          </span>
+        ) : (
+          <>
+            <span title={new Date(task.created_at).toLocaleString('pt-BR')}>
+              Criada {timeAgo(task.created_at)}
+            </span>
+            {task.updated_at && task.updated_at !== task.created_at && (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span title={new Date(task.updated_at).toLocaleString('pt-BR')}>
+                  Atualizada {timeAgo(task.updated_at)}
+                </span>
+              </>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
