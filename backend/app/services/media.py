@@ -15,32 +15,52 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _resolve_instance(raw_payload: dict | None) -> tuple[str, str]:
+def _resolve_instance(raw_payload: dict | None) -> tuple[str, str, str]:
     """
-    Resolve the correct Evolution instance name and API key from the webhook payload.
-    Falls back to the default EVOLUTION_INSTANCE/EVOLUTION_API_KEY if no match.
+    Resolve the correct Evolution instance name, API key, and base URL from the webhook payload.
+    Falls back to the default EVOLUTION_INSTANCE/EVOLUTION_API_KEY/EVOLUTION_API_URL if no match.
+
+    Returns:
+        (instance_name, apikey, base_url)
     """
     import json as _json
 
     instance = settings.EVOLUTION_INSTANCE
     apikey = settings.EVOLUTION_API_KEY
+    base_url = settings.EVOLUTION_API_URL
 
-    # Try to detect instance from webhook payload
-    payload_instance = None
     if raw_payload:
+        # Prefer server_url + apikey directly from webhook payload (Evolution v2)
+        payload_url = raw_payload.get("server_url")
+        payload_key = raw_payload.get("apikey")
         payload_instance = raw_payload.get("instance")
 
-    if payload_instance and settings.EVOLUTION_INSTANCES:
-        try:
-            instances_map = _json.loads(settings.EVOLUTION_INSTANCES)
-            if payload_instance in instances_map:
+        if payload_url and payload_key:
+            base_url = payload_url.rstrip("/")
+            apikey = payload_key
+            if payload_instance:
                 instance = payload_instance
-                apikey = instances_map[payload_instance]
-                logger.info("[MEDIA] Using instance '%s' from payload", instance)
-        except _json.JSONDecodeError:
-            pass
+            logger.info("[MEDIA] Resolved from payload: instance=%s url=%s", instance, base_url)
+            return instance, apikey, base_url
 
-    return instance, apikey
+        # Fallback: check EVOLUTION_INSTANCES map
+        if payload_instance and settings.EVOLUTION_INSTANCES:
+            try:
+                instances_map = _json.loads(settings.EVOLUTION_INSTANCES)
+                if payload_instance in instances_map:
+                    entry = instances_map[payload_instance]
+                    if isinstance(entry, dict):
+                        instance = payload_instance
+                        apikey = entry.get("apikey", apikey)
+                        base_url = entry.get("url", base_url)
+                    elif isinstance(entry, str):
+                        instance = payload_instance
+                        apikey = entry
+                    logger.info("[MEDIA] Using instance '%s' from EVOLUTION_INSTANCES", instance)
+            except _json.JSONDecodeError:
+                pass
+
+    return instance, apikey, base_url
 
 
 async def download_media_from_evolution(
@@ -63,7 +83,7 @@ async def download_media_from_evolution(
     Returns:
         Raw bytes of the media file.
     """
-    instance, apikey = _resolve_instance(raw_payload)
+    instance, apikey, base_url = _resolve_instance(raw_payload)
     headers = {"apikey": apikey}
 
     # Try v2 endpoint: POST /chat/getBase64FromMediaMessage/{instance}
@@ -73,7 +93,7 @@ async def download_media_from_evolution(
         from_me = key.get("fromMe", False)
 
         if remote_jid:
-            v2_url = f"{settings.EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/{instance}"
+            v2_url = f"{base_url}/chat/getBase64FromMediaMessage/{instance}"
             v2_body = {
                 "message": {
                     "key": {
@@ -102,7 +122,7 @@ async def download_media_from_evolution(
                 logger.warning("[MEDIA] v2 getBase64 failed for %s: %s, trying v1...", message_id, exc)
 
     # Fallback: v1 endpoint GET /message/getBase64/{instance}/{id}
-    v1_url = f"{settings.EVOLUTION_API_URL}/message/getBase64/{instance}/{message_id}"
+    v1_url = f"{base_url}/message/getBase64/{instance}/{message_id}"
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(v1_url, headers=headers)
         response.raise_for_status()

@@ -307,6 +307,10 @@ async def evolution_webhook(
 
     # Evolution sends event type in the payload
     event = payload.get("event")
+    instance_name = payload.get("instance", "unknown")
+    server_url = payload.get("server_url", "unknown")
+    logger.info("[WEBHOOK] Event: %s from instance=%s server=%s", event, instance_name, server_url)
+
     if event != "messages.upsert":
         logger.debug("[WEBHOOK] Ignoring event: %s", event)
         return {"status": "ignored"}
