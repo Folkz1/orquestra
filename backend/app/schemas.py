@@ -90,6 +90,9 @@ class MessageBase(BaseModel):
 class MessageResponse(MessageBase):
     id: UUID
     created_at: datetime
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    project_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

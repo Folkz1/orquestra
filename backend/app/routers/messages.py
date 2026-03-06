@@ -13,7 +13,7 @@ from sqlalchemy import func, select, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Message
+from app.models import Contact, Message, Project
 from app.schemas import MessageResponse, PaginatedResponse
 
 logger = logging.getLogger(__name__)
@@ -81,13 +81,36 @@ async def list_messages(
     offset = (page - 1) * per_page
     stmt = stmt.order_by(Message.timestamp.desc()).offset(offset).limit(per_page)
 
+    # Join contact and project for name resolution
+    stmt = stmt.outerjoin(Contact, Message.contact_id == Contact.id)
+    stmt = stmt.outerjoin(Project, Message.project_id == Project.id)
+    stmt = stmt.add_columns(
+        Contact.name.label("contact_name"),
+        Contact.push_name.label("contact_push_name"),
+        Contact.phone.label("contact_phone"),
+        Project.name.label("project_name"),
+    )
+
     result = await db.execute(stmt)
-    messages = result.scalars().all()
+    rows = result.all()
 
     total_pages = math.ceil(total / per_page) if total > 0 else 0
 
+    items = []
+    for row in rows:
+        msg = row[0]
+        contact_name = row.contact_name or row.contact_push_name
+        contact_phone = row.contact_phone
+        project_name = row.project_name
+
+        msg_dict = MessageResponse.model_validate(msg).model_dump()
+        msg_dict["contact_name"] = contact_name
+        msg_dict["contact_phone"] = contact_phone
+        msg_dict["project_name"] = project_name
+        items.append(MessageResponse(**msg_dict))
+
     return PaginatedResponse(
-        items=[MessageResponse.model_validate(msg) for msg in messages],
+        items=items,
         total=total,
         page=page,
         page_size=per_page,
@@ -107,9 +130,26 @@ async def get_conversation(
         select(Message)
         .where(Message.contact_id == contact_id)
         .order_by(Message.timestamp.asc())
+        .outerjoin(Contact, Message.contact_id == Contact.id)
+        .outerjoin(Project, Message.project_id == Project.id)
+        .add_columns(
+            Contact.name.label("contact_name"),
+            Contact.push_name.label("contact_push_name"),
+            Contact.phone.label("contact_phone"),
+            Project.name.label("project_name"),
+        )
     )
 
     result = await db.execute(stmt)
-    messages = result.scalars().all()
+    rows = result.all()
 
-    return [MessageResponse.model_validate(msg) for msg in messages]
+    items = []
+    for row in rows:
+        msg = row[0]
+        msg_dict = MessageResponse.model_validate(msg).model_dump()
+        msg_dict["contact_name"] = row.contact_name or row.contact_push_name
+        msg_dict["contact_phone"] = row.contact_phone
+        msg_dict["project_name"] = row.project_name
+        items.append(MessageResponse(**msg_dict))
+
+    return items
