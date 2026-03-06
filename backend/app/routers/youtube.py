@@ -4,13 +4,17 @@ Trend analysis, content briefs, and channel analytics for GuyFolkz.
 """
 
 import logging
+import os
+import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import MemoryEmbedding
 from app.schemas import YouTubeAnalyzeRequest, YouTubeAnalyzeResponse, YouTubeSendBriefRequest
@@ -21,6 +25,8 @@ from app.services.memory import store_memory
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+THUMBNAILS_DIR = os.path.join(settings.UPLOAD_DIR, "thumbnails")
 
 
 # ─── Briefing Models ────────────────────────────────────────────────
@@ -127,6 +133,78 @@ async def list_briefings(
         }
         for r in rows
     ]
+
+
+# ─── Video Actions (Andriely workflow - PUBLIC) ─────────────────────
+
+@router.patch("/briefings/latest/videos/{video_index}")
+async def update_video(
+    video_index: int,
+    chosen_title: Optional[str] = Form(None),
+    status: Optional[str] = Form(None),
+    thumbnail: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a video in the latest briefing (choose title, upload thumbnail, set status)."""
+    stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == "youtube_briefing")
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    mem = result.scalar_one_or_none()
+    if not mem:
+        return {"error": "No briefing found"}
+
+    meta = dict(mem.metadata_ or {})
+    briefing = dict(meta.get("briefing", {}))
+    videos = list(briefing.get("videos", []))
+
+    if video_index < 0 or video_index >= len(videos):
+        return {"error": f"Video index {video_index} out of range (0-{len(videos)-1})"}
+
+    video = dict(videos[video_index])
+
+    if chosen_title is not None:
+        video["chosen_title"] = chosen_title
+
+    if status is not None:
+        video["status"] = status
+
+    # Handle thumbnail upload
+    if thumbnail:
+        os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+        ext = os.path.splitext(thumbnail.filename)[1] or ".png"
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(THUMBNAILS_DIR, filename)
+        content = await thumbnail.read()
+        with open(filepath, "wb") as f:
+            f.write(content)
+        video["thumbnail_file"] = filename
+        logger.info("[YOUTUBE] Thumbnail uploaded: %s (%d bytes)", filename, len(content))
+
+    videos[video_index] = video
+    briefing["videos"] = videos
+    meta["briefing"] = briefing
+
+    # Update the record - need to create new dict to trigger JSONB change detection
+    mem.metadata_ = meta
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(mem, "metadata_")
+    await db.flush()
+
+    logger.info("[YOUTUBE] Updated video %d: title=%s, status=%s", video_index, chosen_title, status)
+    return {"ok": True, "video": video}
+
+
+@router.get("/thumbnails/{filename}")
+async def serve_thumbnail(filename: str):
+    """Serve uploaded thumbnail images (PUBLIC)."""
+    filepath = os.path.join(THUMBNAILS_DIR, filename)
+    if not os.path.exists(filepath):
+        return {"error": "Not found"}
+    return FileResponse(filepath)
 
 
 # ─── Analytics ──────────────────────────────────────────────────────

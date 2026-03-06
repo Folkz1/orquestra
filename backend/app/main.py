@@ -93,7 +93,9 @@ EXEMPT_PATHS = {
     "/api/debug/db",
     "/api/webhook",
     "/api/youtube/briefings/latest",
+    "/api/youtube/briefings",
     "/api/youtube/analytics",
+    "/api/youtube/thumbnails",
     "/docs",
     "/redoc",
     "/openapi.json",
@@ -109,8 +111,8 @@ async def auth_middleware(request: Request, call_next):
 
     path = request.url.path
 
-    # Exempt paths (exact or prefix match for webhooks)
-    if path in EXEMPT_PATHS or path.startswith("/api/webhook"):
+    # Exempt paths (exact or prefix match for webhooks/youtube)
+    if path in EXEMPT_PATHS or path.startswith("/api/webhook") or path.startswith("/api/youtube/briefings/latest/videos") or path.startswith("/api/youtube/thumbnails/"):
         return await call_next(request)
 
     # Check Authorization header
