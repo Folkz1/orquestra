@@ -37,6 +37,7 @@ class BriefingVideo(BaseModel):
     hook: str = ""
     thumbnail_prompt: str = ""
     thumbnail_whisk_refine: str = ""
+    thumbnail_prompts_ptbr: list[str] = Field(default_factory=list)
     roteiro: dict[str, str] = Field(default_factory=dict)
     keywords: list[str] = Field(default_factory=list)
     urgencia: str = "Media"

@@ -21,6 +21,8 @@ function StatusBadge({ status }) {
 function VideoCard({ video, index, onUpdate }) {
   const [expanded, setExpanded] = useState(index === 0)
   const [selectedTitle, setSelectedTitle] = useState(video.chosen_title || video.title)
+  const [customTitle, setCustomTitle] = useState(video.chosen_title || '')
+  const [isCustom, setIsCustom] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [thumbPreview, setThumbPreview] = useState(null)
@@ -35,10 +37,12 @@ function VideoCard({ video, index, onUpdate }) {
     'Media': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   }
 
+  const finalTitle = isCustom ? customTitle : selectedTitle
+
   async function handleSaveTitle() {
     setSaving(true)
     const form = new FormData()
-    form.append('chosen_title', selectedTitle)
+    form.append('chosen_title', finalTitle)
     try {
       const res = await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, {
         method: 'PATCH',
@@ -60,8 +64,8 @@ function VideoCard({ video, index, onUpdate }) {
     const form = new FormData()
     form.append('thumbnail', file)
     form.append('status', 'thumbnail_pronta')
-    if (selectedTitle !== video.title) {
-      form.append('chosen_title', selectedTitle)
+    if (finalTitle !== video.title) {
+      form.append('chosen_title', finalTitle)
     }
     try {
       const res = await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, {
@@ -155,28 +159,55 @@ function VideoCard({ video, index, onUpdate }) {
           {/* === TITULO SELECTION === */}
           <div className="bg-zinc-900/80 rounded-xl p-4 border border-zinc-700/40">
             <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-3">
-              Escolha o Titulo
+              Escolha ou Edite o Titulo
             </h4>
             <div className="space-y-2">
               {allTitles.map((t, i) => (
                 <label key={i} className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${
-                  selectedTitle === t ? 'bg-amber-500/10 border border-amber-500/30' : 'hover:bg-zinc-800/60 border border-transparent'
+                  !isCustom && selectedTitle === t ? 'bg-amber-500/10 border border-amber-500/30' : 'hover:bg-zinc-800/60 border border-transparent'
                 }`}>
                   <input
                     type="radio"
                     name={`title-${index}`}
-                    checked={selectedTitle === t}
-                    onChange={() => setSelectedTitle(t)}
+                    checked={!isCustom && selectedTitle === t}
+                    onChange={() => { setSelectedTitle(t); setIsCustom(false) }}
                     className="mt-1 accent-amber-500"
                   />
                   <div>
-                    <span className={`text-sm ${selectedTitle === t ? 'text-amber-200 font-semibold' : 'text-zinc-300'}`}>{t}</span>
+                    <span className={`text-sm ${!isCustom && selectedTitle === t ? 'text-amber-200 font-semibold' : 'text-zinc-300'}`}>{t}</span>
                     {i === 0 && <span className="ml-2 text-[10px] text-zinc-600">(principal)</span>}
                   </div>
                 </label>
               ))}
+
+              {/* Custom title option */}
+              <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${
+                isCustom ? 'bg-amber-500/10 border border-amber-500/30' : 'hover:bg-zinc-800/60 border border-transparent'
+              }`}>
+                <input
+                  type="radio"
+                  name={`title-${index}`}
+                  checked={isCustom}
+                  onChange={() => { setIsCustom(true); if (!customTitle) setCustomTitle(selectedTitle) }}
+                  className="mt-1 accent-amber-500"
+                />
+                <div className="flex-1">
+                  <span className={`text-sm ${isCustom ? 'text-amber-200 font-semibold' : 'text-zinc-400'}`}>Titulo personalizado</span>
+                </div>
+              </label>
+              {isCustom && (
+                <input
+                  type="text"
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  placeholder="Digite o titulo personalizado..."
+                  className="w-full mt-1 px-3 py-2 bg-zinc-800 border border-amber-500/30 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-400"
+                />
+              )}
             </div>
-            {selectedTitle !== (video.chosen_title || video.title) && (
+
+            {/* Save button - show when title changed */}
+            {(isCustom ? customTitle !== (video.chosen_title || video.title) : selectedTitle !== (video.chosen_title || video.title)) && (
               <button
                 onClick={handleSaveTitle}
                 disabled={saving}
@@ -190,30 +221,46 @@ function VideoCard({ video, index, onUpdate }) {
           {/* === THUMBNAIL UPLOAD === */}
           <div className="bg-zinc-900/80 rounded-xl p-4 border border-zinc-700/40">
             <h4 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">
-              Thumbnail
+              Thumbnail - 3 Opcoes de Prompt
               <a href="https://labs.google/fx/tools/whisk" target="_blank" rel="noopener noreferrer"
                  className="ml-2 text-blue-400/70 hover:text-blue-300 normal-case font-normal text-[10px]">
                 Abrir Google Whisk
               </a>
             </h4>
 
-            {/* Thumbnail prompt for reference */}
+            {/* Descricao visual geral */}
             {video.thumbnail_prompt && (
               <div className="bg-zinc-800/60 rounded-lg p-3 mb-3">
-                <span className="text-[10px] text-zinc-500 uppercase">Descricao visual</span>
+                <span className="text-[10px] text-zinc-500 uppercase">Descricao visual da thumbnail</span>
                 <p className="text-sm text-zinc-300 mt-1">{video.thumbnail_prompt}</p>
               </div>
             )}
-            {video.thumbnail_whisk_refine && (
-              <div className="bg-zinc-800/60 rounded-lg p-3 mb-3 relative group">
-                <span className="text-[10px] text-zinc-500 uppercase">Prompt Whisk Refine (copiar)</span>
-                <p className="text-sm text-green-300 mt-1 font-mono">{video.thumbnail_whisk_refine}</p>
-                <button
-                  onClick={() => navigator.clipboard.writeText(video.thumbnail_whisk_refine)}
-                  className="absolute top-2 right-2 text-xs text-zinc-500 hover:text-zinc-300 bg-zinc-700 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  Copiar
-                </button>
+
+            {/* 3 Prompts em PT-BR para testar */}
+            {(video.thumbnail_prompts_ptbr?.length > 0 || video.thumbnail_whisk_refine) && (
+              <div className="space-y-2 mb-3">
+                <span className="text-[10px] text-zinc-500 uppercase font-semibold">Prompts para Whisk (copie e teste os 3)</span>
+                {(video.thumbnail_prompts_ptbr || [video.thumbnail_whisk_refine]).map((prompt, pi) => (
+                  <div key={pi} className="bg-zinc-800/60 rounded-lg p-3 relative group">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        pi === 0 ? 'bg-green-500/20 text-green-400' :
+                        pi === 1 ? 'bg-blue-500/20 text-blue-400' :
+                        'bg-purple-500/20 text-purple-400'
+                      }`}>
+                        OPCAO {pi + 1}
+                      </span>
+                    </div>
+                    <p className="text-sm text-green-300 font-mono pr-16">{prompt}</p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(prompt)}
+                      className="absolute top-2 right-2 text-xs text-zinc-500 hover:text-zinc-300 bg-zinc-700 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                ))}
+                <p className="text-[10px] text-zinc-600 italic">* Textos escritos na thumbnail devem ser sempre em portugues</p>
               </div>
             )}
 
