@@ -37,6 +37,7 @@ class Project(Base):
     status = Column(String(20), server_default="active", nullable=False)
     color = Column(String(7), server_default="#3b82f6", nullable=False)
     keywords = Column(ARRAY(String), server_default="{}")
+    credentials = Column(JSONB, server_default="{}", nullable=False)
     created_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

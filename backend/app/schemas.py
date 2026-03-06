@@ -136,7 +136,7 @@ class ProjectBase(BaseModel):
 
 
 class ProjectCreate(ProjectBase):
-    pass
+    credentials: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectUpdate(BaseModel):
@@ -145,6 +145,11 @@ class ProjectUpdate(BaseModel):
     status: Optional[str] = Field(None, max_length=20)
     color: Optional[str] = Field(None, max_length=7)
     keywords: Optional[list[str]] = None
+    credentials: Optional[dict[str, Any]] = None
+
+
+class ProjectCredentialsUpdate(BaseModel):
+    credentials: dict[str, Any] = Field(..., description="Full credentials object to set")
 
 
 class ProjectStats(BaseModel):
@@ -155,6 +160,7 @@ class ProjectStats(BaseModel):
 
 class ProjectResponse(ProjectBase):
     id: UUID
+    credentials: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     stats: ProjectStats = Field(default_factory=ProjectStats)

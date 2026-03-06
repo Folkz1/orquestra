@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Message, Project, Recording
-from app.schemas import ProjectCreate, ProjectResponse, ProjectStats, ProjectUpdate
+from app.schemas import ProjectCreate, ProjectCredentialsUpdate, ProjectResponse, ProjectStats, ProjectUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ async def _build_project_response(
         status=project.status,
         color=project.color,
         keywords=project.keywords or [],
+        credentials=project.credentials or {},
         created_at=project.created_at,
         updated_at=project.updated_at,
         stats=stats,
@@ -100,12 +101,29 @@ async def create_project(
         status=data.status,
         color=data.color,
         keywords=data.keywords,
+        credentials=data.credentials,
     )
     db.add(project)
     await db.flush()
     await db.refresh(project)
 
     logger.info("[PROJECTS] Created project: %s (%s)", project.name, project.id)
+
+    return await _build_project_response(db, project)
+
+
+@router.get("/{project_id}", response_model=ProjectResponse)
+async def get_project(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single project with stats and credentials."""
+    stmt = select(Project).where(Project.id == project_id)
+    result = await db.execute(stmt)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
     return await _build_project_response(db, project)
 
@@ -155,3 +173,53 @@ async def delete_project(
     await db.flush()
 
     logger.info("[PROJECTS] Deleted project %s (%s)", project.name, project_id)
+
+
+@router.put("/{project_id}/credentials", response_model=ProjectResponse)
+async def set_credentials(
+    project_id: UUID,
+    data: ProjectCredentialsUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace all credentials for a project."""
+    stmt = select(Project).where(Project.id == project_id)
+    result = await db.execute(stmt)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project.credentials = data.credentials
+    await db.flush()
+    await db.refresh(project)
+
+    logger.info("[PROJECTS] Updated credentials for %s (%s)", project.name, project_id)
+
+    return await _build_project_response(db, project)
+
+
+@router.patch("/{project_id}/credentials", response_model=ProjectResponse)
+async def merge_credentials(
+    project_id: UUID,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Merge (shallow) new keys into existing credentials. Useful for adding one provider at a time."""
+    stmt = select(Project).where(Project.id == project_id)
+    result = await db.execute(stmt)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    current = project.credentials or {}
+    current.update(data)
+    project.credentials = current
+    await db.flush()
+    await db.refresh(project)
+
+    logger.info(
+        "[PROJECTS] Merged credentials for %s: %s", project.name, list(data.keys())
+    )
+
+    return await _build_project_response(db, project)
