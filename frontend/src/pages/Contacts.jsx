@@ -120,7 +120,7 @@ export default function Contacts() {
             >
               <div>
                 <p className="font-medium text-zinc-100">
-                  {contact.name || contact.phone || 'Sem nome'}
+                  {contact.name || contact.push_name || contact.phone || 'Sem nome'}
                   {contact.ignored && (
                     <span className="ml-2 text-xs text-red-400 font-normal">ignorado</span>
                   )}

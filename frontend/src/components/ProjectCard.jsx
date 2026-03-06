@@ -58,9 +58,9 @@ export default function ProjectCard({ project, onEdit, onDelete }) {
 
       {/* Stats */}
       <div className="flex items-center gap-4 text-xs text-zinc-500 mb-3">
-        <span>💬 {project.total_messages ?? 0}</span>
-        <span>🎙️ {project.total_recordings ?? 0}</span>
-        <span>🕐 {timeAgo(project.last_activity || project.updated_at)}</span>
+        <span>💬 {project.stats?.total_messages ?? 0}</span>
+        <span>🎙️ {project.stats?.total_recordings ?? 0}</span>
+        <span>🕐 {timeAgo(project.stats?.last_activity || project.updated_at)}</span>
       </div>
 
       {/* Actions */}

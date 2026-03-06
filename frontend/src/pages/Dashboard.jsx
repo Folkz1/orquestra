@@ -152,7 +152,7 @@ export default function Dashboard() {
         >
           <option value="">Todos contatos</option>
           {contacts.map((c) => (
-            <option key={c.id} value={c.id}>{c.name || c.phone}</option>
+            <option key={c.id} value={c.id}>{c.name || c.push_name || c.phone}</option>
           ))}
         </select>
 
