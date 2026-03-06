@@ -219,44 +219,36 @@ function VideoDetail({ video, index, onUpdate, onClose }) {
 
         {/* ─── SECTION 3: Escolha do Titulo ─── */}
         <Section title="Escolha o Titulo">
-          <div className="space-y-2">
-            {allTitles.map((t, i) => (
-              <label key={i} className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-                !isCustom && selectedTitle === t
-                  ? 'bg-amber-500/10 border border-amber-500/30 shadow-sm shadow-amber-500/10'
-                  : 'bg-zinc-800/40 border border-transparent hover:border-zinc-700'
-              }`}>
-                <input type="radio" name={`title-${index}`} checked={!isCustom && selectedTitle === t}
-                  onChange={() => { setSelectedTitle(t); setIsCustom(false) }}
-                  className="mt-0.5 accent-amber-500" />
-                <div>
-                  <span className={`text-sm ${!isCustom && selectedTitle === t ? 'text-amber-200 font-semibold' : 'text-zinc-300'}`}>{t}</span>
-                  {i === 0 && <span className="ml-2 text-[10px] text-zinc-600">(principal)</span>}
-                </div>
-              </label>
-            ))}
+          {/* Campo de texto SEMPRE visivel */}
+          <div className="mb-3">
+            <label className="text-[10px] text-amber-400 uppercase font-semibold tracking-wider mb-1.5 block">Titulo final (edite como quiser)</label>
+            <input type="text" value={customTitle || selectedTitle}
+              onChange={(e) => { setCustomTitle(e.target.value); setIsCustom(true) }}
+              className="w-full px-4 py-3 bg-zinc-800 border border-amber-500/30 rounded-lg text-base text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-400 font-semibold" />
+          </div>
 
-            {/* Custom */}
-            <label className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-              isCustom ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-zinc-800/40 border border-transparent hover:border-zinc-700'
-            }`}>
-              <input type="radio" name={`title-${index}`} checked={isCustom}
-                onChange={() => { setIsCustom(true); if (!customTitle) setCustomTitle(selectedTitle) }}
-                className="mt-0.5 accent-amber-500" />
-              <span className={`text-sm ${isCustom ? 'text-amber-200 font-semibold' : 'text-zinc-400'}`}>Personalizado</span>
-            </label>
-            {isCustom && (
-              <input type="text" value={customTitle} onChange={(e) => setCustomTitle(e.target.value)}
-                placeholder="Digite seu titulo..."
-                className="w-full px-3 py-2.5 bg-zinc-800 border border-amber-500/30 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-400" />
-            )}
+          {/* Sugestoes - clicam e preenchem o campo acima */}
+          <label className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider mb-1.5 block">Ou escolha uma sugestao:</label>
+          <div className="space-y-1.5 mb-3">
+            {allTitles.map((t, i) => (
+              <button key={i}
+                onClick={() => { setSelectedTitle(t); setCustomTitle(t); setIsCustom(false) }}
+                className={`w-full text-left p-3 rounded-lg transition-all text-sm ${
+                  (isCustom ? customTitle : selectedTitle) === t
+                    ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200 font-semibold'
+                    : 'bg-zinc-800/40 border border-transparent hover:border-zinc-700 text-zinc-300'
+                }`}>
+                {t}
+                {i === 0 && <span className="ml-2 text-[10px] text-zinc-600">(principal)</span>}
+              </button>
+            ))}
           </div>
 
           <button onClick={handleSaveTitle} disabled={saving}
-            className={`mt-3 w-full py-2.5 text-sm font-semibold rounded-lg transition-all ${
-              saved ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+            className={`w-full py-3 text-sm font-bold rounded-lg transition-all ${
+              saved ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30'
             } disabled:opacity-50`}>
-            {saving ? 'Salvando...' : saved ? 'Titulo Salvo!' : 'Salvar Titulo Escolhido'}
+            {saving ? 'Salvando...' : saved ? 'Titulo Salvo!' : 'Salvar Titulo'}
           </button>
         </Section>
 

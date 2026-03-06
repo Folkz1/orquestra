@@ -17,9 +17,74 @@ const STATUS_CONFIG = {
   publicado: { label: 'Publicado', color: 'bg-purple-500/20 text-purple-400' },
 }
 
-/* ─── Full-screen detail for Diego (recording prep) ──────── */
+/* ─── Gerar descricao do YouTube automaticamente ─────────── */
+function gerarDescricaoYouTube(video) {
+  // Se ja tem descricao manual/gerada, usar ela
+  if (video.descricao_youtube) return video.descricao_youtube
+
+  const title = video.chosen_title || video.title
+  const keywords = video.keywords || []
+  const roteiro = video.roteiro || {}
+  const hookText = video.hook || ''
+
+  // Construir descricao automatica
+  let desc = ''
+
+  // Intro baseada no hook
+  if (hookText) {
+    desc += hookText.replace(/^["']|["']$/g, '') + '\n\n'
+  }
+
+  // O que voce vai aprender
+  const pontos = video.pontos_chave || []
+  if (pontos.length > 0) {
+    desc += 'Neste video voce vai ver:\n'
+    pontos.forEach(p => { desc += `- ${p}\n` })
+    desc += '\n'
+  } else if (Object.keys(roteiro).length > 0) {
+    desc += 'Neste video:\n'
+    Object.entries(roteiro).forEach(([k, v]) => {
+      desc += `- ${v.substring(0, 100)}${v.length > 100 ? '...' : ''}\n`
+    })
+    desc += '\n'
+  }
+
+  // Timestamps template
+  desc += '---\n'
+  desc += '00:00 - Intro\n'
+  if (roteiro['Problema'] || roteiro['1-Problema']) desc += '00:30 - O Problema\n'
+  if (roteiro['Execucao'] || roteiro['2-Execucao']) desc += '02:00 - Execucao na Pratica\n'
+  if (roteiro['CTA'] || roteiro['3-CTA']) desc += 'XX:XX - Resultado + Proximo Passo\n'
+  desc += '\n'
+
+  // CTA B2B
+  desc += '---\n'
+  desc += 'Sua empresa perde dinheiro com processos manuais?\n'
+  desc += 'Me chama no WhatsApp e vamos desenhar uma automacao pro seu negocio:\n'
+  desc += 'https://wa.me/555193448124\n\n'
+
+  // Links
+  desc += '---\n'
+  desc += 'Canal GuyFolkz: https://youtube.com/@guyfolkz\n'
+  if (video.referencias?.length > 0) {
+    video.referencias.forEach(ref => {
+      if (ref.url) desc += `${ref.title || 'Link'}: ${ref.url}\n`
+    })
+  }
+  desc += '\n'
+
+  // Hashtags
+  if (keywords.length > 0) {
+    desc += keywords.map(k => `#${k.replace(/\s+/g, '').toLowerCase()}`).join(' ') + '\n'
+  }
+
+  return desc
+}
+
+/* ─── Tela completa de producao para Diego ───────────────── */
 function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose }) {
   const [changing, setChanging] = useState(false)
+  const [copied, setCopied] = useState(null) // track which section was copied
   const status = video.status || 'ideia'
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.ideia
   const thumbnailUrl = video.thumbnail_file ? `${API_URL}/api/youtube/thumbnails/${video.thumbnail_file}` : null
@@ -30,16 +95,13 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
     'Media': 'text-yellow-400 bg-yellow-500/15',
   }
 
-  const nextStatus = {
-    ideia: 'thumbnail_pronta',
-    thumbnail_pronta: 'pronto_gravar',
-    pronto_gravar: 'publicado',
-  }
-  const nextLabel = {
-    ideia: 'Thumb Pronta',
-    thumbnail_pronta: 'Pronto p/ Gravar',
-    pronto_gravar: 'Publicado',
-  }
+  const nextStatus = { ideia: 'thumbnail_pronta', thumbnail_pronta: 'pronto_gravar', pronto_gravar: 'publicado' }
+  const nextLabel = { ideia: 'Thumb Pronta', thumbnail_pronta: 'Pronto p/ Gravar', pronto_gravar: 'Publicado' }
+
+  const descricaoYT = gerarDescricaoYouTube(video)
+  const tagsYT = video.tags_youtube?.length > 0
+    ? video.tags_youtube
+    : (video.keywords || []).map(k => k.toLowerCase())
 
   async function handleAdvance() {
     const next = nextStatus[status]
@@ -55,16 +117,22 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
     setChanging(false)
   }
 
+  function copyText(text, id) {
+    navigator.clipboard.writeText(text)
+    setCopied(id)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-zinc-950/98 overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Top bar */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 sticky top-0 bg-zinc-950/95 backdrop-blur-sm py-3 -mx-4 px-4 z-10 border-b border-zinc-800/50">
           <button onClick={onClose} className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
-            Voltar ao Kanban
+            Kanban
           </button>
           <div className="flex items-center gap-2">
             <span className={`text-[11px] px-2.5 py-1 rounded-full font-semibold ${cfg.color}`}>{cfg.label}</span>
@@ -77,7 +145,7 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
           </div>
         </div>
 
-        {/* Video header */}
+        {/* ═══ HEADER ═══ */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="text-xs font-bold text-zinc-500">VIDEO {index + 1}</span>
@@ -88,67 +156,112 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
             )}
             {video.formato && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400">{video.formato}</span>}
             {video.duracao && <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">{video.duracao}</span>}
-            {briefingDate && <span className="text-[10px] text-zinc-600">Briefing: {briefingDate}</span>}
+            {briefingDate && <span className="text-[10px] text-zinc-600">Briefing {briefingDate}</span>}
           </div>
-          <h1 className="text-2xl font-bold text-zinc-100 leading-tight">{video.chosen_title || video.title}</h1>
-
-          {/* Alternativas de titulo */}
+          <h1 className="text-2xl font-bold text-zinc-100 leading-tight mb-1">{video.chosen_title || video.title}</h1>
           {video.alternatives?.length > 0 && (
-            <div className="mt-2">
-              <span className="text-[10px] text-zinc-600">Alternativas: </span>
-              {video.alternatives.map((alt, i) => (
-                <span key={i} className="text-[10px] text-zinc-500">{i > 0 && ' | '}{alt}</span>
-              ))}
-            </div>
+            <p className="text-[11px] text-zinc-500">Alt: {video.alternatives.join(' | ')}</p>
           )}
-
-          {/* Quick stats */}
-          <div className="flex items-center gap-4 mt-3 text-[11px] text-zinc-500">
-            {video.potencial_views && <span>Potencial: <span className="text-zinc-300 font-medium">{video.potencial_views} views</span></span>}
-            {video.potencial_b2b && <span>B2B: <span className="text-zinc-300 font-medium">{video.potencial_b2b}</span></span>}
-            {video.duracao && <span>Duracao: <span className="text-zinc-300 font-medium">{video.duracao}</span></span>}
+          <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-500">
+            {video.potencial_views && <span>~{video.potencial_views} views</span>}
+            {video.potencial_b2b && <span>B2B: {video.potencial_b2b}</span>}
+            {video.duracao && <span>{video.duracao}</span>}
           </div>
         </div>
 
-        {/* Thumbnail preview */}
+        {/* Thumbnail */}
         {thumbnailUrl && (
           <div className="mb-6 rounded-xl overflow-hidden border border-zinc-800">
             <img src={thumbnailUrl} alt="Thumbnail" className="w-full" />
           </div>
         )}
 
-        {/* ─── SECTION: Hook (primeiros 30s) ─── */}
-        {video.hook && (
-          <Section title="Hook - Primeiros 30 Segundos" accent="amber">
-            <div className="bg-amber-500/5 rounded-lg p-4 border-l-3 border-amber-500/50">
-              <p className="text-sm text-amber-100 leading-relaxed italic">"{video.hook}"</p>
+        {/* ═══ 1. BRIEFING DO ASSUNTO ═══ */}
+        <Section title="Briefing do Assunto" subtitle="O que e, por que importa agora" accent="amber" num="1">
+          {video.contexto ? (
+            <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-line">{video.contexto}</p>
+          ) : (
+            <div className="space-y-2">
+              {video.hook && (
+                <div className="bg-amber-500/5 rounded-lg p-3 border-l-2 border-amber-500/40">
+                  <p className="text-sm text-zinc-200 leading-relaxed italic">"{video.hook}"</p>
+                </div>
+              )}
+              {video.roteiro && Object.values(video.roteiro)[0] && (
+                <p className="text-sm text-zinc-400 leading-relaxed">{Object.values(video.roteiro)[0]}</p>
+              )}
+              {!video.hook && !video.roteiro && (
+                <p className="text-xs text-zinc-600 italic">Contexto sera gerado no proximo briefing</p>
+              )}
             </div>
-            <p className="text-[10px] text-zinc-600 mt-2">Comece o video com essa paulada. NAO peca inscricao nos primeiros 30s.</p>
+          )}
+        </Section>
+
+        {/* ═══ 2. O QUE FALAR ═══ */}
+        <Section title="O Que Falar" subtitle="Pontos-chave para mencionar durante o video" accent="green" num="2">
+          {video.pontos_chave?.length > 0 ? (
+            <div className="space-y-2">
+              {video.pontos_chave.map((ponto, i) => (
+                <div key={i} className="flex gap-3 items-start">
+                  <span className="text-green-500 font-bold text-sm mt-0.5 flex-shrink-0">{i + 1}.</span>
+                  <p className="text-sm text-zinc-200 leading-relaxed">{ponto}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* Fallback: extrair do roteiro */
+            <div className="space-y-2">
+              {video.roteiro && Object.entries(video.roteiro).map(([key, val]) => (
+                <div key={key} className="flex gap-3 items-start">
+                  <span className="text-green-500 font-bold text-xs mt-1 flex-shrink-0 uppercase">{key.replace(/^\d+-?/, '')}</span>
+                  <p className="text-sm text-zinc-200 leading-relaxed">{val}</p>
+                </div>
+              ))}
+              {(!video.roteiro || Object.keys(video.roteiro).length === 0) && (
+                <p className="text-xs text-zinc-600 italic">Pontos-chave serao gerados no proximo briefing</p>
+              )}
+            </div>
+          )}
+        </Section>
+
+        {/* ═══ 3. HOOK (primeiros 30s) ═══ */}
+        {video.hook && (
+          <Section title="Hook - Primeiros 30 Segundos" subtitle="Comece o video com essa fala. NAO peca inscricao." accent="red" num="3">
+            <div className="bg-red-500/5 rounded-lg p-4 border border-red-500/15 relative">
+              <p className="text-base text-red-100 leading-relaxed font-medium pr-16">"{video.hook}"</p>
+              <CopyBtn text={video.hook} id="hook" copied={copied} onCopy={copyText} />
+            </div>
           </Section>
         )}
 
-        {/* ─── SECTION: Roteiro Completo (3 Atos) ─── */}
+        {/* ═══ 4. ROTEIRO - ESTRUTURA DO VIDEO ═══ */}
         {video.roteiro && Object.keys(video.roteiro).length > 0 && (
-          <Section title="Roteiro - Estrutura em Topicos" accent="green">
+          <Section title="Roteiro - Estrutura Completa" subtitle="Os 3 atos do video com tempos sugeridos" accent="blue" num="4">
             <div className="space-y-3">
               {Object.entries(video.roteiro).map(([key, val]) => {
-                const isProblema = key.toLowerCase().includes('problema') || key.includes('1')
-                const isExecucao = key.toLowerCase().includes('execu') || key.includes('2')
-                const isCTA = key.toLowerCase().includes('cta') || key.includes('3')
-                const num = isProblema ? '1' : isExecucao ? '2' : isCTA ? '3' : ''
-                const colorMap = { '1': 'text-red-400 bg-red-500/10 border-red-500/20', '2': 'text-blue-400 bg-blue-500/10 border-blue-500/20', '3': 'text-green-400 bg-green-500/10 border-green-500/20' }
-                const color = colorMap[num] || 'text-zinc-400 bg-zinc-800/60 border-zinc-700/40'
+                const isProblema = key.toLowerCase().includes('problema') || key.startsWith('1')
+                const isExecucao = key.toLowerCase().includes('execu') || key.startsWith('2')
+                const isCTA = key.toLowerCase().includes('cta') || key.startsWith('3')
+
+                const config = isProblema
+                  ? { num: '1', label: 'PROBLEMA', time: '0:00 - 0:30', icon: 'bg-red-500/15 text-red-400 border-red-500/20', desc: 'Fale pra camera. Contextualize a dor.' }
+                  : isExecucao
+                  ? { num: '2', label: 'EXECUCAO', time: '0:30 - 15:00+', icon: 'bg-blue-500/15 text-blue-400 border-blue-500/20', desc: 'Mostre a tela. Foque na logica de NEGOCIO.' }
+                  : isCTA
+                  ? { num: '3', label: 'CTA + RESULTADO', time: 'Final', icon: 'bg-green-500/15 text-green-400 border-green-500/20', desc: 'Volte pra camera. Mostre resultado e mande pro WhatsApp.' }
+                  : { num: '', label: key, time: '', icon: 'bg-zinc-700/50 text-zinc-400 border-zinc-700', desc: '' }
 
                 return (
-                  <div key={key} className={`rounded-lg p-4 border ${color}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      {num && <span className="text-lg font-bold leading-none">{num}</span>}
-                      <span className="text-xs font-bold uppercase tracking-wider">{key}</span>
-                      {isProblema && <span className="text-[9px] text-zinc-500">(30-60s)</span>}
-                      {isExecucao && <span className="text-[9px] text-zinc-500">(10-20min)</span>}
-                      {isCTA && <span className="text-[9px] text-zinc-500">(30-60s)</span>}
+                  <div key={key} className={`rounded-lg border ${config.icon} overflow-hidden`}>
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-inherit">
+                      {config.num && <span className="text-lg font-black">{config.num}</span>}
+                      <span className="text-xs font-bold uppercase tracking-wider">{config.label}</span>
+                      {config.time && <span className="text-[10px] opacity-60 ml-auto">{config.time}</span>}
                     </div>
-                    <p className="text-sm text-zinc-200 leading-relaxed">{val}</p>
+                    <div className="px-4 py-3">
+                      {config.desc && <p className="text-[10px] text-zinc-500 mb-2 italic">{config.desc}</p>}
+                      <p className="text-sm text-zinc-200 leading-relaxed">{val}</p>
+                    </div>
                   </div>
                 )
               })}
@@ -156,122 +269,153 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
           </Section>
         )}
 
-        {/* ─── SECTION: O que mostrar no video (links) ─── */}
-        <Section title="Links para Mostrar no Video" accent="blue">
+        {/* ═══ 5. DINAMICA DO VIDEO ═══ */}
+        {video.dinamica && (
+          <Section title="Dinamica de Producao" subtitle="Como conduzir: camera, tela, transicoes" accent="purple" num="5">
+            <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-line">{video.dinamica}</p>
+          </Section>
+        )}
+
+        {/* Dinamica fallback quando nao tem o campo */}
+        {!video.dinamica && video.roteiro && Object.keys(video.roteiro).length > 0 && (
+          <Section title="Dinamica Sugerida" subtitle="Baseado no roteiro 3 atos B2B" accent="purple" num="5">
+            <div className="space-y-2 text-sm text-zinc-300">
+              <div className="flex gap-2 items-start">
+                <span className="text-purple-400 flex-shrink-0">1.</span>
+                <p><strong className="text-zinc-100">Camera</strong> - Comece olhando pra camera. Fale o hook com energia. Crie tensao.</p>
+              </div>
+              <div className="flex gap-2 items-start">
+                <span className="text-purple-400 flex-shrink-0">2.</span>
+                <p><strong className="text-zinc-100">Tela</strong> - Mostre a ferramenta/codigo/fluxo. Foque na logica de negocio, nao em cada detalhe tecnico. Empresario precisa entender o VALOR.</p>
+              </div>
+              <div className="flex gap-2 items-start">
+                <span className="text-purple-400 flex-shrink-0">3.</span>
+                <p><strong className="text-zinc-100">Camera</strong> - Volte pra camera no final. Mostre o resultado. CTA pro WhatsApp. NAO peca inscricao.</p>
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* ═══ 6. REFERENCIAS E LINKS ═══ */}
+        <Section title="Referencias e Links" subtitle="Abrir ANTES de gravar para mostrar na tela" accent="cyan" num="6">
           <div className="space-y-2">
+            {/* Referencias do briefing */}
+            {video.referencias?.length > 0 && video.referencias.map((ref, i) => (
+              <LinkItem key={i} icon="📎" label={ref.title || ref.url} desc={ref.nota || ''} url={ref.url} />
+            ))}
+
+            {/* Links inteligentes baseados nas keywords */}
             {video.keywords?.length > 0 && (
-              <LinkItem icon="🔍" label="Pesquisar no Google" desc={video.keywords.slice(0, 3).join(', ')} url={`https://www.google.com/search?q=${encodeURIComponent(video.keywords[0])}`} />
+              <LinkItem icon="🔍" label={`Google: ${video.keywords[0]}`} desc="Pesquisar para mostrar na tela"
+                url={`https://www.google.com/search?q=${encodeURIComponent(video.keywords[0])}`} />
             )}
-            <LinkItem icon="📺" label="Canal GuyFolkz" desc="Mostrar outros videos relacionados" url="https://www.youtube.com/@guyfolkz" />
-            {video.keywords?.some(k => k.toLowerCase().includes('n8n')) && (
-              <LinkItem icon="🔧" label="N8N" desc="Mostrar workflows / documentacao" url="https://n8n.io" />
-            )}
-            {video.keywords?.some(k => k.toLowerCase().includes('claude') || k.toLowerCase().includes('anthropic')) && (
-              <LinkItem icon="🤖" label="Claude AI" desc="Demonstrar na tela" url="https://claude.ai" />
-            )}
-            {video.keywords?.some(k => k.toLowerCase().includes('chatgpt') || k.toLowerCase().includes('openai')) && (
-              <LinkItem icon="💬" label="ChatGPT" desc="Demonstrar na tela" url="https://chat.openai.com" />
-            )}
-            {video.keywords?.some(k => k.toLowerCase().includes('cursor')) && (
-              <LinkItem icon="⌨️" label="Cursor IDE" desc="Mostrar na tela" url="https://cursor.sh" />
-            )}
-            <LinkItem icon="📱" label="WhatsApp B2B (CTA)" desc="Link na descricao para clientes" url="https://wa.me/555193448124" />
+            <LinkItem icon="📺" label="Canal GuyFolkz" desc="Mostrar videos relacionados" url="https://www.youtube.com/@guyfolkz" />
+
+            {/* Links contextuais */}
+            {hasKeyword(video, 'n8n') && <LinkItem icon="🔧" label="N8N" desc="Mostrar workflow" url="https://n8n.io" />}
+            {hasKeyword(video, 'claude') && <LinkItem icon="🤖" label="Claude" desc="Demonstrar" url="https://claude.ai" />}
+            {hasKeyword(video, 'chatgpt', 'openai', 'gpt') && <LinkItem icon="💬" label="ChatGPT" desc="Demonstrar" url="https://chat.openai.com" />}
+            {hasKeyword(video, 'cursor') && <LinkItem icon="⌨️" label="Cursor" desc="Mostrar IDE" url="https://cursor.sh" />}
+            {hasKeyword(video, 'github', 'copilot') && <LinkItem icon="🐙" label="GitHub" desc="Mostrar repo/copilot" url="https://github.com" />}
+            {hasKeyword(video, 'make', 'zapier') && <LinkItem icon="⚡" label="Make/Zapier" desc="Comparar com N8N" url="https://www.make.com" />}
+            {hasKeyword(video, 'supabase') && <LinkItem icon="🗄️" label="Supabase" desc="Mostrar dashboard" url="https://supabase.com" />}
+            {hasKeyword(video, 'licitac') && <LinkItem icon="📜" label="PNCP" desc="Portal licitacoes" url="https://pncp.gov.br" />}
+
+            <LinkItem icon="📱" label="WhatsApp B2B" desc="CTA final - link da descricao" url="https://wa.me/555193448124" />
           </div>
-          <p className="text-[10px] text-zinc-600 mt-3 italic">Abra essas abas ANTES de gravar para mostrar durante o video.</p>
         </Section>
 
-        {/* ─── SECTION: Keywords e SEO ─── */}
+        {/* ═══ 7. KEYWORDS SEO ═══ */}
         {video.keywords?.length > 0 && (
-          <Section title="Keywords SEO - Descricao e Tags" accent="purple">
-            <div className="flex flex-wrap gap-1.5">
+          <Section title="Keywords SEO" subtitle="Para descricao, tags e hashtags" accent="zinc" num="7">
+            <div className="flex flex-wrap gap-1.5 mb-3">
               {video.keywords.map((kw, i) => (
-                <span key={i} className="text-xs bg-purple-500/10 text-purple-300 px-2.5 py-1 rounded-md border border-purple-500/15 cursor-pointer hover:bg-purple-500/20 transition-colors"
-                  onClick={() => navigator.clipboard.writeText(kw)}>
+                <span key={i} onClick={() => copyText(kw, `kw-${i}`)}
+                  className="text-xs bg-zinc-800 text-zinc-300 px-2.5 py-1 rounded-md border border-zinc-700/50 cursor-pointer hover:bg-zinc-700 hover:text-zinc-100 transition-colors">
                   {kw}
                 </span>
               ))}
             </div>
-            <button onClick={() => navigator.clipboard.writeText(video.keywords.join(', '))}
-              className="mt-3 text-[10px] text-purple-400 hover:text-purple-300 transition-colors">
-              Copiar todas as keywords
-            </button>
+            <div className="flex gap-3">
+              <button onClick={() => copyText(video.keywords.join(', '), 'all-kw')}
+                className={`text-[10px] px-3 py-1.5 rounded-lg transition-colors ${copied === 'all-kw' ? 'bg-green-500/15 text-green-400' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}>
+                {copied === 'all-kw' ? 'Copiado!' : 'Copiar keywords'}
+              </button>
+              <button onClick={() => copyText(tagsYT.join(', '), 'tags')}
+                className={`text-[10px] px-3 py-1.5 rounded-lg transition-colors ${copied === 'tags' ? 'bg-green-500/15 text-green-400' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}>
+                {copied === 'tags' ? 'Copiado!' : 'Copiar tags YouTube'}
+              </button>
+            </div>
           </Section>
         )}
 
-        {/* ─── SECTION: Thumbnail ─── */}
-        <Section title="Thumbnail" accent="cyan">
-          {thumbnailUrl ? (
-            <div className="mb-3">
-              <img src={thumbnailUrl} alt="Thumbnail" className="w-full max-w-md rounded-lg border border-zinc-700" />
-              <p className="text-[10px] text-green-400 mt-1.5 font-medium">Thumbnail pronta (enviada pela Andriely)</p>
+        {/* ═══ 8. DESCRICAO DO YOUTUBE (pronta) ═══ */}
+        <Section title="Descricao do YouTube" subtitle="Copiar e colar direto na publicacao" accent="red" num="8">
+          <div className="bg-zinc-800/80 rounded-lg p-4 border border-zinc-700/50 relative">
+            <pre className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{descricaoYT}</pre>
+            <CopyBtn text={descricaoYT} id="desc" copied={copied} onCopy={copyText} />
+          </div>
+        </Section>
+
+        {/* ═══ 9. TITULO (pronto) ═══ */}
+        <Section title="Titulo para Publicacao" subtitle="Copiar direto pro YouTube" accent="amber" num="9">
+          <div className="bg-zinc-800/80 rounded-lg p-4 border border-zinc-700/50 relative">
+            <p className="text-lg text-zinc-100 font-bold pr-16">{video.chosen_title || video.title}</p>
+            <CopyBtn text={video.chosen_title || video.title} id="title" copied={copied} onCopy={copyText} />
+          </div>
+          {video.alternatives?.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {video.alternatives.map((alt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-600">Alt {i + 1}:</span>
+                  <span className="text-xs text-zinc-400 cursor-pointer hover:text-zinc-200" onClick={() => copyText(alt, `alt-${i}`)}>
+                    {alt}
+                  </span>
+                  {copied === `alt-${i}` && <span className="text-[9px] text-green-400">copiado</span>}
+                </div>
+              ))}
             </div>
-          ) : (
-            <p className="text-sm text-zinc-500 mb-2">Andriely ainda nao enviou a thumbnail</p>
-          )}
-          {video.thumbnail_prompt && (
-            <div className="bg-zinc-800/60 rounded-lg p-3">
-              <label className="text-[10px] text-zinc-500 uppercase font-semibold">Descricao visual</label>
-              <p className="text-xs text-zinc-400 mt-1">{video.thumbnail_prompt}</p>
-            </div>
           )}
         </Section>
 
-        {/* ─── SECTION: Checklist pre-gravacao ─── */}
-        <Section title="Checklist Pre-Gravacao" accent="green">
-          <div className="space-y-2">
-            <CheckItem done={!!thumbnailUrl} label="Thumbnail pronta" />
-            <CheckItem done={!!(video.chosen_title)} label={`Titulo definido: "${video.chosen_title || video.title}"`} />
-            <CheckItem done={!!(video.hook)} label="Hook dos primeiros 30s definido" />
-            <CheckItem done={!!(video.roteiro && Object.keys(video.roteiro).length > 0)} label="Roteiro com estrutura 3 atos" />
-            <CheckItem done={!!(video.keywords?.length > 0)} label="Keywords SEO prontas" />
+        {/* ═══ 10. CHECKLIST ═══ */}
+        <Section title="Checklist" subtitle="Tudo pronto antes de gravar?" accent="green" num="10">
+          <div className="space-y-1.5">
+            <CheckItem done={!!thumbnailUrl} label="Thumbnail recebida da Andriely" />
+            <CheckItem done={!!(video.chosen_title)} label="Titulo final definido" />
+            <CheckItem done={!!(video.hook)} label="Hook dos primeiros 30s" />
+            <CheckItem done={!!(video.roteiro && Object.keys(video.roteiro).length > 0)} label="Roteiro 3 atos" />
+            <CheckItem done={!!(video.contexto || video.hook)} label="Briefing do assunto" />
+            <CheckItem done={!!(video.keywords?.length > 0)} label="Keywords SEO" />
+            <CheckItem done={true} label="CTA WhatsApp B2B" />
+            <CheckItem done={true} label="Descricao do YouTube gerada" />
           </div>
         </Section>
 
-        {/* ─── SECTION: CTA Padrao ─── */}
-        <Section title="CTA Final do Video" accent="amber">
-          <div className="bg-amber-500/5 rounded-lg p-4 border border-amber-500/15">
-            <p className="text-sm text-amber-100 leading-relaxed">
-              "Sua empresa esta perdendo dinheiro com processos manuais? Clica no link da descricao e me chama no WhatsApp para desenharmos uma automacao para o seu negocio."
-            </p>
+        {/* ═══ CTA PADRAO ═══ */}
+        <div className="bg-gradient-to-r from-amber-500/5 to-green-500/5 rounded-xl border border-amber-500/15 p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider">CTA Final (falar no video)</h3>
+            <CopyBtn text="Sua empresa esta perdendo dinheiro com processos manuais? Clica no link da descricao e me chama no WhatsApp para desenharmos uma automacao para o seu negocio." id="cta" copied={copied} onCopy={copyText} />
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-[10px] text-zinc-500">Link WA:</span>
-            <span className="text-[10px] text-green-400 font-mono">wa.me/555193448124</span>
-            <button onClick={() => navigator.clipboard.writeText('https://wa.me/555193448124')}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300 underline">copiar</button>
-          </div>
-        </Section>
-
-        {/* ─── SECTION: Formato e potencial ─── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {video.formato && (
-            <StatCard label="Formato" value={video.formato} />
-          )}
-          {video.duracao && (
-            <StatCard label="Duracao" value={video.duracao} />
-          )}
-          {video.potencial_views && (
-            <StatCard label="Potencial Views" value={video.potencial_views} />
-          )}
-          {video.potencial_b2b && (
-            <StatCard label="Potencial B2B" value={video.potencial_b2b} />
-          )}
+          <p className="text-sm text-amber-100 leading-relaxed italic">
+            "Sua empresa esta perdendo dinheiro com processos manuais? Clica no link da descricao e me chama no WhatsApp para desenharmos uma automacao para o seu negocio."
+          </p>
+          <p className="text-[10px] text-zinc-500 mt-2">wa.me/555193448124</p>
         </div>
 
-        {/* ─── Action buttons ─── */}
-        <div className="flex gap-3 mt-6">
-          {nextStatus[status] && (
-            <button onClick={handleAdvance} disabled={changing}
-              className="flex-1 py-3 bg-green-500/15 text-green-300 text-sm font-bold rounded-xl hover:bg-green-500/25 transition-colors disabled:opacity-50 border border-green-500/20">
-              {changing ? '...' : `Mover para: ${nextLabel[status]}`}
-            </button>
-          )}
-          {status === 'publicado' && (
-            <div className="flex-1 py-3 bg-purple-500/10 text-purple-400 text-sm font-semibold rounded-xl border border-purple-500/20 text-center">
-              Publicado
-            </div>
-          )}
-        </div>
+        {/* Action */}
+        {nextStatus[status] && (
+          <button onClick={handleAdvance} disabled={changing}
+            className="w-full py-3.5 bg-green-500/15 text-green-300 text-sm font-bold rounded-xl hover:bg-green-500/25 transition-colors disabled:opacity-50 border border-green-500/20 mb-4">
+            {changing ? '...' : `Mover para: ${nextLabel[status]}`}
+          </button>
+        )}
+        {status === 'publicado' && (
+          <div className="w-full py-3 bg-purple-500/10 text-purple-400 text-sm font-semibold rounded-xl border border-purple-500/20 text-center mb-4">
+            Publicado
+          </div>
+        )}
 
         <div className="h-12" />
       </div>
@@ -279,30 +423,44 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
   )
 }
 
-/* ─── Helper components ───────────────────────────────────── */
+/* ─── Helpers ─────────────────────────────────────────────── */
 
-function Section({ title, accent = 'zinc', children }) {
-  const accentColors = {
-    amber: 'border-amber-500/20',
-    green: 'border-green-500/20',
-    blue: 'border-blue-500/20',
-    purple: 'border-purple-500/20',
-    cyan: 'border-cyan-500/20',
-    zinc: 'border-zinc-800',
+function hasKeyword(video, ...terms) {
+  const all = (video.keywords || []).join(' ').toLowerCase() + ' ' + (video.title || '').toLowerCase()
+  return terms.some(t => all.includes(t.toLowerCase()))
+}
+
+function Section({ title, subtitle, accent = 'zinc', num, children }) {
+  const border = {
+    amber: 'border-amber-500/20', green: 'border-green-500/20', blue: 'border-blue-500/20',
+    purple: 'border-purple-500/20', cyan: 'border-cyan-500/20', red: 'border-red-500/20', zinc: 'border-zinc-800',
   }
-  const titleColors = {
-    amber: 'text-amber-400',
-    green: 'text-green-400',
-    blue: 'text-blue-400',
-    purple: 'text-purple-400',
-    cyan: 'text-cyan-400',
-    zinc: 'text-zinc-400',
+  const titleColor = {
+    amber: 'text-amber-400', green: 'text-green-400', blue: 'text-blue-400',
+    purple: 'text-purple-400', cyan: 'text-cyan-400', red: 'text-red-400', zinc: 'text-zinc-400',
   }
   return (
-    <div className={`bg-zinc-900/60 rounded-xl border ${accentColors[accent]} p-4 mb-4`}>
-      <h3 className={`text-xs font-semibold ${titleColors[accent]} uppercase tracking-wider mb-3`}>{title}</h3>
+    <div className={`bg-zinc-900/60 rounded-xl border ${border[accent]} p-4 mb-4`}>
+      <div className="flex items-center gap-2 mb-3">
+        {num && <span className={`text-[10px] ${titleColor[accent]} font-bold bg-zinc-800 w-5 h-5 rounded-full flex items-center justify-center`}>{num}</span>}
+        <div>
+          <h3 className={`text-xs font-semibold ${titleColor[accent]} uppercase tracking-wider`}>{title}</h3>
+          {subtitle && <p className="text-[10px] text-zinc-600">{subtitle}</p>}
+        </div>
+      </div>
       {children}
     </div>
+  )
+}
+
+function CopyBtn({ text, id, copied, onCopy }) {
+  return (
+    <button onClick={(e) => { e.stopPropagation(); onCopy(text, id) }}
+      className={`absolute top-3 right-3 text-[10px] px-2 py-1 rounded transition-colors ${
+        copied === id ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-600'
+      }`}>
+      {copied === id ? 'Copiado!' : 'Copiar'}
+    </button>
   )
 }
 
@@ -310,12 +468,12 @@ function LinkItem({ icon, label, desc, url }) {
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
       className="flex items-center gap-3 bg-zinc-800/60 rounded-lg p-3 hover:bg-zinc-800 transition-colors group">
-      <span className="text-lg">{icon}</span>
+      <span className="text-lg flex-shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-blue-400 font-medium group-hover:text-blue-300">{label}</p>
-        <p className="text-[10px] text-zinc-500 truncate">{desc}</p>
+        <p className="text-sm text-cyan-400 font-medium group-hover:text-cyan-300 truncate">{label}</p>
+        {desc && <p className="text-[10px] text-zinc-500 truncate">{desc}</p>}
       </div>
-      <svg className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
       </svg>
     </a>
@@ -324,15 +482,13 @@ function LinkItem({ icon, label, desc, url }) {
 
 function CheckItem({ done, label }) {
   return (
-    <div className={`flex items-center gap-2.5 p-2.5 rounded-lg ${done ? 'bg-green-500/5' : 'bg-zinc-800/40'}`}>
-      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-green-500/20' : 'bg-zinc-700/50'}`}>
+    <div className={`flex items-center gap-2.5 p-2 rounded-lg ${done ? 'bg-green-500/5' : 'bg-zinc-800/40'}`}>
+      <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-green-500/20' : 'bg-zinc-700/50'}`}>
         {done ? (
           <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
-        ) : (
-          <div className="w-2 h-2 rounded-full bg-zinc-600" />
-        )}
+        ) : <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />}
       </div>
       <span className={`text-xs ${done ? 'text-green-300' : 'text-zinc-500'}`}>{label}</span>
     </div>
@@ -361,17 +517,8 @@ function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
     'Media': 'bg-yellow-500/15 text-yellow-400',
   }
 
-  const nextStatus = {
-    ideia: 'thumbnail_pronta',
-    thumbnail_pronta: 'pronto_gravar',
-    pronto_gravar: 'publicado',
-  }
-
-  const nextLabel = {
-    ideia: 'Thumb Pronta',
-    thumbnail_pronta: 'Pronto p/ Gravar',
-    pronto_gravar: 'Publicado',
-  }
+  const nextStatus = { ideia: 'thumbnail_pronta', thumbnail_pronta: 'pronto_gravar', pronto_gravar: 'publicado' }
+  const nextLabel = { ideia: 'Thumb Pronta', thumbnail_pronta: 'Pronto p/ Gravar', pronto_gravar: 'Publicado' }
 
   async function handleAdvance(e) {
     e.stopPropagation()
@@ -406,17 +553,13 @@ function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
           {video.formato && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">{video.formato}</span>}
           {video.duracao && <span className="text-[9px] text-zinc-500">{video.duracao}</span>}
         </div>
-
         <h4 className="text-xs font-semibold text-zinc-100 leading-snug line-clamp-2 mb-1.5">
           {video.chosen_title || video.title}
         </h4>
-
         {video.potencial_views && (
           <p className="text-[9px] text-zinc-500 mb-2">~{video.potencial_views} views | B2B: {video.potencial_b2b}</p>
         )}
-
         <p className="text-[9px] text-zinc-600 mb-2">{briefingDate}</p>
-
         {nextStatus[status] && (
           <button onClick={handleAdvance} disabled={changing}
             className="w-full text-[10px] py-1.5 bg-zinc-700/50 text-zinc-300 rounded hover:bg-zinc-700 transition-colors disabled:opacity-50 font-medium">
@@ -433,17 +576,13 @@ function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
 export default function YouTubeKanban() {
   const [briefings, setBriefings] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeVideo, setActiveVideo] = useState(null) // { video, index, date } or null
+  const [activeVideo, setActiveVideo] = useState(null)
 
   useEffect(() => {
-    fetch(`${API_URL}/api/youtube/briefings?limit=10`, {
-      headers: { 'Authorization': `Bearer ${TOKEN()}` }
-    })
+    fetch(`${API_URL}/api/youtube/briefings/latest`)
       .then(res => res.json())
-      .then(async () => {
-        const latestRes = await fetch(`${API_URL}/api/youtube/briefings/latest`)
-        const latestData = await latestRes.json()
-        setBriefings(latestData.briefing ? [latestData.briefing] : [])
+      .then(data => {
+        setBriefings(data.briefing ? [data.briefing] : [])
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -456,13 +595,11 @@ export default function YouTubeKanban() {
       videos[videoIndex] = { ...videos[videoIndex], ...updatedVideo }
       return { ...b, videos }
     }))
-    // Also update activeVideo if open
     if (activeVideo && activeVideo.index === videoIndex) {
       setActiveVideo(prev => ({ ...prev, video: { ...prev.video, ...updatedVideo } }))
     }
   }
 
-  // Collect all videos with their briefing date and original index
   const allVideos = []
   briefings.forEach((b, bi) => {
     (b.videos || []).forEach((v, vi) => {
@@ -478,7 +615,6 @@ export default function YouTubeKanban() {
     )
   }
 
-  // Detail view
   if (activeVideo) {
     return (
       <VideoDetailDiego

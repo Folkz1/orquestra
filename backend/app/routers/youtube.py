@@ -45,6 +45,13 @@ class BriefingVideo(BaseModel):
     duracao: str = ""
     potencial_views: str = ""
     potencial_b2b: str = ""
+    # Campos de producao (tela do Diego)
+    contexto: str = ""  # briefing completo: o que e o assunto, por que importa agora
+    pontos_chave: list[str] = Field(default_factory=list)  # bullets do que mencionar
+    dinamica: str = ""  # como conduzir: camera, tela, transicoes
+    referencias: list[dict[str, str]] = Field(default_factory=list)  # [{title, url, nota}]
+    descricao_youtube: str = ""  # descricao pronta para copiar
+    tags_youtube: list[str] = Field(default_factory=list)  # tags formatadas
 
 
 class BriefingSave(BaseModel):
