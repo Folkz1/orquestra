@@ -1,14 +1,18 @@
 """
 Orquestra - YouTube Router
-Trend analysis and content brief generation for GuyFolkz channel.
+Trend analysis, content briefs, and channel analytics for GuyFolkz.
 """
 
 import logging
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models import MemoryEmbedding
 from app.schemas import YouTubeAnalyzeRequest, YouTubeAnalyzeResponse, YouTubeSendBriefRequest
 from app.services.youtube import analyze_channel_trends, generate_content_brief
 from app.services.whatsapp import send_content_brief_to_whatsapp
@@ -17,6 +21,153 @@ from app.services.memory import store_memory
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ─── Briefing Models ────────────────────────────────────────────────
+
+class BriefingVideo(BaseModel):
+    title: str
+    alternatives: list[str] = Field(default_factory=list)
+    hook: str = ""
+    thumbnail_prompt: str = ""
+    thumbnail_whisk_refine: str = ""
+    roteiro: dict[str, str] = Field(default_factory=dict)
+    keywords: list[str] = Field(default_factory=list)
+    urgencia: str = "Media"
+    formato: str = ""
+    duracao: str = ""
+    potencial_views: str = ""
+    potencial_b2b: str = ""
+
+
+class BriefingSave(BaseModel):
+    date: str
+    tipo: str = "noticias-ia"
+    calendario: str = ""
+    videos: list[BriefingVideo] = Field(default_factory=list)
+    tendencias: list[dict[str, Any]] = Field(default_factory=list)
+    metricas_canal: dict[str, Any] = Field(default_factory=dict)
+    insight_estrategico: str = ""
+    thumbnail_template: str = ""
+
+
+class AnalyticsSave(BaseModel):
+    date: str
+    subscribers: int = 0
+    total_views: int = 0
+    videos_count: int = 0
+    avg_views: int = 0
+    median_views: int = 0
+    max_views: int = 0
+    videos: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ─── Briefings (public) ────────────────────────────────────────────
+
+@router.post("/briefings")
+async def save_briefing(body: BriefingSave, db: AsyncSession = Depends(get_db)):
+    """Save a YouTube content briefing."""
+    import json
+    content_text = f"YouTube Briefing {body.date} ({body.tipo}): "
+    content_text += "; ".join(v.title for v in body.videos[:5])
+
+    mem = MemoryEmbedding(
+        source_type="youtube_briefing",
+        content=content_text,
+        summary=f"Briefing YouTube {body.date} - {len(body.videos)} videos",
+        metadata_={"briefing": body.model_dump()},
+        project_name="GuyFolkz",
+    )
+    db.add(mem)
+    await db.flush()
+    await db.refresh(mem)
+    logger.info("[YOUTUBE] Saved briefing %s with %d videos", body.date, len(body.videos))
+    return {"id": str(mem.id), "date": body.date, "videos": len(body.videos)}
+
+
+@router.get("/briefings/latest")
+async def get_latest_briefing(db: AsyncSession = Depends(get_db)):
+    """Get the latest YouTube briefing (PUBLIC - no auth required)."""
+    stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == "youtube_briefing")
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    mem = result.scalar_one_or_none()
+    if not mem:
+        return {"briefing": None}
+    meta = mem.metadata_ or {}
+    return {"briefing": meta.get("briefing", {}), "created_at": str(mem.created_at)}
+
+
+@router.get("/briefings")
+async def list_briefings(
+    limit: int = Query(10, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all YouTube briefings."""
+    stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == "youtube_briefing")
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "date": (r.metadata_ or {}).get("briefing", {}).get("date", ""),
+            "tipo": (r.metadata_ or {}).get("briefing", {}).get("tipo", ""),
+            "videos_count": len((r.metadata_ or {}).get("briefing", {}).get("videos", [])),
+            "summary": r.summary,
+            "created_at": str(r.created_at),
+        }
+        for r in rows
+    ]
+
+
+# ─── Analytics ──────────────────────────────────────────────────────
+
+@router.post("/analytics")
+async def save_analytics(body: AnalyticsSave, db: AsyncSession = Depends(get_db)):
+    """Save a YouTube channel analytics snapshot."""
+    content_text = f"YouTube Analytics {body.date}: {body.subscribers} subs, {body.avg_views} avg views, {body.videos_count} videos"
+
+    mem = MemoryEmbedding(
+        source_type="youtube_analytics",
+        content=content_text,
+        summary=f"Analytics {body.date} - {body.subscribers} inscritos, {body.avg_views} media views",
+        metadata_={"analytics": body.model_dump()},
+        project_name="GuyFolkz",
+    )
+    db.add(mem)
+    await db.flush()
+    await db.refresh(mem)
+    logger.info("[YOUTUBE] Saved analytics %s: %d subs, %d avg views", body.date, body.subscribers, body.avg_views)
+    return {"id": str(mem.id), "date": body.date}
+
+
+@router.get("/analytics")
+async def get_analytics(
+    limit: int = Query(30, le=90),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get YouTube analytics history (for charts)."""
+    stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == "youtube_analytics")
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        (r.metadata_ or {}).get("analytics", {})
+        for r in rows
+    ]
 
 
 @router.post("/analyze", response_model=YouTubeAnalyzeResponse)

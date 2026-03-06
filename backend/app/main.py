@@ -92,6 +92,8 @@ EXEMPT_PATHS = {
     "/api/health",
     "/api/debug/db",
     "/api/webhook",
+    "/api/youtube/briefings/latest",
+    "/api/youtube/analytics",
     "/docs",
     "/redoc",
     "/openapi.json",
