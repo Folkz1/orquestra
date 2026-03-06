@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     EVOLUTION_API_URL: str = ""
     EVOLUTION_API_KEY: str = ""
     EVOLUTION_INSTANCE: str = ""
+    EVOLUTION_INSTANCES: str = ""  # JSON map: {"instance_name": "apikey", ...}
 
     # App
     APP_SECRET_KEY: str = ""

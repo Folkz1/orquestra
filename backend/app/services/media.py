@@ -15,6 +15,34 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _resolve_instance(raw_payload: dict | None) -> tuple[str, str]:
+    """
+    Resolve the correct Evolution instance name and API key from the webhook payload.
+    Falls back to the default EVOLUTION_INSTANCE/EVOLUTION_API_KEY if no match.
+    """
+    import json as _json
+
+    instance = settings.EVOLUTION_INSTANCE
+    apikey = settings.EVOLUTION_API_KEY
+
+    # Try to detect instance from webhook payload
+    payload_instance = None
+    if raw_payload:
+        payload_instance = raw_payload.get("instance")
+
+    if payload_instance and settings.EVOLUTION_INSTANCES:
+        try:
+            instances_map = _json.loads(settings.EVOLUTION_INSTANCES)
+            if payload_instance in instances_map:
+                instance = payload_instance
+                apikey = instances_map[payload_instance]
+                logger.info("[MEDIA] Using instance '%s' from payload", instance)
+        except _json.JSONDecodeError:
+            pass
+
+    return instance, apikey
+
+
 async def download_media_from_evolution(
     message_id: str, raw_payload: dict | None = None
 ) -> bytes:
@@ -25,6 +53,9 @@ async def download_media_from_evolution(
     1. POST /chat/getBase64FromMediaMessage/{instance} (v2 endpoint)
     2. GET /message/getBase64/{instance}/{id} (v1 fallback)
 
+    Automatically resolves the correct instance and API key from the webhook payload
+    when multiple instances are configured via EVOLUTION_INSTANCES.
+
     Args:
         message_id: The Evolution message ID to fetch media for.
         raw_payload: Original webhook payload (used to extract remoteJid/fromMe for v2).
@@ -32,8 +63,8 @@ async def download_media_from_evolution(
     Returns:
         Raw bytes of the media file.
     """
-    headers = {"apikey": settings.EVOLUTION_API_KEY}
-    instance = settings.EVOLUTION_INSTANCE
+    instance, apikey = _resolve_instance(raw_payload)
+    headers = {"apikey": apikey}
 
     # Try v2 endpoint: POST /chat/getBase64FromMediaMessage/{instance}
     if raw_payload:
