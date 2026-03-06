@@ -163,7 +163,7 @@ async def generate_daily_brief(
     total_recordings = len(recordings)
 
     daily_brief = DailyBrief(
-        date=date_from.date(),
+        date=date_to.date(),
         period_start=date_from,
         period_end=date_to,
         total_messages=total_messages,

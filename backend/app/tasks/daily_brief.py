@@ -39,6 +39,17 @@ async def scheduled_daily_brief():
             # Send via Telegram
             sent = await send_telegram_brief(brief_data)
             if sent:
+                # Update sent_telegram in DB
+                from sqlalchemy import select as sa_select
+                from app.models import DailyBrief
+                brief_id = brief_data.get("id")
+                if brief_id:
+                    stmt = sa_select(DailyBrief).where(DailyBrief.id == brief_id)
+                    result = await db.execute(stmt)
+                    brief_record = result.scalar_one_or_none()
+                    if brief_record:
+                        brief_record.sent_telegram = True
+                        await db.commit()
                 logger.info("[DAILY_BRIEF] Telegram notification sent")
             else:
                 logger.warning("[DAILY_BRIEF] Telegram notification not sent")
