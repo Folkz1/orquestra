@@ -33,6 +33,7 @@ def _build_response(task: ProjectTask, project: Project | None = None) -> TaskRe
         priority=task.priority,
         source=task.source,
         assigned_to=task.assigned_to,
+        metadata_json=task.metadata_json or {},
         completed_at=task.completed_at,
         created_at=task.created_at,
         updated_at=task.updated_at,

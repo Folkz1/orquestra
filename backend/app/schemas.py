@@ -300,6 +300,7 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(backlog|in_progress|review|done)$")
     priority: Optional[str] = Field(None, pattern="^(high|medium|low)$")
     assigned_to: Optional[str] = Field(None, pattern="^(claude|diego)$")
+    metadata_json: Optional[dict[str, Any]] = None
 
 
 class TaskResponse(BaseModel):
@@ -313,6 +314,7 @@ class TaskResponse(BaseModel):
     priority: str
     source: str
     assigned_to: str
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
     completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
