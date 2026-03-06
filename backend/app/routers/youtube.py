@@ -188,17 +188,22 @@ async def update_video(
         except (ValueError, TypeError):
             pass
 
-    # Handle thumbnail upload
+    # Handle thumbnail upload - store as base64 in JSONB (persists across deploys)
     if thumbnail:
-        os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+        import base64
+        content = await thumbnail.read()
         ext = os.path.splitext(thumbnail.filename)[1] or ".png"
+        mime = "image/png" if ext == ".png" else "image/jpeg"
+        b64 = base64.b64encode(content).decode("utf-8")
+        video["thumbnail_data"] = f"data:{mime};base64,{b64}"
+        # Also save to disk as fallback
+        os.makedirs(THUMBNAILS_DIR, exist_ok=True)
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(THUMBNAILS_DIR, filename)
-        content = await thumbnail.read()
         with open(filepath, "wb") as f:
             f.write(content)
         video["thumbnail_file"] = filename
-        logger.info("[YOUTUBE] Thumbnail uploaded: %s (%d bytes)", filename, len(content))
+        logger.info("[YOUTUBE] Thumbnail uploaded: %s (%d bytes, stored in DB)", filename, len(content))
 
     videos[video_index] = video
     briefing["videos"] = videos
@@ -215,12 +220,37 @@ async def update_video(
 
 
 @router.get("/thumbnails/{filename}")
-async def serve_thumbnail(filename: str):
-    """Serve uploaded thumbnail images (PUBLIC)."""
+async def serve_thumbnail(filename: str, db: AsyncSession = Depends(get_db)):
+    """Serve uploaded thumbnail images (PUBLIC). Falls back to DB if file missing."""
     filepath = os.path.join(THUMBNAILS_DIR, filename)
-    if not os.path.exists(filepath):
-        return {"error": "Not found"}
-    return FileResponse(filepath)
+    if os.path.exists(filepath):
+        return FileResponse(filepath)
+
+    # Fallback: reconstruct from base64 in DB (survives container restarts)
+    stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == "youtube_briefing")
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(5)
+    )
+    result = await db.execute(stmt)
+    for mem in result.scalars().all():
+        meta = mem.metadata_ or {}
+        for v in meta.get("briefing", {}).get("videos", []):
+            if v.get("thumbnail_file") == filename and v.get("thumbnail_data"):
+                import base64
+                data_str = v["thumbnail_data"]
+                # Parse data:mime;base64,DATA
+                b64_part = data_str.split(",", 1)[1] if "," in data_str else data_str
+                content = base64.b64decode(b64_part)
+                # Re-save to disk for next time
+                os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+                with open(filepath, "wb") as f:
+                    f.write(content)
+                logger.info("[YOUTUBE] Thumbnail restored from DB: %s", filename)
+                return FileResponse(filepath)
+
+    return {"error": "Not found"}
 
 
 # ─── Analytics ──────────────────────────────────────────────────────

@@ -3,6 +3,13 @@ import { useState, useEffect } from 'react'
 const API_URL = import.meta.env.VITE_API_URL || ''
 const TOKEN = () => localStorage.getItem('orquestra_token')
 
+// Thumbnail: prefer base64 from DB (persists), fallback to file endpoint
+function getThumbUrl(video) {
+  if (video.thumbnail_data) return video.thumbnail_data
+  if (video.thumbnail_file) return `${API_URL}/api/youtube/thumbnails/${video.thumbnail_file}`
+  return null
+}
+
 const COLUMNS = [
   { key: 'ideia', label: 'Ideias', color: 'border-zinc-600', bg: 'bg-zinc-800/30' },
   { key: 'thumbnail_pronta', label: 'Thumb Pronta', color: 'border-blue-500/40', bg: 'bg-blue-900/10' },
@@ -87,7 +94,7 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
   const [copied, setCopied] = useState(null) // track which section was copied
   const status = video.status || 'ideia'
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.ideia
-  const thumbnailUrl = video.thumbnail_file ? `${API_URL}/api/youtube/thumbnails/${video.thumbnail_file}` : null
+  const thumbnailUrl = getThumbUrl(video)
 
   const urgenciaColors = {
     'ALTISSIMA': 'text-red-400 bg-red-500/15',
@@ -509,7 +516,7 @@ function StatCard({ label, value }) {
 function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
   const [changing, setChanging] = useState(false)
   const status = video.status || 'ideia'
-  const thumbnailUrl = video.thumbnail_file ? `${API_URL}/api/youtube/thumbnails/${video.thumbnail_file}` : null
+  const thumbnailUrl = getThumbUrl(video)
 
   const urgenciaColors = {
     'ALTISSIMA': 'bg-red-500/15 text-red-400',
