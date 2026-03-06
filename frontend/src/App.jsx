@@ -13,6 +13,7 @@ import Settings from './pages/Settings'
 import WarTasks from './pages/WarTasks'
 import Kanban from './pages/Kanban'
 import YouTubeBriefing from './pages/YouTubeBriefing'
+import YouTubeKanban from './pages/YouTubeKanban'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
@@ -33,6 +34,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/memory" element={<Memory />} />
         <Route path="/recordings" element={<Recordings />} />
         <Route path="/kanban" element={<Kanban />} />
+        <Route path="/youtube-kanban" element={<YouTubeKanban />} />
         <Route path="/war-tasks" element={<WarTasks />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
