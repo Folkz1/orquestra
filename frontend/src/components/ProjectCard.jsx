@@ -63,6 +63,17 @@ export default function ProjectCard({ project, onEdit, onDelete }) {
         <span>🕐 {timeAgo(project.stats?.last_activity || project.updated_at)}</span>
       </div>
 
+      {/* Credentials summary */}
+      {project.credentials && Object.keys(project.credentials).length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {Object.keys(project.credentials).map((provider) => (
+            <span key={provider} className="text-xs bg-zinc-800/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-700/50">
+              {provider}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex gap-2">
         <button

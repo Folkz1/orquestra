@@ -159,3 +159,39 @@ export function getNotionStatus() {
 export function getWarTasks() {
   return request('/api/notion/war-tasks');
 }
+
+// Tasks (Kanban)
+export function getTasks(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, value);
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/tasks${qs ? '?' + qs : ''}`);
+}
+
+export function createTask(data) {
+  return request('/api/tasks', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateTask(id, data) {
+  return request(`/api/tasks/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteTask(id) {
+  return request(`/api/tasks/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function getTaskStats() {
+  return request('/api/tasks/stats');
+}

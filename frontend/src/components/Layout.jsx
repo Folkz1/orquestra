@@ -6,6 +6,7 @@ const navItems = [
   { to: '/contacts', label: 'Contatos', icon: '👥' },
   { to: '/recordings', label: 'Gravacoes', icon: '🎧' },
   { to: '/memory', label: 'Memoria', icon: '🧠' },
+  { to: '/kanban', label: 'Kanban', icon: '📌' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
   { to: '/war-tasks', label: 'War Tasks', icon: '⚔️' },

@@ -52,6 +52,7 @@ class Project(Base):
     contacts = relationship("Contact", back_populates="project", lazy="selectin")
     messages = relationship("Message", back_populates="project", lazy="selectin")
     recordings = relationship("Recording", back_populates="project", lazy="selectin")
+    tasks = relationship("ProjectTask", back_populates="project", lazy="selectin")
 
     def __repr__(self):
         return f"<Project {self.name}>"
@@ -239,3 +240,41 @@ class DailyBrief(Base):
 
     def __repr__(self):
         return f"<DailyBrief {self.date}>"
+
+
+class ProjectTask(Base):
+    __tablename__ = "project_tasks"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), server_default="backlog", nullable=False)
+    priority = Column(String(10), server_default="medium", nullable=False)
+    source = Column(String(20), server_default="manual", nullable=False)
+    assigned_to = Column(String(20), server_default="claude", nullable=False)
+    metadata_json = Column(JSONB, server_default="{}", nullable=False)
+    completed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    project = relationship("Project", back_populates="tasks")
+
+    def __repr__(self):
+        return f"<ProjectTask {self.title[:30]}>"

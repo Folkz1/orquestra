@@ -11,6 +11,7 @@ import Memory from './pages/Memory'
 import Recordings from './pages/Recordings'
 import Settings from './pages/Settings'
 import WarTasks from './pages/WarTasks'
+import Kanban from './pages/Kanban'
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/recordings" element={<Recordings />} />
+          <Route path="/kanban" element={<Kanban />} />
           <Route path="/war-tasks" element={<WarTasks />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

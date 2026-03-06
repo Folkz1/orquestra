@@ -278,3 +278,43 @@ class WhatsAppSendRequest(BaseModel):
     phone: str = Field(..., description="Phone number with country code")
     message: str = Field(..., description="Message text to send")
     instance: Optional[str] = Field(None, description="Evolution API instance name")
+
+
+# ─── Task Schemas ────────────────────────────────────────────────────────
+
+
+class TaskCreate(BaseModel):
+    project_id: Optional[UUID] = None
+    title: str = Field(..., min_length=1, max_length=500)
+    description: Optional[str] = None
+    status: str = Field(default="backlog", pattern="^(backlog|in_progress|review|done)$")
+    priority: str = Field(default="medium", pattern="^(high|medium|low)$")
+    source: str = Field(default="manual", pattern="^(manual|backlog|auto)$")
+    assigned_to: str = Field(default="claude", pattern="^(claude|diego)$")
+
+
+class TaskUpdate(BaseModel):
+    project_id: Optional[UUID] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=500)
+    description: Optional[str] = None
+    status: Optional[str] = Field(None, pattern="^(backlog|in_progress|review|done)$")
+    priority: Optional[str] = Field(None, pattern="^(high|medium|low)$")
+    assigned_to: Optional[str] = Field(None, pattern="^(claude|diego)$")
+
+
+class TaskResponse(BaseModel):
+    id: UUID
+    project_id: Optional[UUID] = None
+    project_name: Optional[str] = None
+    project_color: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    status: str
+    priority: str
+    source: str
+    assigned_to: str
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
