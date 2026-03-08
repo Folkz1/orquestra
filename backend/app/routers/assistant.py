@@ -19,6 +19,7 @@ from app.schemas import (
     AssistantDraftResponse,
 )
 from app.services.assistant import generate_reply_draft, get_or_create_contact_by_phone, list_open_threads, send_draft
+from app.services.whatsapp import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ async def stale_watch(
     min_minutes: int = Query(30, ge=1, le=1440),
     limit: int = Query(30, ge=1, le=100),
     top: int = Query(3, ge=1, le=10),
+    notify_whatsapp: bool = Query(True, description="Send alert to OWNER_WHATSAPP when there are new alerts"),
     db: AsyncSession = Depends(get_db),
 ):
     """Return only NEW stale open threads (dedup by contact + last inbound timestamp)."""
@@ -105,13 +107,33 @@ async def stale_watch(
             })
         return data
 
-    return {
+    payload = {
         "status": "sem-alerta" if not alerts_sorted else "alerta",
         "total_stale": len(stale_sorted),
         "new_alerts": len(alerts_sorted),
         "top_new": _to_payload(alerts_sorted[:top]),
         "top_stale": _to_payload(stale_sorted[:top]),
     }
+
+    if notify_whatsapp and alerts_sorted:
+        owner_phone = (settings.OWNER_WHATSAPP or "").strip()
+        if owner_phone:
+            lines = [
+                "⚠️ Pendências >30min no WhatsApp",
+                f"Total atrasadas: {payload['total_stale']}",
+                f"Novos alertas: {payload['new_alerts']}",
+                "",
+            ]
+            for i, item in enumerate(payload["top_new"], 1):
+                lines.append(f"{i}) {item.get('name') or item.get('phone')} ({item.get('phone')})")
+                if item.get("preview"):
+                    lines.append(f"   {str(item['preview'])[:180]}")
+            try:
+                await send_whatsapp_message(owner_phone, "\n".join(lines)[:3900])
+            except Exception:
+                logger.exception("[ASSISTANT] Failed to send stale-watch WhatsApp alert")
+
+    return payload
 
 
 @router.post("/drafts/generate", response_model=AssistantDraftResponse)
