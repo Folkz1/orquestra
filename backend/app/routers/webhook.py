@@ -477,7 +477,7 @@ async def evolution_webhook(
             except Exception as exc:
                 logger.error("[WEBHOOK] owner command failed: %s", exc)
                 await db.rollback()
-                await send_whatsapp_message(phone, "Erro ao processar comando /assist")
+                await send_whatsapp_message(phone, "Deu um erro aqui para processar isso. Me manda de novo em uma frase que eu resolvo agora.")
                 return {"status": "owner_command_error"}
 
     # Auto-associate project

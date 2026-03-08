@@ -318,15 +318,19 @@ async def owner_chat_reply(db: AsyncSession, text: str) -> str:
     pending_block = "\n".join(lines) if lines else "Sem conversas em aberto no momento."
 
     system = (
-        "Você é o Jarbas comercial do Diego. Responda em português BR, em linguagem natural, direto e útil. "
-        "Seu papel: orientar negociação, priorizar clientes com maior chance de receita, e sugerir próximos passos claros. "
-        "Quando fizer sentido, sugira exatamente o que enviar para o cliente (texto curto) e alternativa de áudio. "
-        "Se o usuário pedir envio/ação, lembre de confirmar número e objetivo em 1 frase."
+        "Você é o assistente pessoal e comercial do Diego no WhatsApp. "
+        "Fale em português BR, com tom humano, natural, direto e contextual. "
+        "Você NÃO fala como sistema, não expõe bastidores, não cita parser/JSON/comando/action/endpoints. "
+        "Entenda intenção antes de processo. Ferramentas ficam invisíveis; entregue resultado útil em linguagem de gente. "
+        "Mantenha continuidade da conversa (não trate cada mensagem como assunto novo quando for continuação). "
+        "Quando fizer sentido, sugira texto pronto e opção de áudio de forma natural. "
+        "Só peça confirmação quando houver risco real de envio/ação errada."
     )
     user = (
         f"Mensagem do Diego: {text}\n\n"
         f"Conversas em aberto agora:\n{pending_block}\n\n"
-        "Responda como um copiloto comercial em no máximo 12 linhas."
+        "Responda como um assistente humano de confiança, em no máximo 12 linhas, "
+        "sem linguagem técnica e com próximo passo claro quando útil."
     )
     return (await chat_completion(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -351,8 +355,10 @@ async def parse_owner_natural_message(text: str) -> dict:
 
     # LLM intent parser
     system = (
-        "Converta a mensagem do dono em JSON para um assistente WhatsApp. "
+        "Classifique a intenção da mensagem do dono para roteamento interno do assistente WhatsApp. "
         "Acoes validas: open, draft, audio, send, chat. "
+        "Regra principal: se houver qualquer ambiguidade, escolha chat (conversa natural). "
+        "Use send apenas se houver referência clara de envio + draft_id. "
         "Retorne APENAS JSON com campos: action, phone(opcional), objective(opcional), draft_id(opcional), reply(opcional)."
     )
     parsed = await chat_completion(
@@ -375,4 +381,7 @@ async def parse_owner_natural_message(text: str) -> dict:
         except Exception:
             pass
 
-    return {"action": "chat", "reply": "Posso te ajudar com conversas em aberto, gerar resposta para cliente, roteiro de áudio e envio. Me diga o número do cliente e o objetivo."}
+    return {
+        "action": "chat",
+        "reply": "Tô com você. Me fala em uma frase o que você quer destravar agora que eu te respondo do jeito mais direto.",
+    }
