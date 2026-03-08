@@ -451,7 +451,15 @@ async def evolution_webhook(
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "send":
-                    draft = await db.get(AssistantDraft, cmd["draft_id"])
+                    draft_id = (cmd.get("draft_id") or "").strip()
+                    if not draft_id:
+                        await send_whatsapp_message(
+                            phone,
+                            "Para enviar, me passe o ID do rascunho. Ex.: /assist send <draft_id>",
+                        )
+                        return {"status": "owner_command"}
+
+                    draft = await db.get(AssistantDraft, draft_id)
                     if not draft:
                         await send_whatsapp_message(phone, "Draft nao encontrado.")
                         return {"status": "owner_command"}
