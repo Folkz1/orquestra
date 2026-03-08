@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     EVOLUTION_INSTANCE: str = ""
     EVOLUTION_INSTANCES: str = ""  # JSON map: {"instance_name": "apikey", ...}
 
+    # Assistant (owner-controlled WhatsApp copilot)
+    OWNER_WHATSAPP: str = ""  # e.g. 5551999998888
+    ASSISTANT_MODE: str = "approval"  # approval | off
+
     # App
     APP_SECRET_KEY: str = ""
     UPLOAD_DIR: str = "/app/uploads"

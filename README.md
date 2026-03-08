@@ -44,6 +44,16 @@ App: http://localhost (via nginx)
 
 See `.env.example` for all required variables.
 
+### WhatsApp Assistant (owner-controlled)
+
+A Orquestra agora suporta um modo de assistente para atendimento com rascunhos:
+
+- aprende seu estilo com mensagens anteriores (outgoing)
+- gera rascunho de resposta para clientes
+- envia só após aprovação (modo seguro)
+
+Documentação: `docs/WHATSAPP_ASSISTANT.md`
+
 ## API Endpoints
 
 | Method | Path | Description |

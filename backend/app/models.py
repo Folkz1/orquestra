@@ -278,3 +278,43 @@ class ProjectTask(Base):
 
     def __repr__(self):
         return f"<ProjectTask {self.title[:30]}>"
+
+
+class AssistantDraft(Base):
+    __tablename__ = "assistant_drafts"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    based_on_message_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    objective = Column(Text, nullable=True)
+    draft_text = Column(Text, nullable=False)
+    status = Column(String(20), server_default="generated", nullable=False)  # generated/sent/discarded
+    metadata_json = Column(JSONB, server_default="{}", nullable=False)
+    sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    contact = relationship("Contact", lazy="selectin")
+    based_on_message = relationship("Message", lazy="selectin")
+
+    def __repr__(self):
+        return f"<AssistantDraft {self.id} {self.status}>"

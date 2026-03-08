@@ -321,3 +321,27 @@ class TaskResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ─── Assistant Schemas ───────────────────────────────────────────────────
+
+class AssistantDraftGenerateRequest(BaseModel):
+    contact_id: Optional[UUID] = None
+    phone: Optional[str] = Field(None, description="Contact phone with country code")
+    objective: Optional[str] = Field(None, description="What this response should achieve")
+    send_now: bool = False
+
+
+class AssistantDraftResponse(BaseModel):
+    id: UUID
+    contact_id: UUID
+    based_on_message_id: Optional[UUID] = None
+    objective: Optional[str] = None
+    draft_text: str
+    status: str
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    sent_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

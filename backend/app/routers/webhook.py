@@ -12,9 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session, get_db
-from app.models import Contact, Message, Project
+from app.models import AssistantDraft, Contact, Message, Project
 from app.services.media import download_media_from_evolution, save_media
 from app.services.memory import store_memory
+from app.services.assistant import generate_reply_draft, parse_owner_command, _get_contact_by_phone, send_draft
+from app.services.whatsapp import send_whatsapp_message
+from app.config import settings
 from app.services.transcriber import describe_image, transcribe_audio
 
 logger = logging.getLogger(__name__)
@@ -361,6 +364,61 @@ async def evolution_webhook(
 
     # Upsert contact
     contact = await _upsert_contact(db, phone, push_name, group)
+
+    # Owner command mode (/assist ... sent from your own WhatsApp)
+    if from_me and simplified_type == "text" and content:
+        cmd = await parse_owner_command(content)
+        if cmd:
+            try:
+                if cmd["action"] == "help":
+                    help_txt = (
+                        "Assistente Orquestra\n"
+                        "Comandos:\n"
+                        "/assist draft <telefone> | <objetivo>\n"
+                        "/assist send <draft_id>"
+                    )
+                    if settings.OWNER_WHATSAPP:
+                        await send_whatsapp_message(settings.OWNER_WHATSAPP, help_txt)
+                    return {"status": "owner_command"}
+
+                if cmd["action"] == "draft":
+                    target = await _get_contact_by_phone(db, cmd["phone"])
+                    if not target:
+                        if settings.OWNER_WHATSAPP:
+                            await send_whatsapp_message(settings.OWNER_WHATSAPP, f"Contato nao encontrado: {cmd['phone']}")
+                        return {"status": "owner_command"}
+
+                    draft = await generate_reply_draft(db, target, cmd.get("objective"))
+                    await db.commit()
+
+                    preview = (
+                        f"Rascunho #{draft.id} para {target.name or target.push_name or target.phone}:\n\n"
+                        f"{draft.draft_text[:1200]}\n\n"
+                        f"Para enviar: /assist send {draft.id}"
+                    )
+                    if settings.OWNER_WHATSAPP:
+                        await send_whatsapp_message(settings.OWNER_WHATSAPP, preview)
+                    return {"status": "owner_command"}
+
+                if cmd["action"] == "send":
+                    draft = await db.get(AssistantDraft, cmd["draft_id"])
+                    if not draft:
+                        if settings.OWNER_WHATSAPP:
+                            await send_whatsapp_message(settings.OWNER_WHATSAPP, "Draft nao encontrado.")
+                        return {"status": "owner_command"}
+
+                    ok = await send_draft(db, draft)
+                    await db.commit()
+                    if settings.OWNER_WHATSAPP:
+                        txt = "Mensagem enviada." if ok else "Falha ao enviar mensagem."
+                        await send_whatsapp_message(settings.OWNER_WHATSAPP, txt)
+                    return {"status": "owner_command"}
+            except Exception as exc:
+                logger.error("[WEBHOOK] owner command failed: %s", exc)
+                await db.rollback()
+                if settings.OWNER_WHATSAPP:
+                    await send_whatsapp_message(settings.OWNER_WHATSAPP, "Erro ao processar comando /assist")
+                return {"status": "owner_command_error"}
 
     # Auto-associate project
     project_id = await _auto_associate_project(db, contact, content)
