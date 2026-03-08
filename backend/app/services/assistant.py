@@ -31,9 +31,8 @@ def is_owner_phone(phone: str) -> bool:
 
 
 def _assistant_model() -> str:
-    # Try GPT-5.4 first, then fallback to configured model.
-    base = settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART
-    return f"openai/gpt-5.4|{base}"
+    # Keep owner assistant on configured model (default: Grok) as requested.
+    return settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART
 
 
 async def _get_contact_by_phone(db: AsyncSession, phone: str) -> Optional[Contact]:
