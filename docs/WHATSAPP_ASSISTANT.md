@@ -40,7 +40,8 @@ Exemplos:
 - "monta um áudio firme pro cliente 5551999998888 fechar hoje"
 - "envia o draft 123e4567-..."
 
-Os comandos `/assist ...` continuam funcionando como fallback.
+Os comandos `/assist ...` continuam funcionando só como fallback técnico.
+Modo principal: conversa natural.
 
 Exemplo:
 

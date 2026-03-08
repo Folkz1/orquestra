@@ -386,9 +386,12 @@ async def evolution_webhook(
     )
     if owner_text_message:
 
-        cmd = await parse_owner_command(content)
-        if not cmd:
-            cmd = await parse_owner_natural_message(content)
+        # Natural language is the primary mode; /assist is only fallback.
+        cmd = await parse_owner_natural_message(content)
+        if not cmd or not cmd.get("action") or cmd.get("action") == "chat":
+            slash_cmd = await parse_owner_command(content)
+            if slash_cmd:
+                cmd = slash_cmd
 
         if cmd:
             try:
