@@ -29,13 +29,17 @@ ASSISTANT_MODE=approval
 - `GET /api/assistant/drafts?status=generated`
 - `POST /api/assistant/drafts/{id}/send`
 
-## Comandos WhatsApp (owner)
+## Conversa em linguagem natural (owner)
 
-- `/assist help`
-- `/assist open` (lista conversas de cliente em aberto)
-- `/assist draft <telefone> | <objetivo>`
-- `/assist audio <telefone> | <objetivo>` (gera roteiro curto para você gravar áudio firme)
-- `/assist send <draft_id>`
+Você pode falar normalmente com o bot no seu número owner (sem `/comando`).
+Exemplos:
+
+- "me mostra as conversas em aberto"
+- "gera resposta pro 5551999998888 pedindo confirmação da reunião"
+- "monta um áudio firme pro cliente 5551999998888 fechar hoje"
+- "envia o draft 123e4567-..."
+
+Os comandos `/assist ...` continuam funcionando como fallback.
 
 Exemplo:
 

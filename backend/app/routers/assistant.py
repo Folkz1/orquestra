@@ -15,7 +15,7 @@ from app.schemas import (
     AssistantDraftGenerateRequest,
     AssistantDraftResponse,
 )
-from app.services.assistant import generate_reply_draft, get_or_create_contact_by_phone, send_draft
+from app.services.assistant import generate_reply_draft, get_or_create_contact_by_phone, list_open_threads, send_draft
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,14 @@ async def list_drafts(
         stmt = stmt.where(AssistantDraft.status == status)
     rows = (await db.execute(stmt)).scalars().all()
     return [AssistantDraftResponse.model_validate(x) for x in rows]
+
+
+@router.get("/open-threads")
+async def open_threads(
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    return await list_open_threads(db, limit=limit)
 
 
 @router.post("/drafts/{draft_id}/send", response_model=AssistantDraftResponse)

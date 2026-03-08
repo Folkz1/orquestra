@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # Assistant (owner-controlled WhatsApp copilot)
     OWNER_WHATSAPP: str = ""  # e.g. 5551999998888
     ASSISTANT_MODE: str = "approval"  # approval | off
+    ASSISTANT_CHAT_MODEL: str = "x-ai/grok-4.1-fast"  # OpenRouter model for owner chat
 
     # App
     APP_SECRET_KEY: str = ""

@@ -147,6 +147,7 @@ async def generate_reply_draft(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
+        model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART,
         temperature=0.35,
         max_tokens=600,
     )
@@ -182,7 +183,7 @@ async def generate_voice_script(db: AsyncSession, contact: Contact, objective: s
     return (await chat_completion([
         {"role": "system", "content": system},
         {"role": "user", "content": user},
-    ], temperature=0.4, max_tokens=400)).strip()
+    ], model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART, temperature=0.4, max_tokens=400)).strip()
 
 
 async def list_open_threads(db: AsyncSession, limit: int = 10) -> list[dict]:
@@ -266,3 +267,45 @@ async def parse_owner_command(text: str) -> dict | None:
         phone, objective = (rest.split("|", 1) + [""])[:2]
         return {"action": "audio", "phone": normalize_phone(phone), "objective": objective.strip() or "Responder com firmeza e próximo passo."}
     return {"action": "help"}
+
+
+async def parse_owner_natural_message(text: str) -> dict:
+    raw = (text or "").strip()
+    low = raw.lower()
+
+    # Fast-path heuristics
+    if any(k in low for k in ["em aberto", "pendente", "quem eu nao respondi", "conversas abertas", "o que está rolando", "o que ta rolando"]):
+        return {"action": "open"}
+
+    if "áudio" in low or "audio" in low:
+        phone_match = re.search(r"\b55\d{10,11}\b", normalize_phone(raw))
+        phone = phone_match.group(0) if phone_match else ""
+        return {"action": "audio", "phone": phone, "objective": raw}
+
+    # LLM intent parser
+    system = (
+        "Converta a mensagem do dono em JSON para um assistente WhatsApp. "
+        "Acoes validas: open, draft, audio, send, chat. "
+        "Retorne APENAS JSON com campos: action, phone(opcional), objective(opcional), draft_id(opcional), reply(opcional)."
+    )
+    parsed = await chat_completion(
+        [{"role": "system", "content": system}, {"role": "user", "content": raw}],
+        model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART,
+        temperature=0.1,
+        max_tokens=220,
+    )
+
+    # best effort JSON parsing
+    m = re.search(r"\{.*\}", parsed, re.DOTALL)
+    if m:
+        import json
+        try:
+            data = json.loads(m.group(0))
+            if isinstance(data, dict) and data.get("action"):
+                if data.get("phone"):
+                    data["phone"] = normalize_phone(str(data["phone"]))
+                return data
+        except Exception:
+            pass
+
+    return {"action": "chat", "reply": "Posso te ajudar com conversas em aberto, gerar resposta para cliente, roteiro de áudio e envio. Me diga o número do cliente e o objetivo."}

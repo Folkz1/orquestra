@@ -22,6 +22,7 @@ from app.services.assistant import (
     is_owner_phone,
     list_open_threads,
     parse_owner_command,
+    parse_owner_natural_message,
     send_draft,
 )
 from app.services.whatsapp import send_whatsapp_message
@@ -373,14 +374,17 @@ async def evolution_webhook(
     # Upsert contact
     contact = await _upsert_contact(db, phone, push_name, group)
 
-    # Owner command mode (/assist ...). Hard-lock to OWNER_WHATSAPP.
+    # Owner assistant mode (natural language + /assist). Hard-lock to OWNER_WHATSAPP.
     if from_me and simplified_type == "text" and content:
-        cmd = await parse_owner_command(content)
-        if cmd:
-            if settings.OWNER_WHATSAPP and not is_owner_phone(phone):
-                logger.warning("[WEBHOOK] /assist ignored: non-owner phone=%s", phone)
-                return {"status": "ignored_non_owner_command"}
+        if settings.OWNER_WHATSAPP and not is_owner_phone(phone):
+            logger.warning("[WEBHOOK] owner message ignored: non-owner phone=%s", phone)
+            return {"status": "ignored_non_owner_message"}
 
+        cmd = await parse_owner_command(content)
+        if not cmd:
+            cmd = await parse_owner_natural_message(content)
+
+        if cmd:
             try:
                 if cmd["action"] == "help":
                     help_txt = (
@@ -408,6 +412,9 @@ async def evolution_webhook(
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "draft":
+                    if not cmd.get("phone"):
+                        await send_whatsapp_message(phone, "Me manda o número do cliente com DDI (ex: 5551999998888) para eu gerar o rascunho.")
+                        return {"status": "owner_command"}
                     target = await get_or_create_contact_by_phone(db, cmd["phone"])
                     draft = await generate_reply_draft(db, target, cmd.get("objective"))
                     await db.commit()
@@ -421,6 +428,9 @@ async def evolution_webhook(
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "audio":
+                    if not cmd.get("phone"):
+                        await send_whatsapp_message(phone, "Me manda o número do cliente com DDI para eu montar o roteiro de áudio.")
+                        return {"status": "owner_command"}
                     target = await get_or_create_contact_by_phone(db, cmd["phone"])
                     script = await generate_voice_script(db, target, cmd.get("objective") or "")
                     msg = (
@@ -441,6 +451,10 @@ async def evolution_webhook(
                     await db.commit()
                     txt = "Mensagem enviada ✅" if ok else "Falha ao enviar mensagem."
                     await send_whatsapp_message(phone, txt)
+                    return {"status": "owner_command"}
+
+                if cmd["action"] == "chat":
+                    await send_whatsapp_message(phone, cmd.get("reply") or "Fechado. Me pede em linguagem natural que eu te guio no atendimento.")
                     return {"status": "owner_command"}
             except Exception as exc:
                 logger.error("[WEBHOOK] owner command failed: %s", exc)
