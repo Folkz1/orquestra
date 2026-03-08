@@ -9,7 +9,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select, and_, text
+from sqlalchemy import func, select, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -116,6 +116,55 @@ async def list_messages(
         page_size=per_page,
         total_pages=total_pages,
     )
+
+
+@router.get("/conversation/{contact_id}/search", response_model=list[MessageResponse])
+async def search_conversation(
+    contact_id: UUID,
+    q: str = Query(..., min_length=1, description="Search text inside this contact conversation"),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Search messages inside a single contact conversation (full-text + fallback ILIKE)."""
+    stmt = (
+        select(Message)
+        .where(Message.contact_id == contact_id)
+        .where(
+            or_(
+                text(
+                    "to_tsvector('portuguese', coalesce(content, '') || ' ' || coalesce(transcription, '')) "
+                    "@@ plainto_tsquery('portuguese', :search)"
+                ).bindparams(search=q),
+                Message.content.ilike(f"%{q}%"),
+                Message.transcription.ilike(f"%{q}%"),
+            )
+        )
+        .order_by(Message.timestamp.desc())
+        .limit(limit)
+        .outerjoin(Contact, Message.contact_id == Contact.id)
+        .outerjoin(Project, Message.project_id == Project.id)
+        .add_columns(
+            Contact.name.label("contact_name"),
+            Contact.push_name.label("contact_push_name"),
+            Contact.phone.label("contact_phone"),
+            Project.name.label("project_name"),
+        )
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    rows.reverse()  # return ASC for readability
+
+    items = []
+    for row in rows:
+        msg = row[0]
+        msg_dict = MessageResponse.model_validate(msg).model_dump()
+        msg_dict["contact_name"] = row.contact_name or row.contact_push_name
+        msg_dict["contact_phone"] = row.contact_phone
+        msg_dict["project_name"] = row.project_name
+        items.append(MessageResponse(**msg_dict))
+
+    return items
 
 
 @router.get("/conversation/{contact_id}", response_model=list[MessageResponse])

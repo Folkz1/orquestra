@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import AssistantDraft, Contact, Message
 from app.services.llm import chat_completion
+from app.services.memory import search_memory
 from app.services.whatsapp import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,38 @@ async def _build_conversation_context(db: AsyncSession, contact_id: UUID, limit:
     return "\n".join(lines)
 
 
+async def _build_semantic_context(
+    db: AsyncSession,
+    contact_id: UUID,
+    objective: str,
+    conversation: str,
+    limit: int = 8,
+) -> tuple[str, int]:
+    # Hybrid retrieval query: objective + tail of recent conversation.
+    query = f"{objective}\n\n{conversation[-700:]}".strip()
+    memories = await search_memory(
+        db,
+        query=query,
+        limit=limit,
+        source_type="message",
+        contact_id=contact_id,
+    )
+
+    if not memories:
+        return "", 0
+
+    lines = ["MEMÓRIA SEMÂNTICA DO CONTATO (trechos relevantes):"]
+    for i, mem in enumerate(memories, 1):
+        sim = mem.get("similarity", 0.0)
+        text = (mem.get("summary") or mem.get("content") or "").strip()
+        if not text:
+            continue
+        lines.append(f"{i}. ({sim:.0%}) {text[:320]}")
+
+    block = "\n".join(lines)
+    return block, len(memories)
+
+
 async def generate_reply_draft(
     db: AsyncSession,
     contact: Contact,
@@ -125,6 +158,7 @@ async def generate_reply_draft(
 
     style_block = "\n".join(f"- {x}" for x in style_examples[:12]) or "- Seja direto e profissional."
     objective = (objective or "Responder a última demanda do cliente com clareza e próximo passo.").strip()
+    semantic_context, semantic_count = await _build_semantic_context(db, contact.id, objective, conversation)
 
     system_prompt = (
         "Você é um assistente de WhatsApp que escreve rascunhos para o dono da conta. "
@@ -141,6 +175,7 @@ async def generate_reply_draft(
         f"{style_block}\n\n"
         "CONVERSA RECENTE:\n"
         f"{conversation}\n\n"
+        f"{semantic_context}\n\n"
         "Escreva uma resposta curta (até ~6 linhas), com opção de fechamento comercial quando fizer sentido."
     )
 
@@ -161,7 +196,8 @@ async def generate_reply_draft(
         status="generated",
         metadata_json={
             "style_examples_count": len(style_examples),
-            "generated_from": "conversation+owner_style",
+            "semantic_memories_count": semantic_count,
+            "generated_from": "conversation+semantic_memory+owner_style",
         },
     )
     db.add(draft)

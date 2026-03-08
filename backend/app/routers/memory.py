@@ -4,6 +4,7 @@ Semantic search, stats, and manual ingestion for the vector memory system.
 """
 
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +23,17 @@ async def memory_search(
     q: str = Query(..., description="Search query"),
     limit: int = Query(10, ge=1, le=100, description="Max results"),
     source_type: str | None = Query(None, description="Filter by source type"),
+    contact_id: UUID | None = Query(None, description="Scope semantic search to a single contact/conversation"),
     db: AsyncSession = Depends(get_db),
 ):
     """Semantic search across all stored memories."""
-    results = await search_memory(db, q, limit=limit, source_type=source_type)
+    results = await search_memory(
+        db,
+        q,
+        limit=limit,
+        source_type=source_type,
+        contact_id=contact_id,
+    )
     return MemorySearchResponse(query=q, results=results, total=len(results))
 
 

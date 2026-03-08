@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 
 import httpx
-from sqlalchemy import select, func, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -141,6 +141,7 @@ async def search_memory(
     query: str,
     limit: int = 10,
     source_type: str | None = None,
+    contact_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """
     Semantic search in memory using cosine similarity.
@@ -150,6 +151,7 @@ async def search_memory(
         query: Search query text.
         limit: Maximum number of results.
         source_type: Optional filter by source type.
+        contact_id: Optional contact UUID to scope search to a single conversation.
 
     Returns:
         List of dicts with memory records and similarity scores.
@@ -158,7 +160,7 @@ async def search_memory(
     query_embedding = await generate_embedding(query)
     if not query_embedding:
         logger.warning("[MEMORY] Could not generate query embedding, falling back to text search")
-        return await _text_search_fallback(db, query, limit, source_type)
+        return await _text_search_fallback(db, query, limit, source_type, contact_id)
 
     # Build the cosine similarity query
     # cosine distance: embedding <=> query_embedding
@@ -168,20 +170,24 @@ async def search_memory(
     sql = text(
         """
         SELECT
-            id,
-            source_type,
-            source_id,
-            content,
-            summary,
-            contact_name,
-            project_name,
-            metadata,
-            created_at,
-            1 - (embedding <=> CAST(:embedding AS vector)) as similarity
-        FROM memory_embeddings
-        WHERE embedding IS NOT NULL
+            me.id,
+            me.source_type,
+            me.source_id,
+            me.content,
+            me.summary,
+            me.contact_name,
+            me.project_name,
+            me.metadata,
+            me.created_at,
+            1 - (me.embedding <=> CAST(:embedding AS vector)) as similarity
+        FROM memory_embeddings me
+        LEFT JOIN messages msg
+            ON me.source_type = 'message'
+            AND me.source_id = msg.id
+        WHERE me.embedding IS NOT NULL
         """
-        + (" AND source_type = :source_type" if source_type else "")
+        + (" AND me.source_type = :source_type" if source_type else "")
+        + (" AND msg.contact_id = :contact_id" if contact_id else "")
         + """
         ORDER BY similarity DESC
         LIMIT :limit
@@ -191,6 +197,8 @@ async def search_memory(
     params = {"embedding": embedding_str, "limit": limit}
     if source_type:
         params["source_type"] = source_type
+    if contact_id:
+        params["contact_id"] = str(contact_id)
 
     result = await db.execute(sql, params)
     rows = result.fetchall()
@@ -219,6 +227,7 @@ async def _text_search_fallback(
     query: str,
     limit: int,
     source_type: str | None = None,
+    contact_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Fallback text search when embeddings are not available."""
     search_pattern = f"%{query}%"
@@ -226,21 +235,25 @@ async def _text_search_fallback(
     sql = text(
         """
         SELECT
-            id,
-            source_type,
-            source_id,
-            content,
-            summary,
-            contact_name,
-            project_name,
-            metadata,
-            created_at
-        FROM memory_embeddings
-        WHERE content ILIKE :pattern
+            me.id,
+            me.source_type,
+            me.source_id,
+            me.content,
+            me.summary,
+            me.contact_name,
+            me.project_name,
+            me.metadata,
+            me.created_at
+        FROM memory_embeddings me
+        LEFT JOIN messages msg
+            ON me.source_type = 'message'
+            AND me.source_id = msg.id
+        WHERE me.content ILIKE :pattern
         """
-        + (" AND source_type = :source_type" if source_type else "")
+        + (" AND me.source_type = :source_type" if source_type else "")
+        + (" AND msg.contact_id = :contact_id" if contact_id else "")
         + """
-        ORDER BY created_at DESC
+        ORDER BY me.created_at DESC
         LIMIT :limit
         """
     )
@@ -248,6 +261,8 @@ async def _text_search_fallback(
     params = {"pattern": search_pattern, "limit": limit}
     if source_type:
         params["source_type"] = source_type
+    if contact_id:
+        params["contact_id"] = str(contact_id)
 
     result = await db.execute(sql, params)
     rows = result.fetchall()
@@ -274,6 +289,7 @@ async def get_context_for_brief(
     db: AsyncSession,
     topic: str,
     limit: int = 20,
+    contact_id: uuid.UUID | None = None,
 ) -> str:
     """
     Get relevant memories for a topic (used in briefing generation).
@@ -286,7 +302,7 @@ async def get_context_for_brief(
     Returns:
         Formatted string with relevant memory context.
     """
-    memories = await search_memory(db, topic, limit=limit)
+    memories = await search_memory(db, topic, limit=limit, contact_id=contact_id)
     if not memories:
         return ""
 
