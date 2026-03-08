@@ -376,8 +376,8 @@ async def evolution_webhook(
     contact = await _upsert_contact(db, phone, push_name, group)
 
     # Owner assistant mode (natural language + /assist). Hard-lock to OWNER_WHATSAPP.
-    if from_me and simplified_type == "text" and content:
-        if settings.OWNER_WHATSAPP and not is_owner_phone(phone):
+    if from_me and simplified_type == "text" and content and settings.OWNER_WHATSAPP:
+        if not is_owner_phone(phone):
             logger.warning("[WEBHOOK] owner message ignored: non-owner phone=%s", phone)
             return {"status": "ignored_non_owner_message"}
 
