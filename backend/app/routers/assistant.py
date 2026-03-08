@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -20,6 +23,95 @@ from app.services.assistant import generate_reply_draft, get_or_create_contact_b
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+STALE_STATE_PATH = Path("/tmp/orquestra_stale_30m_state.json")
+
+
+def _load_stale_state() -> dict:
+    if not STALE_STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(STALE_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_stale_state(state: dict) -> None:
+    try:
+        STALE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        STALE_STATE_PATH.write_text(json.dumps(state, ensure_ascii=False))
+    except Exception:
+        logger.exception("[ASSISTANT] Failed to persist stale-watch state")
+
+
+@router.get("/stale-watch")
+async def stale_watch(
+    min_minutes: int = Query(30, ge=1, le=1440),
+    limit: int = Query(30, ge=1, le=100),
+    top: int = Query(3, ge=1, le=10),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return only NEW stale open threads (dedup by contact + last inbound timestamp)."""
+    pending = await list_open_threads(db, limit=limit)
+    now = datetime.now(timezone.utc)
+
+    stale = []
+    for item in pending:
+        last_in = item.get("last_in")
+        if not last_in:
+            continue
+        minutes = (now - last_in).total_seconds() / 60
+        if minutes >= min_minutes:
+            stale.append(item)
+
+    stale_phones = {str(x.get("phone", "")) for x in stale if x.get("phone")}
+
+    state = _load_stale_state()
+    alerts = []
+    for item in stale:
+        phone = str(item.get("phone", ""))
+        last_in = item.get("last_in")
+        if not phone or not last_in:
+            continue
+
+        last_in_iso = last_in.isoformat()
+        prev = state.get(phone) or {}
+        if prev.get("last_in") != last_in_iso:
+            alerts.append(item)
+
+        state[phone] = {
+            "last_in": last_in_iso,
+            "last_alert_check_at": now.isoformat(),
+        }
+
+    # clean state for contacts no longer stale
+    for phone in list(state.keys()):
+        if phone not in stale_phones:
+            state.pop(phone, None)
+
+    _save_stale_state(state)
+
+    alerts_sorted = sorted(alerts, key=lambda x: x["last_in"], reverse=True)
+    stale_sorted = sorted(stale, key=lambda x: x["last_in"], reverse=True)
+
+    def _to_payload(rows: list[dict]) -> list[dict]:
+        data = []
+        for r in rows:
+            data.append({
+                "phone": r.get("phone"),
+                "name": r.get("name"),
+                "last_in": r.get("last_in").isoformat() if r.get("last_in") else None,
+                "preview": r.get("preview") or "",
+            })
+        return data
+
+    return {
+        "status": "sem-alerta" if not alerts_sorted else "alerta",
+        "total_stale": len(stale_sorted),
+        "new_alerts": len(alerts_sorted),
+        "top_new": _to_payload(alerts_sorted[:top]),
+        "top_stale": _to_payload(stale_sorted[:top]),
+    }
 
 
 @router.post("/drafts/generate", response_model=AssistantDraftResponse)
