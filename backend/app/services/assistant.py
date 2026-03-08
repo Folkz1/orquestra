@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -22,6 +23,12 @@ logger = logging.getLogger(__name__)
 
 def normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")
+
+
+def normalize_text(text: str) -> str:
+    text = (text or "").strip().lower()
+    text = "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text)
 
 
 def is_owner_phone(phone: str) -> bool:
@@ -319,6 +326,26 @@ async def get_recent_messages_for_target(
             .limit(1)
         )
         contact = (await db.execute(stmt)).scalar_one_or_none()
+
+    if contact is None:
+        # Accent-insensitive fallback (e.g., "Emilio" -> "Emílio")
+        n_target = normalize_text(target_raw)
+        c_stmt = (
+            select(Contact)
+            .where(Contact.is_group.is_(False))
+            .order_by(desc(Contact.updated_at))
+            .limit(500)
+        )
+        candidates = (await db.execute(c_stmt)).scalars().all()
+        for c in candidates:
+            blob = " ".join([
+                normalize_text(c.name or ""),
+                normalize_text(c.push_name or ""),
+                normalize_phone(c.phone or ""),
+            ])
+            if n_target and n_target in blob:
+                contact = c
+                break
 
     if contact is None:
         return None, []

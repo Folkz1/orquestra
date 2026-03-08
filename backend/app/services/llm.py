@@ -43,65 +43,55 @@ async def chat_completion(
     if not model:
         model = settings.MODEL_CHAT_SMART
 
-    model_candidates = [m.strip() for m in str(model).split("|") if m.strip()]
-    if not model_candidates:
-        model_candidates = [settings.MODEL_CHAT_SMART]
-
     url = f"{settings.OPENROUTER_BASE_URL}/chat/completions"
     headers = {
         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
     last_exc = None
-    for model_name in model_candidates:
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
+    for attempt in range(MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.post(url, headers=headers, json=payload)
-                    response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"].strip()
+            logger.info(
+                "[LLM] model=%s tokens=%s attempt=%d",
+                model,
+                data.get("usage", {}).get("total_tokens", "?"),
+                attempt + 1,
+            )
+            return content
 
-                data = response.json()
-                content = data["choices"][0]["message"]["content"].strip()
-                logger.info(
-                    "[LLM] model=%s tokens=%s attempt=%d",
-                    model_name,
-                    data.get("usage", {}).get("total_tokens", "?"),
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+            last_exc = exc
+            body = ""
+            if isinstance(exc, httpx.HTTPStatusError):
+                try:
+                    body = exc.response.text[:500]
+                except Exception:
+                    pass
+            if attempt < MAX_RETRIES - 1:
+                wait = INITIAL_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    "[LLM] Attempt %d failed (%s) body=%s, retrying in %.1fs...",
                     attempt + 1,
+                    str(exc)[:120],
+                    body,
+                    wait,
                 )
-                return content
-
-            except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout) as exc:
-                last_exc = exc
-                body = ""
-                if isinstance(exc, httpx.HTTPStatusError):
-                    try:
-                        body = exc.response.text[:500]
-                    except Exception:
-                        pass
-                if attempt < MAX_RETRIES - 1:
-                    wait = INITIAL_BACKOFF * (2 ** attempt)
-                    logger.warning(
-                        "[LLM] model=%s attempt %d failed (%s) body=%s, retrying in %.1fs...",
-                        model_name,
-                        attempt + 1,
-                        str(exc)[:120],
-                        body,
-                        wait,
-                    )
-                    await asyncio.sleep(wait)
-                else:
-                    logger.warning(
-                        "[LLM] model=%s exhausted retries. body=%s",
-                        model_name,
-                        body,
-                    )
+                await asyncio.sleep(wait)
+            else:
+                logger.error("[LLM] All %d attempts failed. Last body: %s", MAX_RETRIES, body)
 
     raise last_exc  # type: ignore[misc]
 
