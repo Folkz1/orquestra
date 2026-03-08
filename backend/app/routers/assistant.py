@@ -15,7 +15,7 @@ from app.schemas import (
     AssistantDraftGenerateRequest,
     AssistantDraftResponse,
 )
-from app.services.assistant import generate_reply_draft, send_draft
+from app.services.assistant import generate_reply_draft, get_or_create_contact_by_phone, send_draft
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,7 @@ async def generate_draft(
     if payload.contact_id:
         contact = await db.get(Contact, payload.contact_id)
     elif payload.phone:
-        stmt = select(Contact).where(Contact.phone == payload.phone)
-        contact = (await db.execute(stmt)).scalar_one_or_none()
+        contact = await get_or_create_contact_by_phone(db, payload.phone)
 
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")

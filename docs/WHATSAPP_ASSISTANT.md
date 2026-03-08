@@ -12,7 +12,8 @@ Este módulo adiciona um copiloto para atendimento via WhatsApp dentro da Orques
 
 - Não há auto-resposta para clientes no MVP.
 - Comandos do assistente são manuais (`/assist ...`).
-- Recomendado configurar `OWNER_WHATSAPP` para receber confirmações/preview.
+- Com `OWNER_WHATSAPP` configurado, existe hard-lock: somente esse número pode executar comandos admin.
+- Recomendado usar seu número pessoal como owner e manter o número de trabalho para operação.
 
 ## Variáveis novas
 
@@ -31,7 +32,9 @@ ASSISTANT_MODE=approval
 ## Comandos WhatsApp (owner)
 
 - `/assist help`
+- `/assist open` (lista conversas de cliente em aberto)
 - `/assist draft <telefone> | <objetivo>`
+- `/assist audio <telefone> | <objetivo>` (gera roteiro curto para você gravar áudio firme)
 - `/assist send <draft_id>`
 
 Exemplo:
