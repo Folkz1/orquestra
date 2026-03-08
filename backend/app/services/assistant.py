@@ -211,11 +211,14 @@ async def list_open_threads(db: AsyncSession, limit: int = 10) -> list[dict]:
             c["last_out"] = msg.timestamp
 
     pending = []
+    owner = normalize_phone(settings.OWNER_WHATSAPP or "")
     for data in by_contact.values():
         li = data["last_in"]
         lo = data["last_out"]
         if li and (lo is None or li > lo):
             contact = data["contact"]
+            if owner and normalize_phone(contact.phone or "") == owner:
+                continue
             pending.append({
                 "phone": contact.phone,
                 "name": contact.name or contact.push_name or contact.phone,
@@ -267,6 +270,32 @@ async def parse_owner_command(text: str) -> dict | None:
         phone, objective = (rest.split("|", 1) + [""])[:2]
         return {"action": "audio", "phone": normalize_phone(phone), "objective": objective.strip() or "Responder com firmeza e próximo passo."}
     return {"action": "help"}
+
+
+async def owner_chat_reply(db: AsyncSession, text: str) -> str:
+    pending = await list_open_threads(db, limit=8)
+    lines = []
+    for i, item in enumerate(pending, 1):
+        lines.append(f"{i}. {item['name']} ({item['phone']}): {item['preview']}")
+    pending_block = "\n".join(lines) if lines else "Sem conversas em aberto no momento."
+
+    system = (
+        "Você é o Jarbas comercial do Diego. Responda em português BR, em linguagem natural, direto e útil. "
+        "Seu papel: orientar negociação, priorizar clientes com maior chance de receita, e sugerir próximos passos claros. "
+        "Quando fizer sentido, sugira exatamente o que enviar para o cliente (texto curto) e alternativa de áudio. "
+        "Se o usuário pedir envio/ação, lembre de confirmar número e objetivo em 1 frase."
+    )
+    user = (
+        f"Mensagem do Diego: {text}\n\n"
+        f"Conversas em aberto agora:\n{pending_block}\n\n"
+        "Responda como um copiloto comercial em no máximo 12 linhas."
+    )
+    return (await chat_completion(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART,
+        temperature=0.35,
+        max_tokens=500,
+    )).strip()
 
 
 async def parse_owner_natural_message(text: str) -> dict:

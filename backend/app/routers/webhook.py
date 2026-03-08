@@ -23,6 +23,7 @@ from app.services.assistant import (
     list_open_threads,
     parse_owner_command,
     parse_owner_natural_message,
+    owner_chat_reply,
     send_draft,
 )
 from app.services.whatsapp import send_whatsapp_message
@@ -454,7 +455,8 @@ async def evolution_webhook(
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "chat":
-                    await send_whatsapp_message(phone, cmd.get("reply") or "Fechado. Me pede em linguagem natural que eu te guio no atendimento.")
+                    reply = cmd.get("reply") or await owner_chat_reply(db, content)
+                    await send_whatsapp_message(phone, reply[:3500])
                     return {"status": "owner_command"}
             except Exception as exc:
                 logger.error("[WEBHOOK] owner command failed: %s", exc)
