@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -28,6 +28,12 @@ def is_owner_phone(phone: str) -> bool:
     if not settings.OWNER_WHATSAPP:
         return False
     return normalize_phone(phone) == normalize_phone(settings.OWNER_WHATSAPP)
+
+
+def _assistant_model() -> str:
+    # Try GPT-5.4 first, then fallback to configured model.
+    base = settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART
+    return f"openai/gpt-5.4|{base}"
 
 
 async def _get_contact_by_phone(db: AsyncSession, phone: str) -> Optional[Contact]:
@@ -184,7 +190,7 @@ async def generate_reply_draft(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART,
+        model=_assistant_model(),
         temperature=0.35,
         max_tokens=600,
     )
@@ -221,7 +227,7 @@ async def generate_voice_script(db: AsyncSession, contact: Contact, objective: s
     return (await chat_completion([
         {"role": "system", "content": system},
         {"role": "user", "content": user},
-    ], model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART, temperature=0.4, max_tokens=400)).strip()
+    ], model=_assistant_model(), temperature=0.4, max_tokens=400)).strip()
 
 
 async def list_open_threads(db: AsyncSession, limit: int = 10) -> list[dict]:
@@ -283,6 +289,52 @@ async def send_draft(db: AsyncSession, draft: AssistantDraft) -> bool:
     return ok
 
 
+async def get_recent_messages_for_target(
+    db: AsyncSession,
+    target: str,
+    limit: int = 10,
+) -> tuple[Contact | None, list[Message]]:
+    target_raw = (target or "").strip()
+    if not target_raw:
+        return None, []
+
+    digits = normalize_phone(target_raw)
+    contact = None
+
+    if len(digits) >= 10:
+        stmt = select(Contact).where(Contact.phone == digits)
+        contact = (await db.execute(stmt)).scalar_one_or_none()
+
+    if contact is None:
+        like = f"%{target_raw}%"
+        stmt = (
+            select(Contact)
+            .where(
+                or_(
+                    Contact.name.ilike(like),
+                    Contact.push_name.ilike(like),
+                    Contact.phone.ilike(like),
+                )
+            )
+            .order_by(desc(Contact.updated_at))
+            .limit(1)
+        )
+        contact = (await db.execute(stmt)).scalar_one_or_none()
+
+    if contact is None:
+        return None, []
+
+    msg_stmt = (
+        select(Message)
+        .where(Message.contact_id == contact.id)
+        .order_by(desc(Message.timestamp))
+        .limit(max(1, min(limit, 30)))
+    )
+    msgs = (await db.execute(msg_stmt)).scalars().all()
+    msgs.reverse()
+    return contact, msgs
+
+
 async def parse_owner_command(text: str) -> dict | None:
     raw = (text or "").strip()
     if not raw.lower().startswith("/assist"):
@@ -334,7 +386,7 @@ async def owner_chat_reply(db: AsyncSession, text: str) -> str:
     )
     return (await chat_completion(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART,
+        model=_assistant_model(),
         temperature=0.35,
         max_tokens=500,
     )).strip()
@@ -353,17 +405,24 @@ async def parse_owner_natural_message(text: str) -> dict:
         phone = phone_match.group(0) if phone_match else ""
         return {"action": "audio", "phone": phone, "objective": raw}
 
+    hist_match = re.search(r"ultim(?:a|as|o|os)\s+(\d{1,2})\s+mens", low)
+    if hist_match:
+        n = int(hist_match.group(1))
+        target_match = re.search(r"d[oa]\s+(.+)$", raw, re.IGNORECASE)
+        target = (target_match.group(1).strip() if target_match else "")
+        return {"action": "history", "limit": max(1, min(n, 30)), "target": target}
+
     # LLM intent parser
     system = (
         "Classifique a intenção da mensagem do dono para roteamento interno do assistente WhatsApp. "
-        "Acoes validas: open, draft, audio, send, chat. "
+        "Acoes validas: open, draft, audio, send, history, chat. "
         "Regra principal: se houver qualquer ambiguidade, escolha chat (conversa natural). "
         "Use send apenas se houver referência clara de envio + draft_id. "
         "Retorne APENAS JSON com campos: action, phone(opcional), objective(opcional), draft_id(opcional), reply(opcional)."
     )
     parsed = await chat_completion(
         [{"role": "system", "content": system}, {"role": "user", "content": raw}],
-        model=settings.ASSISTANT_CHAT_MODEL or settings.MODEL_CHAT_SMART,
+        model=_assistant_model(),
         temperature=0.1,
         max_tokens=220,
     )

@@ -25,6 +25,7 @@ from app.services.assistant import (
     parse_owner_natural_message,
     owner_chat_reply,
     send_draft,
+    get_recent_messages_for_target,
 )
 from app.services.whatsapp import send_whatsapp_message
 from app.config import settings
@@ -468,6 +469,37 @@ async def evolution_webhook(
                     await db.commit()
                     txt = "Mensagem enviada ✅" if ok else "Falha ao enviar mensagem."
                     await send_whatsapp_message(phone, txt)
+                    return {"status": "owner_command"}
+
+                if cmd["action"] == "history":
+                    target = (cmd.get("target") or "").strip()
+                    limit = int(cmd.get("limit") or 10)
+                    if not target:
+                        await send_whatsapp_message(phone, "Me diz de quem você quer o histórico (nome ou número).")
+                        return {"status": "owner_command"}
+
+                    contact_target, msgs = await get_recent_messages_for_target(db, target, limit=limit)
+                    if not contact_target:
+                        await send_whatsapp_message(phone, f"Não encontrei esse contato: {target}.")
+                        return {"status": "owner_command"}
+
+                    if not msgs:
+                        await send_whatsapp_message(
+                            phone,
+                            f"Não achei mensagens recentes de {contact_target.name or contact_target.push_name or contact_target.phone}.",
+                        )
+                        return {"status": "owner_command"}
+
+                    lines = [f"Últimas {len(msgs)} mensagens de {contact_target.name or contact_target.push_name or contact_target.phone}:"]
+                    for m in msgs:
+                        who = "Cliente" if m.direction == "incoming" else "Você"
+                        text = (m.content or m.transcription or "").strip()
+                        if not text:
+                            text = f"[{m.message_type}]"
+                        ts = m.timestamp.strftime("%d/%m %H:%M") if m.timestamp else "--"
+                        lines.append(f"[{ts}] {who}: {text[:180]}")
+
+                    await send_whatsapp_message(phone, "\n".join(lines)[:3900])
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "chat":
