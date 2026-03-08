@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     OWNER_WHATSAPP: str = ""  # e.g. 5551999998888
     ASSISTANT_MODE: str = "approval"  # approval | off
     ASSISTANT_CHAT_MODEL: str = "x-ai/grok-4.1-fast"  # OpenRouter model for owner chat
+    ASSISTANT_CONTEXT_TURNS: int = 30  # number of conversation turns to use per client
 
     # App
     APP_SECRET_KEY: str = ""

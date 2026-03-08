@@ -21,6 +21,7 @@ Este módulo adiciona um copiloto para atendimento via WhatsApp dentro da Orques
 OWNER_WHATSAPP=5551999998888
 ASSISTANT_MODE=approval
 ASSISTANT_CHAT_MODEL=x-ai/grok-4.1-fast
+ASSISTANT_CONTEXT_TURNS=30
 ```
 
 ## Endpoints

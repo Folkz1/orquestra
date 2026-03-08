@@ -93,12 +93,14 @@ async def _build_style_examples(db: AsyncSession, contact_id: UUID, limit: int =
     return examples[:limit]
 
 
-async def _build_conversation_context(db: AsyncSession, contact_id: UUID, limit: int = 24) -> str:
+async def _build_conversation_context(db: AsyncSession, contact_id: UUID, limit: int | None = None) -> str:
+    # 30 turns ~= up to 60 messages (incoming+outgoing)
+    msg_limit = limit or max(10, settings.ASSISTANT_CONTEXT_TURNS * 2)
     stmt = (
         select(Message)
         .where(Message.contact_id == contact_id)
         .order_by(desc(Message.timestamp))
-        .limit(limit)
+        .limit(msg_limit)
     )
     rows = (await db.execute(stmt)).scalars().all()
     rows.reverse()
