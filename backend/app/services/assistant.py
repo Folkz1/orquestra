@@ -388,7 +388,31 @@ async def parse_owner_command(text: str) -> dict | None:
     return {"action": "help"}
 
 
-async def owner_chat_reply(db: AsyncSession, text: str) -> str:
+async def _build_owner_recent_context(db: AsyncSession, owner_contact_id: UUID | None, limit: int = 20) -> str:
+    if not owner_contact_id:
+        return ""
+
+    stmt = (
+        select(Message)
+        .where(Message.contact_id == owner_contact_id)
+        .order_by(desc(Message.timestamp))
+        .limit(max(1, min(limit, 50)))
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    rows.reverse()
+
+    lines: list[str] = []
+    for m in rows:
+        text = (m.content or m.transcription or "").strip()
+        if not text:
+            continue
+        who = "DIEGO" if m.direction == "incoming" else "ASSISTENTE"
+        lines.append(f"[{who}] {text}")
+
+    return "\n".join(lines)
+
+
+async def owner_chat_reply(db: AsyncSession, text: str, owner_contact_id: UUID | None = None) -> str:
     pending = await list_open_threads(db, limit=8)
     lines = []
     for i, item in enumerate(pending, 1):
@@ -404,8 +428,11 @@ async def owner_chat_reply(db: AsyncSession, text: str) -> str:
         "Quando fizer sentido, sugira texto pronto e opção de áudio de forma natural. "
         "Só peça confirmação quando houver risco real de envio/ação errada."
     )
+    owner_recent = await _build_owner_recent_context(db, owner_contact_id, limit=20)
+
     user = (
         f"Mensagem do Diego: {text}\n\n"
+        f"Contexto recente da conversa com Diego (últimas 20 mensagens):\n{owner_recent or 'Sem contexto recente.'}\n\n"
         f"Conversas em aberto agora:\n{pending_block}\n\n"
         "Responda como um assistente humano de confiança, em no máximo 12 linhas, "
         "sem linguagem técnica e com próximo passo claro quando útil."

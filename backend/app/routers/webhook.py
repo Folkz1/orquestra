@@ -503,7 +503,7 @@ async def evolution_webhook(
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "chat":
-                    reply = cmd.get("reply") or await owner_chat_reply(db, content)
+                    reply = cmd.get("reply") or await owner_chat_reply(db, content, contact.id)
                     await send_whatsapp_message(phone, reply[:3500])
                     return {"status": "owner_command"}
             except Exception as exc:
