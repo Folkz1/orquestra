@@ -365,11 +365,26 @@ class ProposalResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProposalCommentCreate(BaseModel):
+    author_name: str = Field(..., min_length=1, max_length=255)
+    content: str = Field(..., min_length=1)
+
+
+class ProposalCommentResponse(BaseModel):
+    id: UUID
+    author_name: str
+    content: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProposalPublicResponse(BaseModel):
     title: str
     client_name: str
     content: str
     total_value: Optional[str] = None
+    comments: list[ProposalCommentResponse] = Field(default_factory=list)
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

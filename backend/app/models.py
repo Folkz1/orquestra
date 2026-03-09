@@ -308,8 +308,35 @@ class Proposal(Base):
         nullable=False,
     )
 
+    comments = relationship("ProposalComment", back_populates="proposal", lazy="selectin", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<Proposal {self.slug}>"
+
+
+class ProposalComment(Base):
+    __tablename__ = "proposal_comments"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    proposal_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("proposals.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    author_name = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    proposal = relationship("Proposal", back_populates="comments")
+
+    def __repr__(self):
+        return f"<ProposalComment {self.author_name}>"
 
 
 class AssistantDraft(Base):

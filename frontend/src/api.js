@@ -234,3 +234,14 @@ export function getProposalPublic(slug) {
     return r.json();
   });
 }
+
+export function addProposalComment(slug, data) {
+  return fetch(`${BASE_URL}/api/proposals/public/${slug}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+}

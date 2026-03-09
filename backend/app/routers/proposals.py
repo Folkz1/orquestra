@@ -12,8 +12,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Proposal
-from app.schemas import ProposalCreate, ProposalPublicResponse, ProposalResponse, ProposalUpdate
+from app.models import Proposal, ProposalComment
+from app.schemas import (
+    ProposalCommentCreate,
+    ProposalCommentResponse,
+    ProposalCreate,
+    ProposalPublicResponse,
+    ProposalResponse,
+    ProposalUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +92,33 @@ async def get_proposal_public(
         logger.info("[PROPOSALS] Viewed: %s", proposal.slug)
 
     return proposal
+
+
+@router.post("/public/{slug}/comments", response_model=ProposalCommentResponse, status_code=201)
+async def add_comment(
+    slug: str,
+    data: ProposalCommentCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint - add a comment to a proposal."""
+    stmt = select(Proposal).where(Proposal.slug == slug)
+    result = await db.execute(stmt)
+    proposal = result.scalar_one_or_none()
+
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposta nao encontrada")
+
+    comment = ProposalComment(
+        proposal_id=proposal.id,
+        author_name=data.author_name,
+        content=data.content,
+    )
+    db.add(comment)
+    await db.flush()
+    await db.refresh(comment)
+
+    logger.info("[PROPOSALS] Comment on %s by %s", slug, data.author_name)
+    return comment
 
 
 @router.get("/{proposal_id}", response_model=ProposalResponse)
