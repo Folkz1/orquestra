@@ -4,7 +4,39 @@ import { getProposalPublic, addProposalComment } from '../api'
 
 function renderMarkdown(text) {
   if (!text) return ''
-  return text
+
+  // Pre-process: detect metadata blocks (consecutive lines with **Key:** Value)
+  // and join them with <br> instead of separate <p> tags
+  const lines = text.split('\n')
+  const processed = []
+  let metaBlock = []
+
+  const flushMeta = () => {
+    if (metaBlock.length > 0) {
+      processed.push('{{META_BLOCK}}' + metaBlock.join('{{BR}}') + '{{/META_BLOCK}}')
+      metaBlock = []
+    }
+  }
+
+  for (const line of lines) {
+    if (/^\*\*[^*]+:\*\*/.test(line.trim())) {
+      metaBlock.push(line)
+    } else {
+      flushMeta()
+      processed.push(line)
+    }
+  }
+  flushMeta()
+
+  return processed.join('\n')
+    // Meta blocks -> styled div with line breaks
+    .replace(/\{\{META_BLOCK\}\}([\s\S]*?)\{\{\/META_BLOCK\}\}/g, (_, content) => {
+      const html = content
+        .split('{{BR}}')
+        .map(l => l.replace(/\*\*(.+?)\*\*/g, '<strong class="text-zinc-400 font-medium">$1</strong>'))
+        .join('<br />')
+      return `<div class="text-zinc-300 text-sm leading-loose mb-4 bg-zinc-800/30 rounded-lg px-4 py-3">${html}</div>`
+    })
     .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-6 mb-2 text-white">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-8 mb-3 text-white border-b border-zinc-700 pb-2">$1</h2>')
     .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-6 mb-4 text-white">$1</h1>')
@@ -14,7 +46,7 @@ function renderMarkdown(text) {
     .replace(/^\|(.+)\|$/gm, (match) => {
       const cells = match.split('|').filter(c => c.trim())
       if (cells.every(c => /^[\s-]+$/.test(c))) return ''
-      const isHeader = cells.some(c => /Total|Valor|Servico|Custo/.test(c))
+      const isHeader = cells.some(c => /Total|Valor|Servi|Custo/.test(c))
       const tag = isHeader ? 'th' : 'td'
       const cls = isHeader
         ? 'px-4 py-2 text-left text-sm font-semibold text-zinc-300 bg-zinc-800/50'
@@ -23,7 +55,7 @@ function renderMarkdown(text) {
     })
     .replace(/^- (.+)$/gm, '<li class="text-zinc-300 ml-4 list-disc text-sm leading-relaxed">$1</li>')
     .replace(/^(\d+)\. (.+)$/gm, '<li class="text-zinc-300 ml-4 list-decimal text-sm leading-relaxed">$2</li>')
-    .replace(/^(?!<[hHluotd]|<li|<hr|<tr|<st)(.+)$/gm, '<p class="text-zinc-300 text-sm leading-relaxed mb-2">$1</p>')
+    .replace(/^(?!<[hHluotd]|<li|<hr|<tr|<st|<div)(.+)$/gm, '<p class="text-zinc-300 text-sm leading-relaxed mb-2">$1</p>')
     .replace(/((?:<tr>.*<\/tr>\s*)+)/g, '<table class="w-full border border-zinc-800 rounded-lg overflow-hidden my-4">$1</table>')
     .replace(/((?:<li class="text-zinc-300 ml-4 list-disc.*<\/li>\s*)+)/g, '<ul class="my-2 space-y-1">$1</ul>')
     .replace(/((?:<li class="text-zinc-300 ml-4 list-decimal.*<\/li>\s*)+)/g, '<ol class="my-2 space-y-1">$1</ol>')
@@ -205,13 +237,13 @@ ${html}
   const comments = proposal.comments || []
 
   return (
-    <div className="min-h-screen bg-zinc-950 py-8 px-4">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-screen bg-zinc-950 py-6 md:py-10 px-4">
+      <div className={`mx-auto ${comments.length > 0 ? 'max-w-5xl' : 'max-w-3xl'} transition-all`}>
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-4">
-            <div className="w-2 h-2 bg-blue-500 rounded-full" />
-            <span className="text-blue-400 text-xs font-medium">PROPOSTA COMERCIAL</span>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+            <span className="text-blue-400 text-xs font-medium tracking-wide">PROPOSTA COMERCIAL</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{proposal.title}</h1>
           <p className="text-zinc-400 text-sm">
@@ -226,8 +258,13 @@ ${html}
         </div>
 
         {/* Hint + Download */}
-        <div className="flex items-center justify-between mb-4 px-1">
-          <p className="text-zinc-600 text-xs">Selecione qualquer trecho para anotar</p>
+        <div className="flex items-center justify-between mb-4 px-1 max-w-3xl mx-auto">
+          <p className="text-zinc-600 text-xs flex items-center gap-1.5">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            Selecione qualquer trecho para anotar
+          </p>
           <button
             onClick={handleDownload}
             className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
@@ -240,11 +277,14 @@ ${html}
         </div>
 
         {/* Content + sidebar annotations */}
-        <div className="flex gap-4">
+        <div className="flex gap-6 items-start">
           {/* Main content */}
-          <div className="flex-1 min-w-0 relative" ref={contentRef}>
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 md:p-8">
-              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(proposal.content) }} />
+          <div className="flex-1 min-w-0 max-w-3xl relative" ref={contentRef}>
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 md:p-8">
+              <div
+                className="proposal-content"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(proposal.content) }}
+              />
             </div>
 
             {/* Floating "Anotar" button on text selection */}
@@ -262,16 +302,18 @@ ${html}
             )}
           </div>
 
-          {/* Sidebar: annotations */}
+          {/* Sidebar: annotations (desktop) */}
           {comments.length > 0 && (
-            <div className="hidden md:block w-64 shrink-0">
-              <div className="sticky top-8 space-y-3">
-                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">Anotacoes ({comments.length})</p>
+            <div className="hidden lg:block w-72 shrink-0">
+              <div className="sticky top-8 space-y-3 max-h-[calc(100vh-4rem)] overflow-y-auto pr-1">
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">
+                  Anotações ({comments.length})
+                </p>
                 {comments.map(c => (
                   <div key={c.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs">
                     {c.highlighted_text && (
                       <div className="border-l-2 border-blue-500/40 pl-2 mb-2 text-zinc-500 italic line-clamp-2">
-                        "{c.highlighted_text}"
+                        &ldquo;{c.highlighted_text}&rdquo;
                       </div>
                     )}
                     <p className="text-zinc-300 leading-relaxed">{c.content}</p>
@@ -288,13 +330,15 @@ ${html}
 
         {/* Mobile annotations (below content) */}
         {comments.length > 0 && (
-          <div className="md:hidden mt-6 space-y-2">
-            <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">Anotacoes ({comments.length})</p>
+          <div className="lg:hidden mt-6 space-y-2">
+            <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">
+              Anotações ({comments.length})
+            </p>
             {comments.map(c => (
               <div key={c.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs">
                 {c.highlighted_text && (
                   <div className="border-l-2 border-blue-500/40 pl-2 mb-2 text-zinc-500 italic line-clamp-2">
-                    "{c.highlighted_text}"
+                    &ldquo;{c.highlighted_text}&rdquo;
                   </div>
                 )}
                 <p className="text-zinc-300 leading-relaxed">{c.content}</p>
@@ -309,20 +353,20 @@ ${html}
 
         {/* Annotation form (floating modal) */}
         {annotating && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={cancelAnnotation}>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={cancelAnnotation}>
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-md p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="border-l-2 border-blue-500 pl-3 mb-4">
                 <p className="text-zinc-500 text-xs mb-1">Anotando sobre:</p>
-                <p className="text-zinc-300 text-sm italic line-clamp-3">"{annotating.text}"</p>
+                <p className="text-zinc-300 text-sm italic line-clamp-3">&ldquo;{annotating.text}&rdquo;</p>
               </div>
               <form onSubmit={submitAnnotation}>
                 <textarea
                   ref={inputRef}
-                  placeholder="Sua duvida ou observacao sobre este trecho..."
+                  placeholder="Sua dúvida ou observação sobre este trecho..."
                   value={annotationText}
                   onChange={e => setAnnotationText(e.target.value)}
                   rows={3}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 resize-none focus:outline-none focus:border-blue-500 mb-3"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 resize-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 mb-3"
                 />
                 <div className="flex gap-2 justify-end">
                   <button type="button" onClick={cancelAnnotation} className="text-zinc-500 hover:text-zinc-300 text-sm px-3 py-1.5 transition-colors">
@@ -343,8 +387,8 @@ ${html}
 
         {/* Footer */}
         <div className="text-center mt-10 text-zinc-600 text-xs">
-          <p>Diego - Guy Folkz &middot; Automacao & IA para Negocios</p>
-          <p>WhatsApp: +55 51 9344-8124</p>
+          <p>Diego - Guy Folkz &middot; Automação & IA para Negócios</p>
+          <p className="mt-0.5">WhatsApp: +55 51 9344-8124</p>
         </div>
       </div>
     </div>
