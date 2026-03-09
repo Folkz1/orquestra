@@ -86,7 +86,7 @@ async def _transcribe_via_openrouter(file_path: str) -> str:
         "temperature": 0.0,
     }
 
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    async with httpx.AsyncClient(timeout=600.0) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
 
@@ -96,9 +96,57 @@ async def _transcribe_via_openrouter(file_path: str) -> str:
     return text
 
 
+def _cleanup_temp_file(file_path: str):
+    """Remove a temporary file and its parent directory if empty."""
+    try:
+        os.remove(file_path)
+        parent = os.path.dirname(file_path)
+        if parent and "orquestra_" in parent:
+            os.rmdir(parent)
+    except OSError:
+        pass
+
+
+def _compress_audio(file_path: str) -> str:
+    """
+    Compress audio file to OGG Opus via ffmpeg to fit under Groq's 25MB limit.
+    Returns path to compressed file (or original if already small enough).
+    """
+    file_size = os.path.getsize(file_path)
+    if file_size <= MAX_FILE_SIZE_BYTES:
+        return file_path
+
+    tmp_dir = tempfile.mkdtemp(prefix="orquestra_compress_")
+    compressed_path = os.path.join(tmp_dir, "compressed.ogg")
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", file_path,
+                "-vn",
+                "-acodec", "libopus",
+                "-b:a", "48k",
+                compressed_path,
+            ],
+            capture_output=True, timeout=180,
+        )
+        if os.path.exists(compressed_path) and os.path.getsize(compressed_path) > 0:
+            new_size = os.path.getsize(compressed_path)
+            logger.info(
+                "[TRANSCRIBER] Compressed %.1fMB -> %.1fMB",
+                file_size / (1024 * 1024), new_size / (1024 * 1024),
+            )
+            return compressed_path
+    except Exception as exc:
+        logger.error("[TRANSCRIBER] ffmpeg compression failed: %s", exc)
+
+    return file_path
+
+
 def _split_audio_chunks(file_path: str, chunk_seconds: int = CHUNK_DURATION_SECONDS) -> list[str]:
     """
     Split audio file into chunks using ffmpeg.
+    Always compresses to OGG Opus to fit under Groq's 25MB limit.
     Returns list of chunk file paths.
     """
     tmp_dir = tempfile.mkdtemp(prefix="orquestra_chunks_")
@@ -116,13 +164,17 @@ def _split_audio_chunks(file_path: str, chunk_seconds: int = CHUNK_DURATION_SECO
         )
         duration = float(result.stdout.strip())
     except Exception as exc:
-        logger.warning("[TRANSCRIBER] ffprobe failed, processing as single file: %s", exc)
-        return [file_path]
+        logger.warning("[TRANSCRIBER] ffprobe failed: %s", exc)
+        # Can't determine duration - compress the whole file as single chunk
+        compressed = _compress_audio(file_path)
+        return [compressed]
 
     if duration <= chunk_seconds:
-        return [file_path]
+        # Short audio but possibly large file (e.g., 30MB WebM) - compress it
+        compressed = _compress_audio(file_path)
+        return [compressed]
 
-    # Split into chunks
+    # Split into chunks (always compresses via ffmpeg)
     chunk_paths = []
     chunk_index = 0
     start = 0
@@ -140,7 +192,7 @@ def _split_audio_chunks(file_path: str, chunk_seconds: int = CHUNK_DURATION_SECO
                     "-b:a", "48k",  # compress to fit under limit
                     chunk_path,
                 ],
-                capture_output=True, timeout=120,
+                capture_output=True, timeout=180,
             )
             if os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
                 chunk_paths.append(chunk_path)
@@ -188,29 +240,56 @@ async def transcribe_audio(file_path: str) -> str:
             return await _transcribe_single(file_path)
         return await _transcribe_via_openrouter(file_path)
 
-    # Large files: try OpenRouter first (handles files beyond Groq's 25MB limit)
+    # Large files: compress first, then try OpenRouter
     logger.info(
-        "[TRANSCRIBER] File %s is %.1fMB, trying OpenRouter...",
+        "[TRANSCRIBER] File %s is %.1fMB, compressing before transcription...",
         os.path.basename(file_path),
         file_size / (1024 * 1024),
     )
 
+    # Compress large files to reduce size for API calls
+    compressed_path = _compress_audio(file_path)
+    compressed_size = os.path.getsize(compressed_path)
+    use_compressed = compressed_path != file_path
+
     if has_openrouter:
         try:
-            return await _transcribe_via_openrouter(file_path)
+            result = await _transcribe_via_openrouter(compressed_path)
+            if use_compressed:
+                _cleanup_temp_file(compressed_path)
+            return result
         except Exception as exc:
             logger.warning(
                 "[TRANSCRIBER] OpenRouter failed for %.1fMB file: %s. Falling back to chunking...",
-                file_size / (1024 * 1024),
+                compressed_size / (1024 * 1024),
                 exc,
             )
 
     # Fallback: split into chunks and transcribe each via Groq
     if not has_groq:
+        if use_compressed:
+            _cleanup_temp_file(compressed_path)
         raise RuntimeError(
             "OpenRouter transcription failed and GROQ_API_KEY is not configured. "
             "Cannot transcribe large file."
         )
+
+    # If compressed file fits under Groq limit, use it directly
+    if use_compressed and compressed_size <= MAX_FILE_SIZE_BYTES:
+        logger.info(
+            "[TRANSCRIBER] Compressed file fits Groq limit (%.1fMB), sending directly...",
+            compressed_size / (1024 * 1024),
+        )
+        try:
+            result = await _transcribe_single(compressed_path)
+            _cleanup_temp_file(compressed_path)
+            return result
+        except Exception as exc:
+            logger.warning("[TRANSCRIBER] Groq failed on compressed file: %s", exc)
+
+    # Still too large even after compression - split into chunks
+    if use_compressed:
+        _cleanup_temp_file(compressed_path)
 
     logger.info(
         "[TRANSCRIBER] Splitting %s into chunks...",
