@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getContacts, updateContact, getProposals, getConversation, getContactSuggestions } from '../api'
+import { getContacts, updateContact, getProposals, getMessages, getContactSuggestions } from '../api'
 
 const STAGES = [
+  { id: 'lead', label: 'Leads', color: 'zinc', icon: '📋' },
   { id: 'onboarding', label: 'Onboarding', color: 'blue', icon: '🚀' },
   { id: 'building', label: 'Construindo', color: 'yellow', icon: '🔨' },
   { id: 'delivered', label: 'Entregue', color: 'emerald', icon: '✅' },
@@ -10,6 +11,7 @@ const STAGES = [
 ]
 
 const STAGE_COLORS = {
+  zinc: { bg: 'bg-zinc-500/10', border: 'border-zinc-500/30', text: 'text-zinc-400', dot: 'bg-zinc-500' },
   blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-500' },
   yellow: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400', dot: 'bg-yellow-500' },
   emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', dot: 'bg-emerald-500' },
@@ -158,8 +160,8 @@ function DetailPanel({ contact, proposals, onClose, onUpdate }) {
   const linkedProposals = proposals.filter(p => p.contact_id === contact.id?.toString() || p.contact_id === contact.id)
 
   useEffect(() => {
-    getConversation(contact.id).then(data => {
-      setMessages(Array.isArray(data) ? data.slice(0, 15) : (data?.items || []).slice(0, 15))
+    getMessages({ contact_id: contact.id, per_page: 20 }).then(data => {
+      setMessages(data?.items || [])
     }).catch(() => {})
   }, [contact.id])
 
@@ -399,11 +401,8 @@ export default function ClientSuccess() {
   useEffect(() => {
     Promise.all([getContacts(), getProposals()])
       .then(([c, p]) => {
-        // Only show non-group contacts with client-related pipeline stages
-        const clientStages = ['onboarding', 'building', 'delivered', 'maintenance', 'attention']
-        const clients = (Array.isArray(c) ? c : []).filter(ct =>
-          !ct.is_group && (clientStages.includes(ct.pipeline_stage) || ct.total_revenue || ct.monthly_revenue)
-        )
+        // Show all non-group contacts (leads + all pipeline stages)
+        const clients = (Array.isArray(c) ? c : []).filter(ct => !ct.is_group)
         setContacts(clients)
         setProposals(Array.isArray(p) ? p : [])
       })

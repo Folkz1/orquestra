@@ -191,6 +191,26 @@ async def update_proposal(
     for field, value in update_data.items():
         setattr(proposal, field, value)
 
+    # Auto-update contact pipeline_stage based on proposal status
+    if "status" in update_data and proposal.contact_id:
+        new_status = update_data["status"]
+        contact_stmt = select(Contact).where(Contact.id == proposal.contact_id)
+        contact_result = await db.execute(contact_stmt)
+        contact = contact_result.scalar_one_or_none()
+        if contact:
+            stage_map = {
+                "accepted": "onboarding",
+                "rejected": "lead",
+            }
+            new_stage = stage_map.get(new_status)
+            if new_stage and contact.pipeline_stage != new_stage:
+                old_stage = contact.pipeline_stage
+                contact.pipeline_stage = new_stage
+                logger.info(
+                    "[PROPOSALS] Auto-moved contact %s pipeline: %s -> %s (proposal %s = %s)",
+                    contact.id, old_stage, new_stage, proposal_id, new_status,
+                )
+
     await db.flush()
     await db.refresh(proposal)
 

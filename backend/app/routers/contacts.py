@@ -250,7 +250,7 @@ async def get_contact_suggestions(
     analytics_text = "\n".join(analytics_ctx) or "Sem dados de analytics."
 
     memory_text = "\n".join([
-        f"- [{r.source_type}] {(r.summary or r.content)[:200]}"
+        f"- [{r.get('source_type', '?')}] {(r.get('summary') or r.get('content', ''))[:200]}"
         for r in memory_results
     ]) or "Sem memorias relevantes."
 
