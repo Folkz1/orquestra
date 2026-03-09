@@ -264,3 +264,28 @@ async def get_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
 
     return RecordingResponse.model_validate(recording)
+
+
+@router.post("/{recording_id}/reprocess", response_model=RecordingResponse)
+async def reprocess_recording(
+    recording_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-process a recording (re-transcribe and re-summarize)."""
+    stmt = select(Recording).where(Recording.id == recording_id)
+    result = await db.execute(stmt)
+    recording = result.scalar_one_or_none()
+
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    recording.processed = False
+    recording.transcription = None
+    recording.summary = None
+    await db.commit()
+
+    background_tasks.add_task(process_recording, str(recording.id))
+
+    logger.info("[RECORDINGS] Reprocessing recording %s", recording_id)
+    return RecordingResponse.model_validate(recording)
