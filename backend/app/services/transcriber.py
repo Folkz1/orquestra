@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 import httpx
+import fitz  # pymupdf
 
 from app.config import settings
 
@@ -317,3 +318,86 @@ async def describe_image(image_bytes: bytes, mimetype: str = "image/jpeg") -> st
     description = data["choices"][0]["message"]["content"].strip()
     logger.info("[TRANSCRIBER] Described image -> %d chars", len(description))
     return description
+
+
+async def extract_document_text(file_path: str, mimetype: str | None = None) -> str:
+    """
+    Extract text from a document file (PDF).
+
+    Strategy:
+    - PDF: PyMuPDF text extraction. If scanned (<100 chars), render pages
+      as images and use vision model for OCR.
+    - Other types: Not supported yet, returns empty string.
+
+    Args:
+        file_path: Path to the document file on disk.
+        mimetype: MIME type of the document.
+
+    Returns:
+        Extracted text content.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    is_pdf = ext == ".pdf" or (mimetype and "pdf" in mimetype)
+
+    if not is_pdf:
+        logger.info("[TRANSCRIBER] Document type %s/%s not supported for text extraction", ext, mimetype)
+        return ""
+
+    full_text = ""
+
+    # Try direct text extraction with PyMuPDF
+    try:
+        doc = fitz.open(file_path)
+        num_pages = len(doc)
+        text_parts = []
+        for page in doc:
+            text_parts.append(page.get_text())
+        doc.close()
+
+        full_text = "\n".join(text_parts).strip()
+
+        if len(full_text) > 100:
+            logger.info(
+                "[TRANSCRIBER] PDF text extracted: %d chars from %d pages",
+                len(full_text), num_pages,
+            )
+            return full_text
+
+        logger.info(
+            "[TRANSCRIBER] PDF has little text (%d chars, %d pages), trying vision OCR...",
+            len(full_text), num_pages,
+        )
+    except Exception as exc:
+        logger.warning("[TRANSCRIBER] PyMuPDF text extraction failed: %s", exc)
+
+    # Fallback: render pages as images and use vision model (handles scanned PDFs)
+    if not settings.OPENROUTER_API_KEY:
+        logger.warning("[TRANSCRIBER] No OPENROUTER_API_KEY for vision OCR fallback")
+        return full_text
+
+    try:
+        doc = fitz.open(file_path)
+        descriptions = []
+        max_pages = min(len(doc), 10)  # Limit to 10 pages for cost/speed
+
+        for i in range(max_pages):
+            page = doc[i]
+            pix = page.get_pixmap(dpi=200)
+            img_bytes = pix.tobytes("png")
+
+            desc = await describe_image(img_bytes, "image/png")
+            if desc:
+                descriptions.append(f"[Pagina {i + 1}]\n{desc}")
+
+        doc.close()
+
+        result = "\n\n".join(descriptions)
+        logger.info(
+            "[TRANSCRIBER] PDF OCR via vision: %d pages -> %d chars",
+            max_pages, len(result),
+        )
+        return result
+
+    except Exception as exc:
+        logger.error("[TRANSCRIBER] Vision OCR failed for PDF: %s", exc)
+        return full_text

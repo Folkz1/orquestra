@@ -29,7 +29,7 @@ from app.services.assistant import (
 )
 from app.services.whatsapp import send_whatsapp_message
 from app.config import settings
-from app.services.transcriber import describe_image, transcribe_audio
+from app.services.transcriber import describe_image, extract_document_text, transcribe_audio
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +259,14 @@ async def process_media(
                 "sticker": ".webp",
             }
             ext = ext_map.get(msg_type, ".bin")
+
+            # For documents, use original filename extension when available
+            if msg_type == "document" and message.content:
+                import os as _os
+                original_ext = _os.path.splitext(message.content)[1]
+                if original_ext:
+                    ext = original_ext
+
             filename = f"{msg_type}_{message_id}{ext}"
 
             # Save to disk
@@ -296,8 +304,33 @@ async def process_media(
                 except Exception as exc:
                     logger.error("[WEBHOOK] Image description failed: %s", exc)
                     message.processed = False
+            elif msg_type == "document":
+                try:
+                    mimetype = message.media_mimetype
+                    transcription = await extract_document_text(file_path, mimetype)
+                    if transcription:
+                        message.transcription = transcription
+                        message.processed = True
+                        logger.info(
+                            "[WEBHOOK] Document transcribed: %s (%d chars)",
+                            message_id, len(transcription),
+                        )
+
+                        # Store transcription in vector memory
+                        await _store_message_memory(
+                            db, str(message.id), transcription, contact_name
+                        )
+                    else:
+                        message.processed = True
+                        logger.info(
+                            "[WEBHOOK] Document saved but no text extracted: %s", message_id
+                        )
+                except Exception as exc:
+                    logger.error("[WEBHOOK] Document transcription failed: %s", exc)
+                    message.processed = True  # File is saved, mark processed
+
             else:
-                # For video/document/sticker, just mark as processed after saving
+                # For video/sticker, just mark as processed after saving
                 message.processed = True
 
             await db.commit()
