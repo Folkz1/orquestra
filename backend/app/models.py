@@ -280,6 +280,38 @@ class ProjectTask(Base):
         return f"<ProjectTask {self.title[:30]}>"
 
 
+class Proposal(Base):
+    __tablename__ = "proposals"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    slug = Column(String(255), unique=True, nullable=False)
+    title = Column(String(500), nullable=False)
+    client_name = Column(String(255), nullable=False)
+    client_phone = Column(String(20), nullable=True)
+    content = Column(Text, nullable=False)
+    status = Column(String(20), server_default="draft", nullable=False)  # draft/sent/viewed/accepted/rejected
+    total_value = Column(String(50), nullable=True)
+    metadata_json = Column(JSONB, server_default="{}", nullable=False)
+    viewed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    accepted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self):
+        return f"<Proposal {self.slug}>"
+
+
 class AssistantDraft(Base):
     __tablename__ = "assistant_drafts"
 

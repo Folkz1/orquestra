@@ -8,6 +8,7 @@ const navItems = [
   { to: '/memory', label: 'Memoria', icon: '🧠' },
   { to: '/kanban', label: 'Kanban', icon: '📌' },
   { to: '/youtube-kanban', label: 'YouTube', icon: '📺' },
+  { to: '/proposals', label: 'Propostas', icon: '📄' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
   { to: '/war-tasks', label: 'War Tasks', icon: '⚔️' },

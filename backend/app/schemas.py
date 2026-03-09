@@ -323,6 +323,58 @@ class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ─── Proposal Schemas ───────────────────────────────────────────────────
+
+
+class ProposalCreate(BaseModel):
+    slug: str = Field(..., max_length=255, pattern=r"^[a-z0-9-]+$")
+    title: str = Field(..., max_length=500)
+    client_name: str = Field(..., max_length=255)
+    client_phone: Optional[str] = Field(None, max_length=20)
+    content: str = Field(..., min_length=1)
+    status: str = Field(default="draft", pattern=r"^(draft|sent|viewed|accepted|rejected)$")
+    total_value: Optional[str] = Field(None, max_length=50)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProposalUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=500)
+    client_name: Optional[str] = Field(None, max_length=255)
+    client_phone: Optional[str] = Field(None, max_length=20)
+    content: Optional[str] = None
+    status: Optional[str] = Field(None, pattern=r"^(draft|sent|viewed|accepted|rejected)$")
+    total_value: Optional[str] = Field(None, max_length=50)
+    metadata_json: Optional[dict[str, Any]] = None
+
+
+class ProposalResponse(BaseModel):
+    id: UUID
+    slug: str
+    title: str
+    client_name: str
+    client_phone: Optional[str] = None
+    content: str
+    status: str
+    total_value: Optional[str] = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    viewed_at: Optional[datetime] = None
+    accepted_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProposalPublicResponse(BaseModel):
+    title: str
+    client_name: str
+    content: str
+    total_value: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ─── Assistant Schemas ───────────────────────────────────────────────────
 
 class AssistantDraftGenerateRequest(BaseModel):

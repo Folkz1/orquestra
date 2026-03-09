@@ -112,7 +112,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
     # Exempt paths (exact or prefix match for webhooks/youtube)
-    if path in EXEMPT_PATHS or path.startswith("/api/webhook") or path.startswith("/api/youtube/briefings/latest/videos") or path.startswith("/api/youtube/thumbnails/"):
+    if path in EXEMPT_PATHS or path.startswith("/api/webhook") or path.startswith("/api/youtube/briefings/latest/videos") or path.startswith("/api/youtube/thumbnails/") or path.startswith("/api/proposals/public/"):
         return await call_next(request)
 
     # Check Authorization header
@@ -171,7 +171,7 @@ async def debug_db():
 
 # -- Include Routers --
 
-from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant  # noqa: E402
+from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals  # noqa: E402
 
 app.include_router(webhook.router, prefix="/api/webhook", tags=["Webhook"])
 app.include_router(contacts.router, prefix="/api/contacts", tags=["Contacts"])
@@ -185,3 +185,4 @@ app.include_router(sync.router, prefix="/api/sync", tags=["Sync"])
 app.include_router(notion.router, prefix="/api/notion", tags=["Notion"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["Assistant"])
+app.include_router(proposals.router, prefix="/api/proposals", tags=["Proposals"])

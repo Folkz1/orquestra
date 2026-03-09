@@ -195,3 +195,42 @@ export function deleteTask(id) {
 export function getTaskStats() {
   return request('/api/tasks/stats');
 }
+
+// Proposals
+export function getProposals(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, value);
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/proposals${qs ? '?' + qs : ''}`);
+}
+
+export function createProposal(data) {
+  return request('/api/proposals', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateProposal(id, data) {
+  return request(`/api/proposals/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteProposal(id) {
+  return request(`/api/proposals/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function getProposalPublic(slug) {
+  return fetch(`${BASE_URL}/api/proposals/public/${slug}`).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+}

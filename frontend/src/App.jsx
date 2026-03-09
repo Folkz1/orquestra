@@ -14,11 +14,16 @@ import WarTasks from './pages/WarTasks'
 import Kanban from './pages/Kanban'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeKanban from './pages/YouTubeKanban'
+import Proposals from './pages/Proposals'
+import ProposalView from './pages/ProposalView'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
 
   // Public routes (no auth required)
+  if (location.pathname.startsWith('/proposta/')) {
+    return <ProposalView />
+  }
   if (location.pathname === '/youtube-briefing') {
     return <YouTubeBriefing />
   }
@@ -35,6 +40,8 @@ function AppRoutes({ onLogout }) {
         <Route path="/recordings" element={<Recordings />} />
         <Route path="/kanban" element={<Kanban />} />
         <Route path="/youtube-kanban" element={<YouTubeKanban />} />
+        <Route path="/proposals" element={<Proposals />} />
+        <Route path="/proposta/:slug" element={<ProposalView />} />
         <Route path="/war-tasks" element={<WarTasks />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
@@ -54,6 +61,7 @@ export default function App() {
       ) : (
         <Routes>
           <Route path="/youtube-briefing" element={<YouTubeBriefing />} />
+          <Route path="/proposta/:slug" element={<ProposalView />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />
         </Routes>
       )}
