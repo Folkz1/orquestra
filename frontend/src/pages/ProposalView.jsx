@@ -6,7 +6,6 @@ function renderMarkdown(text) {
   if (!text) return ''
   return text
     .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-6 mb-2 text-white">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-8 mb-3 text-white border-b border-zinc-700 pb-2">$2</h2>'.replace('$2', '$1'))
     .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-8 mb-3 text-white border-b border-zinc-700 pb-2">$1</h2>')
     .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-6 mb-4 text-white">$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
@@ -35,11 +34,11 @@ function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'agora'
-  if (mins < 60) return `${mins}min atras`
+  if (mins < 60) return `${mins}min`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h atras`
+  if (hours < 24) return `${hours}h`
   const days = Math.floor(hours / 24)
-  return `${days}d atras`
+  return `${days}d`
 }
 
 export default function ProposalView() {
@@ -50,11 +49,8 @@ export default function ProposalView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Comments
-  const [commentName, setCommentName] = useState('')
   const [commentText, setCommentText] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const printRef = useRef(null)
 
   useEffect(() => {
     (async () => {
@@ -69,9 +65,9 @@ export default function ProposalView() {
   }, [slug])
 
   const handleDownload = () => {
-    const printWindow = window.open('', '_blank')
     const html = renderMarkdown(proposal.content)
     const date = new Date(proposal.created_at).toLocaleDateString('pt-BR')
+    const printWindow = window.open('', '_blank')
     printWindow.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -109,18 +105,18 @@ ${html}
   <p>Diego - Guy Folkz &middot; Automacao & IA para Negocios</p>
   <p>WhatsApp: +55 51 9344-8124</p>
 </div>
-<script>window.print()</script>
+<script>window.print()<\/script>
 </body></html>`)
     printWindow.document.close()
   }
 
   const handleComment = async (e) => {
     e.preventDefault()
-    if (!commentName.trim() || !commentText.trim()) return
+    if (!commentText.trim()) return
     setSubmitting(true)
     try {
       const newComment = await addProposalComment(slug, {
-        author_name: commentName.trim(),
+        author_name: proposal.client_name,
         content: commentText.trim(),
       })
       setProposal(prev => ({
@@ -129,7 +125,7 @@ ${html}
       }))
       setCommentText('')
     } catch (err) {
-      alert('Erro ao enviar comentario')
+      alert('Erro ao enviar anotacao')
     }
     setSubmitting(false)
   }
@@ -177,90 +173,69 @@ ${html}
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex justify-center gap-3 mb-6">
+        {/* Action bar */}
+        <div className="flex justify-end mb-4">
           <button
             onClick={handleDownload}
-            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-sm px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             Baixar PDF
           </button>
-          <a
-            href="#comentarios"
-            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-sm px-4 py-2 rounded-lg transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            Comentarios {comments.length > 0 && `(${comments.length})`}
-          </a>
         </div>
 
         {/* Content */}
-        <div ref={printRef} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 md:p-8">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 md:p-8">
           <div dangerouslySetInnerHTML={{ __html: renderMarkdown(proposal.content) }} />
         </div>
 
-        {/* Comments Section */}
-        <div id="comentarios" className="mt-8">
-          <h2 className="text-lg font-bold text-white mb-4">
-            Comentarios {comments.length > 0 && <span className="text-zinc-500 font-normal text-sm">({comments.length})</span>}
-          </h2>
+        {/* Anotacoes do cliente */}
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+            </svg>
+            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">Anotacoes sobre a proposta</h2>
+          </div>
 
-          {/* Comment list */}
+          {/* Existing notes */}
           {comments.length > 0 && (
-            <div className="space-y-3 mb-6">
+            <div className="space-y-2 mb-4">
               {comments.map(c => (
-                <div key={c.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-white text-sm font-medium">{c.author_name}</span>
+                <div key={c.id} className="flex gap-3 items-start">
+                  <div className="w-1 rounded-full bg-blue-500/30 self-stretch mt-1" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-zinc-300 text-sm">{c.content}</p>
                     <span className="text-zinc-600 text-xs">{timeAgo(c.created_at)}</span>
                   </div>
-                  <p className="text-zinc-300 text-sm leading-relaxed">{c.content}</p>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Add comment form */}
-          <form onSubmit={handleComment} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
-            <div className="mb-3">
-              <input
-                type="text"
-                placeholder="Seu nome"
-                value={commentName}
-                onChange={e => setCommentName(e.target.value)}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <textarea
-                placeholder="Escreva seu comentario, duvida ou feedback..."
-                value={commentText}
-                onChange={e => setCommentText(e.target.value)}
-                rows={3}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 resize-y focus:outline-none focus:border-blue-500"
-                required
-              />
-            </div>
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={submitting || !commentName.trim() || !commentText.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-5 py-2 rounded-lg transition-colors"
-              >
-                {submitting ? 'Enviando...' : 'Enviar Comentario'}
-              </button>
-            </div>
+          {/* Add note */}
+          <form onSubmit={handleComment} className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Tem alguma duvida ou observacao sobre o escopo?"
+              value={commentText}
+              onChange={e => setCommentText(e.target.value)}
+              className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+            />
+            <button
+              type="submit"
+              disabled={submitting || !commentText.trim()}
+              className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-zinc-300 text-sm px-4 py-2 rounded-lg transition-colors shrink-0"
+            >
+              {submitting ? '...' : 'Enviar'}
+            </button>
           </form>
         </div>
 
         {/* Footer */}
-        <div className="text-center mt-8 text-zinc-600 text-xs">
+        <div className="text-center mt-10 text-zinc-600 text-xs">
           <p>Diego - Guy Folkz &middot; Automacao & IA para Negocios</p>
           <p>WhatsApp: +55 51 9344-8124</p>
         </div>
