@@ -292,6 +292,11 @@ class Proposal(Base):
     title = Column(String(500), nullable=False)
     client_name = Column(String(255), nullable=False)
     client_phone = Column(String(20), nullable=True)
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     content = Column(Text, nullable=False)
     status = Column(String(20), server_default="draft", nullable=False)  # draft/sent/viewed/accepted/rejected
     total_value = Column(String(50), nullable=True)
@@ -309,6 +314,7 @@ class Proposal(Base):
     )
 
     comments = relationship("ProposalComment", back_populates="proposal", lazy="selectin", cascade="all, delete-orphan")
+    contact = relationship("Contact", lazy="selectin")
 
     def __repr__(self):
         return f"<Proposal {self.slug}>"
@@ -378,3 +384,36 @@ class AssistantDraft(Base):
 
     def __repr__(self):
         return f"<AssistantDraft {self.id} {self.status}>"
+
+
+class ProposalEvent(Base):
+    __tablename__ = "proposal_events"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    proposal_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("proposals.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    session_id = Column(String(100), nullable=False)
+    event_type = Column(String(30), nullable=False)
+    event_data = Column(JSONB, server_default="{}", nullable=False)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    proposal = relationship("Proposal", lazy="selectin")
+
+    def __repr__(self):
+        return f"<ProposalEvent {self.event_type} {self.proposal_id}>"

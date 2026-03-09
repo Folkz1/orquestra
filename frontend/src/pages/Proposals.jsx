@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProposals, createProposal, updateProposal, deleteProposal } from '../api'
+import { getProposals, createProposal, updateProposal, deleteProposal, getProposalAnalytics } from '../api'
 
 const STATUS_COLORS = {
   draft: 'bg-zinc-700 text-zinc-300',
@@ -21,11 +21,107 @@ function timeAgo(dateStr) {
   if (!dateStr) return ''
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}min atras`
+  if (mins < 60) return `${mins}min atrás`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h atras`
+  if (hours < 24) return `${hours}h atrás`
   const days = Math.floor(hours / 24)
-  return `${days}d atras`
+  return `${days}d atrás`
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds < 10) return '—'
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}m${s > 0 ? ` ${s}s` : ''}`
+}
+
+// Mini analytics panel that loads on expand
+function AnalyticsPanel({ proposalId }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await getProposalAnalytics(proposalId)
+        setData(d)
+      } catch { /* ignore */ }
+      setLoading(false)
+    })()
+  }, [proposalId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-3">
+        <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+        <span className="text-zinc-500 text-xs">Carregando analytics...</span>
+      </div>
+    )
+  }
+
+  if (!data || data.total_views === 0) {
+    return <p className="text-zinc-600 text-xs py-2">Nenhuma visualização ainda</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="bg-zinc-800/50 rounded-lg p-2.5">
+          <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Visualizações</p>
+          <p className="text-white text-lg font-bold">{data.total_views}</p>
+          <p className="text-zinc-600 text-[10px]">{data.unique_sessions} sessões</p>
+        </div>
+        <div className="bg-zinc-800/50 rounded-lg p-2.5">
+          <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Tempo na Página</p>
+          <p className="text-white text-lg font-bold">{formatDuration(data.total_time_seconds)}</p>
+          <p className="text-zinc-600 text-[10px]">acumulado</p>
+        </div>
+        <div className="bg-zinc-800/50 rounded-lg p-2.5">
+          <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Scroll Máximo</p>
+          <div className="flex items-center gap-2">
+            <p className="text-white text-lg font-bold">{data.max_scroll_pct}%</p>
+            <div className="flex-1 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all"
+                style={{ width: `${data.max_scroll_pct}%` }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="bg-zinc-800/50 rounded-lg p-2.5">
+          <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Engajamento</p>
+          <div className="flex items-center gap-3">
+            <span className="text-white text-lg font-bold">{data.total_annotations}</span>
+            <span className="text-zinc-500 text-xs">anotações</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-white text-lg font-bold">{data.total_downloads}</span>
+            <span className="text-zinc-500 text-xs">downloads</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Sections viewed */}
+      {data.sections_viewed.length > 0 && (
+        <div>
+          <p className="text-zinc-500 text-[10px] uppercase tracking-wide mb-1.5">Seções lidas</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.sections_viewed.map((s, i) => (
+              <span key={i} className="bg-zinc-800 text-zinc-400 text-xs px-2 py-0.5 rounded-md">{s}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Timeline */}
+      <div className="flex items-center gap-3 text-[10px] text-zinc-600">
+        {data.first_view && <span>Primeira visita: {new Date(data.first_view).toLocaleString('pt-BR')}</span>}
+        {data.last_view && <span>Última: {timeAgo(data.last_view)}</span>}
+      </div>
+    </div>
+  )
 }
 
 export default function Proposals() {
@@ -36,6 +132,7 @@ export default function Proposals() {
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({ slug: '', title: '', client_name: '', client_phone: '', content: '', total_value: '', status: 'draft' })
   const [copiedSlug, setCopiedSlug] = useState(null)
+  const [expandedId, setExpandedId] = useState(null)
 
   const baseUrl = import.meta.env.VITE_FRONTEND_URL || window.location.origin
 
@@ -132,7 +229,7 @@ export default function Proposals() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Titulo</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Título</label>
                   <input
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
                     value={form.title}
@@ -197,7 +294,7 @@ export default function Proposals() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Conteudo (Markdown)</label>
+                <label className="block text-xs text-zinc-400 mb-1">Conteúdo (Markdown)</label>
                 <textarea
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono h-64 resize-y"
                   value={form.content}
@@ -232,45 +329,64 @@ export default function Proposals() {
       ) : (
         <div className="space-y-3">
           {proposals.map(p => (
-            <div key={p.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-white font-semibold text-sm truncate">{p.title}</h3>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[p.status] || STATUS_COLORS.draft}`}>
-                      {STATUS_LABELS[p.status] || p.status}
-                    </span>
+            <div key={p.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-700 transition-colors">
+              <div className="p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-white font-semibold text-sm truncate">{p.title}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[p.status] || STATUS_COLORS.draft}`}>
+                        {STATUS_LABELS[p.status] || p.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-zinc-500">
+                      <span>{p.client_name}</span>
+                      {p.total_value && <span className="text-emerald-400 font-medium">{p.total_value}</span>}
+                      <span>Criada {timeAgo(p.created_at)}</span>
+                      {p.viewed_at && <span className="text-yellow-400">Vista {timeAgo(p.viewed_at)}</span>}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-zinc-500">
-                    <span>{p.client_name}</span>
-                    {p.total_value && <span className="text-emerald-400 font-medium">{p.total_value}</span>}
-                    <span>Criada {timeAgo(p.created_at)}</span>
-                    {p.viewed_at && <span className="text-yellow-400">Vista {timeAgo(p.viewed_at)}</span>}
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                      className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                        expandedId === p.id
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      Analytics
+                    </button>
+                    <button
+                      onClick={() => copyLink(p.slug)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                    >
+                      {copiedSlug === p.slug ? 'Copiado!' : 'Link'}
+                    </button>
+                    <a
+                      href={`${baseUrl}/proposta/${p.slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                    >
+                      Ver
+                    </a>
+                    <button onClick={() => openEdit(p)} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors">
+                      Editar
+                    </button>
+                    <button onClick={() => handleDelete(p.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors">
+                      Excluir
+                    </button>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 ml-4">
-                  <button
-                    onClick={() => copyLink(p.slug)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
-                  >
-                    {copiedSlug === p.slug ? 'Copiado!' : 'Copiar Link'}
-                  </button>
-                  <a
-                    href={`${baseUrl}/proposta/${p.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
-                  >
-                    Ver
-                  </a>
-                  <button onClick={() => openEdit(p)} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors">
-                    Editar
-                  </button>
-                  <button onClick={() => handleDelete(p.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors">
-                    Excluir
-                  </button>
                 </div>
               </div>
+
+              {/* Expandable analytics panel */}
+              {expandedId === p.id && (
+                <div className="border-t border-zinc-800 bg-zinc-900/80 p-4">
+                  <AnalyticsPanel proposalId={p.id} />
+                </div>
+              )}
             </div>
           ))}
         </div>

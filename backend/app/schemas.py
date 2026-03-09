@@ -331,6 +331,7 @@ class ProposalCreate(BaseModel):
     title: str = Field(..., max_length=500)
     client_name: str = Field(..., max_length=255)
     client_phone: Optional[str] = Field(None, max_length=20)
+    contact_id: Optional[UUID] = None
     content: str = Field(..., min_length=1)
     status: str = Field(default="draft", pattern=r"^(draft|sent|viewed|accepted|rejected)$")
     total_value: Optional[str] = Field(None, max_length=50)
@@ -353,6 +354,7 @@ class ProposalResponse(BaseModel):
     title: str
     client_name: str
     client_phone: Optional[str] = None
+    contact_id: Optional[UUID] = None
     content: str
     status: str
     total_value: Optional[str] = None
@@ -390,6 +392,36 @@ class ProposalPublicResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProposalEventCreate(BaseModel):
+    session_id: str = Field(..., max_length=100)
+    event_type: str = Field(..., max_length=30, pattern=r"^(page_view|scroll_depth|time_on_page|annotation|download_pdf|section_view)$")
+    event_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProposalEventResponse(BaseModel):
+    id: UUID
+    proposal_id: UUID
+    session_id: str
+    event_type: str
+    event_data: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProposalAnalyticsSummary(BaseModel):
+    total_views: int = 0
+    unique_sessions: int = 0
+    total_time_seconds: int = 0
+    max_scroll_pct: int = 0
+    total_annotations: int = 0
+    total_downloads: int = 0
+    sections_viewed: list[str] = Field(default_factory=list)
+    first_view: Optional[datetime] = None
+    last_view: Optional[datetime] = None
+    events: list[ProposalEventResponse] = Field(default_factory=list)
 
 
 # ─── Assistant Schemas ───────────────────────────────────────────────────

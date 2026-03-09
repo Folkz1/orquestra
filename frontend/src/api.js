@@ -245,3 +245,18 @@ export function addProposalComment(slug, data) {
     return r.json();
   });
 }
+
+export function trackProposalEvent(slug, data) {
+  return fetch(`${BASE_URL}/api/proposals/public/${slug}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }).catch(() => {}); // Silent fail - analytics should never break UX
+}
+
+export function getProposalAnalytics(id) {
+  return request(`/api/proposals/${id}/analytics`);
+}

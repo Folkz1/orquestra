@@ -1,6 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
-import { getProposalPublic, addProposalComment } from '../api'
+import { getProposalPublic, addProposalComment, trackProposalEvent } from '../api'
+
+// Generate a stable session ID per browser tab visit
+function getSessionId() {
+  let sid = sessionStorage.getItem('proposal_sid')
+  if (!sid) {
+    sid = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    sessionStorage.setItem('proposal_sid', sid)
+  }
+  return sid
+}
 
 function renderMarkdown(text) {
   if (!text) return ''
@@ -200,6 +210,20 @@ export default function ProposalView() {
   // Mobile & tutorial
   const [isMobile, setIsMobile] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const sessionId = useRef(getSessionId())
+  const timeOnPage = useRef(0)
+  const maxScroll = useRef(0)
+  const sectionsViewed = useRef(new Set())
+
+  // Helper: fire analytics event (fire-and-forget)
+  const track = useCallback((eventType, eventData = {}) => {
+    if (!slug) return
+    trackProposalEvent(slug, {
+      session_id: sessionId.current,
+      event_type: eventType,
+      event_data: eventData,
+    })
+  }, [slug])
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 1024 || 'ontouchstart' in window)
@@ -232,6 +256,78 @@ export default function ProposalView() {
       setLoading(false)
     })()
   }, [slug])
+
+  // ─── Analytics tracking ─────────────────────────────────────────────────
+
+  // Track page_view on load
+  useEffect(() => {
+    if (proposal) {
+      track('page_view', { device: isMobile ? 'mobile' : 'desktop' })
+    }
+  }, [proposal, isMobile, track])
+
+  // Track time_on_page every 15 seconds
+  useEffect(() => {
+    if (!proposal) return
+    const interval = setInterval(() => {
+      timeOnPage.current += 15
+      track('time_on_page', { seconds: timeOnPage.current })
+    }, 15000)
+    return () => {
+      clearInterval(interval)
+      if (timeOnPage.current > 0) {
+        track('time_on_page', { seconds: timeOnPage.current, final: true })
+      }
+    }
+  }, [proposal, track])
+
+  // Track scroll depth
+  useEffect(() => {
+    if (!proposal || !contentRef.current) return
+    const handleScroll = () => {
+      const el = contentRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const viewHeight = window.innerHeight
+      const totalHeight = el.scrollHeight
+      const scrolled = Math.max(0, -rect.top + viewHeight)
+      const pct = Math.min(100, Math.round((scrolled / totalHeight) * 100))
+      if (pct > maxScroll.current) {
+        maxScroll.current = pct
+        // Only send at milestones: 25, 50, 75, 100
+        if (pct >= 25 && (pct === 25 || pct === 50 || pct === 75 || pct >= 95)) {
+          track('scroll_depth', { pct })
+        }
+      }
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [proposal, track])
+
+  // Track section views (Intersection Observer on h2/h3)
+  useEffect(() => {
+    if (!proposal || !contentRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const section = entry.target.textContent?.trim()
+            if (section && !sectionsViewed.current.has(section)) {
+              sectionsViewed.current.add(section)
+              track('section_view', { section })
+            }
+          }
+        })
+      },
+      { threshold: 0.5 }
+    )
+    // Observe headings in the rendered content
+    const headings = contentRef.current.querySelectorAll('h2, h3')
+    headings.forEach((h) => observer.observe(h))
+    return () => observer.disconnect()
+  }, [proposal, track])
+
+  // ─── End analytics ──────────────────────────────────────────────────────
 
   // Universal selection detection: selectionchange (mobile) + mouseup (desktop backup)
   useEffect(() => {
@@ -298,6 +394,7 @@ export default function ProposalView() {
       }))
       setAnnotating(null)
       setAnnotationText('')
+      track('annotation', { text_length: annotationText.trim().length, highlighted_length: annotating.text.length })
     } catch {
       alert('Erro ao enviar anotação')
     }
@@ -305,6 +402,7 @@ export default function ProposalView() {
   }
 
   const handleDownload = () => {
+    track('download_pdf')
     const html = renderMarkdown(proposal.content)
     const date = new Date(proposal.created_at).toLocaleDateString('pt-BR')
     const printWindow = window.open('', '_blank')
