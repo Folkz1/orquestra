@@ -368,12 +368,14 @@ class ProposalResponse(BaseModel):
 class ProposalCommentCreate(BaseModel):
     author_name: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1)
+    highlighted_text: Optional[str] = None
 
 
 class ProposalCommentResponse(BaseModel):
     id: UUID
     author_name: str
     content: str
+    highlighted_text: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

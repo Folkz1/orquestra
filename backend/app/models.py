@@ -329,6 +329,7 @@ class ProposalComment(Base):
     )
     author_name = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
+    highlighted_text = Column(Text, nullable=True)
     created_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

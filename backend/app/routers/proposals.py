@@ -112,6 +112,7 @@ async def add_comment(
         proposal_id=proposal.id,
         author_name=data.author_name,
         content=data.content,
+        highlighted_text=data.highlighted_text,
     )
     db.add(comment)
     await db.flush()

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import { getProposalPublic, addProposalComment } from '../api'
 
@@ -49,8 +49,13 @@ export default function ProposalView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [commentText, setCommentText] = useState('')
+  // Selection & annotation
+  const [selection, setSelection] = useState(null) // { text, x, y }
+  const [annotating, setAnnotating] = useState(null) // { text } - when form is open
+  const [annotationText, setAnnotationText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const contentRef = useRef(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
     (async () => {
@@ -63,6 +68,73 @@ export default function ProposalView() {
       setLoading(false)
     })()
   }, [slug])
+
+  // Detect text selection inside the proposal content
+  const handleMouseUp = useCallback(() => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || !contentRef.current) {
+      // Don't clear if we're in the annotation form
+      if (!annotating) setSelection(null)
+      return
+    }
+
+    // Only if selection is inside proposal content
+    const range = sel.getRangeAt(0)
+    if (!contentRef.current.contains(range.commonAncestorContainer)) {
+      return
+    }
+
+    const text = sel.toString().trim()
+    if (text.length < 3) return
+
+    const rect = range.getBoundingClientRect()
+    const containerRect = contentRef.current.getBoundingClientRect()
+
+    setSelection({
+      text,
+      x: rect.left - containerRect.left + rect.width / 2,
+      y: rect.top - containerRect.top - 8,
+    })
+  }, [annotating])
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => document.removeEventListener('mouseup', handleMouseUp)
+  }, [handleMouseUp])
+
+  const startAnnotation = () => {
+    setAnnotating({ text: selection.text })
+    setSelection(null)
+    setAnnotationText('')
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  const cancelAnnotation = () => {
+    setAnnotating(null)
+    setAnnotationText('')
+  }
+
+  const submitAnnotation = async (e) => {
+    e.preventDefault()
+    if (!annotationText.trim() || !annotating) return
+    setSubmitting(true)
+    try {
+      const newComment = await addProposalComment(slug, {
+        author_name: proposal.client_name,
+        content: annotationText.trim(),
+        highlighted_text: annotating.text,
+      })
+      setProposal(prev => ({
+        ...prev,
+        comments: [...(prev.comments || []), newComment],
+      }))
+      setAnnotating(null)
+      setAnnotationText('')
+    } catch (err) {
+      alert('Erro ao enviar anotacao')
+    }
+    setSubmitting(false)
+  }
 
   const handleDownload = () => {
     const html = renderMarkdown(proposal.content)
@@ -110,26 +182,6 @@ ${html}
     printWindow.document.close()
   }
 
-  const handleComment = async (e) => {
-    e.preventDefault()
-    if (!commentText.trim()) return
-    setSubmitting(true)
-    try {
-      const newComment = await addProposalComment(slug, {
-        author_name: proposal.client_name,
-        content: commentText.trim(),
-      })
-      setProposal(prev => ({
-        ...prev,
-        comments: [...(prev.comments || []), newComment],
-      }))
-      setCommentText('')
-    } catch (err) {
-      alert('Erro ao enviar anotacao')
-    }
-    setSubmitting(false)
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
@@ -154,7 +206,7 @@ ${html}
 
   return (
     <div className="min-h-screen bg-zinc-950 py-8 px-4">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-4">
@@ -173,11 +225,12 @@ ${html}
           )}
         </div>
 
-        {/* Action bar */}
-        <div className="flex justify-end mb-4">
+        {/* Hint + Download */}
+        <div className="flex items-center justify-between mb-4 px-1">
+          <p className="text-zinc-600 text-xs">Selecione qualquer trecho para anotar</p>
           <button
             onClick={handleDownload}
-            className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+            className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -186,53 +239,107 @@ ${html}
           </button>
         </div>
 
-        {/* Content */}
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 md:p-8">
-          <div dangerouslySetInnerHTML={{ __html: renderMarkdown(proposal.content) }} />
-        </div>
+        {/* Content + sidebar annotations */}
+        <div className="flex gap-4">
+          {/* Main content */}
+          <div className="flex-1 min-w-0 relative" ref={contentRef}>
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 md:p-8">
+              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(proposal.content) }} />
+            </div>
 
-        {/* Anotacoes do cliente */}
-        <div className="mt-8">
-          <div className="flex items-center gap-2 mb-4">
-            <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-            </svg>
-            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide">Anotacoes sobre a proposta</h2>
+            {/* Floating "Anotar" button on text selection */}
+            {selection && (
+              <button
+                onClick={startAnnotation}
+                style={{ left: `${Math.max(16, Math.min(selection.x - 40, 300))}px`, top: `${selection.y}px` }}
+                className="absolute z-50 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg shadow-blue-500/20 -translate-y-full transition-colors flex items-center gap-1.5"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                Anotar
+              </button>
+            )}
           </div>
 
-          {/* Existing notes */}
+          {/* Sidebar: annotations */}
           {comments.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {comments.map(c => (
-                <div key={c.id} className="flex gap-3 items-start">
-                  <div className="w-1 rounded-full bg-blue-500/30 self-stretch mt-1" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-zinc-300 text-sm">{c.content}</p>
-                    <span className="text-zinc-600 text-xs">{timeAgo(c.created_at)}</span>
+            <div className="hidden md:block w-64 shrink-0">
+              <div className="sticky top-8 space-y-3">
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">Anotacoes ({comments.length})</p>
+                {comments.map(c => (
+                  <div key={c.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs">
+                    {c.highlighted_text && (
+                      <div className="border-l-2 border-blue-500/40 pl-2 mb-2 text-zinc-500 italic line-clamp-2">
+                        "{c.highlighted_text}"
+                      </div>
+                    )}
+                    <p className="text-zinc-300 leading-relaxed">{c.content}</p>
+                    <div className="flex items-center justify-between mt-2 text-zinc-600">
+                      <span>{c.author_name}</span>
+                      <span>{timeAgo(c.created_at)}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
-
-          {/* Add note */}
-          <form onSubmit={handleComment} className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Tem alguma duvida ou observacao sobre o escopo?"
-              value={commentText}
-              onChange={e => setCommentText(e.target.value)}
-              className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
-            />
-            <button
-              type="submit"
-              disabled={submitting || !commentText.trim()}
-              className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-zinc-300 text-sm px-4 py-2 rounded-lg transition-colors shrink-0"
-            >
-              {submitting ? '...' : 'Enviar'}
-            </button>
-          </form>
         </div>
+
+        {/* Mobile annotations (below content) */}
+        {comments.length > 0 && (
+          <div className="md:hidden mt-6 space-y-2">
+            <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">Anotacoes ({comments.length})</p>
+            {comments.map(c => (
+              <div key={c.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs">
+                {c.highlighted_text && (
+                  <div className="border-l-2 border-blue-500/40 pl-2 mb-2 text-zinc-500 italic line-clamp-2">
+                    "{c.highlighted_text}"
+                  </div>
+                )}
+                <p className="text-zinc-300 leading-relaxed">{c.content}</p>
+                <div className="flex items-center justify-between mt-2 text-zinc-600">
+                  <span>{c.author_name}</span>
+                  <span>{timeAgo(c.created_at)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Annotation form (floating modal) */}
+        {annotating && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={cancelAnnotation}>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+              <div className="border-l-2 border-blue-500 pl-3 mb-4">
+                <p className="text-zinc-500 text-xs mb-1">Anotando sobre:</p>
+                <p className="text-zinc-300 text-sm italic line-clamp-3">"{annotating.text}"</p>
+              </div>
+              <form onSubmit={submitAnnotation}>
+                <textarea
+                  ref={inputRef}
+                  placeholder="Sua duvida ou observacao sobre este trecho..."
+                  value={annotationText}
+                  onChange={e => setAnnotationText(e.target.value)}
+                  rows={3}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 resize-none focus:outline-none focus:border-blue-500 mb-3"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button type="button" onClick={cancelAnnotation} className="text-zinc-500 hover:text-zinc-300 text-sm px-3 py-1.5 transition-colors">
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !annotationText.trim()}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm px-4 py-1.5 rounded-lg transition-colors"
+                  >
+                    {submitting ? 'Enviando...' : 'Enviar'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="text-center mt-10 text-zinc-600 text-xs">
