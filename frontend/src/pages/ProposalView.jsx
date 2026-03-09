@@ -1,12 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import { getProposalPublic, addProposalComment } from '../api'
 
 function renderMarkdown(text) {
   if (!text) return ''
 
-  // Pre-process: detect metadata blocks (consecutive lines with **Key:** Value)
-  // and join them with <br> instead of separate <p> tags
   const lines = text.split('\n')
   const processed = []
   let metaBlock = []
@@ -29,7 +27,6 @@ function renderMarkdown(text) {
   flushMeta()
 
   return processed.join('\n')
-    // Meta blocks -> styled div with line breaks
     .replace(/\{\{META_BLOCK\}\}([\s\S]*?)\{\{\/META_BLOCK\}\}/g, (_, content) => {
       const html = content
         .split('{{BR}}')
@@ -73,6 +70,117 @@ function timeAgo(dateStr) {
   return `${days}d`
 }
 
+// Animated tutorial overlay
+function TutorialOverlay({ onDismiss, isMobile }) {
+  const [step, setStep] = useState(0)
+
+  useEffect(() => {
+    if (step < 3) {
+      const t = setTimeout(() => setStep(s => s + 1), 2200)
+      return () => clearTimeout(t)
+    }
+  }, [step])
+
+  const steps = [
+    {
+      emoji: isMobile ? '\uD83D\uDC46' : '\uD83D\uDDB1\uFE0F',
+      title: isMobile ? 'Toque e segure no texto' : 'Selecione um trecho',
+      desc: isMobile
+        ? 'Pressione e segure qualquer parte do texto para selecionar'
+        : 'Clique e arraste sobre o texto que deseja comentar',
+    },
+    {
+      emoji: '\uD83D\uDCAC',
+      title: 'Toque em "Anotar"',
+      desc: isMobile
+        ? 'Um botão aparecerá na parte inferior da tela'
+        : 'Um botão azul aparecerá próximo ao texto selecionado',
+    },
+    {
+      emoji: '\u270D\uFE0F',
+      title: 'Escreva sua observação',
+      desc: 'Digite sua dúvida ou comentário e envie',
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center p-4" onClick={onDismiss}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        <p className="text-zinc-500 text-xs uppercase tracking-widest mb-5 text-center">Como anotar esta proposta</p>
+
+        <div className="space-y-4 mb-6">
+          {steps.map((s, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 transition-all duration-500"
+              style={{
+                opacity: i <= step ? 1 : 0.15,
+                transform: i <= step ? 'translateX(0)' : 'translateX(12px)',
+                transitionDelay: `${i * 100}ms`,
+              }}
+            >
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0 transition-all duration-500 ${
+                i === step ? 'bg-blue-500/20 ring-2 ring-blue-500 scale-110' : i < step ? 'bg-emerald-500/15' : 'bg-zinc-800'
+              }`}>
+                {i < step ? '\u2713' : s.emoji}
+              </div>
+              <div>
+                <p className={`text-sm font-medium transition-colors duration-300 ${i === step ? 'text-white' : i < step ? 'text-zinc-400' : 'text-zinc-600'}`}>{s.title}</p>
+                <p className="text-xs text-zinc-500 mt-0.5">{s.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Animated demo preview */}
+        <div className="bg-zinc-800/50 rounded-xl p-4 mb-5 relative overflow-hidden h-20">
+          {/* Simulated text lines */}
+          <div className="space-y-1.5">
+            <div className="h-2 bg-zinc-700/50 rounded w-full" />
+            <div className="relative h-2 rounded w-4/5">
+              <div className="absolute inset-0 bg-zinc-700/50 rounded" />
+              {/* Moving highlight */}
+              <div
+                className="absolute inset-y-0 bg-blue-500/30 rounded transition-all duration-1000"
+                style={{
+                  left: step >= 1 ? '10%' : '50%',
+                  right: step >= 1 ? '15%' : '50%',
+                  opacity: step >= 1 ? 1 : 0,
+                }}
+              />
+            </div>
+            <div className="h-2 bg-zinc-700/50 rounded w-3/5" />
+            <div className="h-2 bg-zinc-700/50 rounded w-full" />
+          </div>
+          {/* Simulated floating button */}
+          <div
+            className="absolute bg-blue-600 text-white text-[9px] px-2 py-0.5 rounded transition-all duration-500"
+            style={{
+              top: step >= 2 ? '8px' : '20px',
+              right: '24px',
+              opacity: step >= 2 ? 1 : 0,
+              transform: step >= 2 ? 'scale(1)' : 'scale(0.8)',
+            }}
+          >
+            Anotar
+          </div>
+        </div>
+
+        <button
+          onClick={onDismiss}
+          className={`w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
+            step >= 2
+              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20'
+              : 'bg-zinc-800 text-zinc-400 hover:text-zinc-300'
+          }`}
+        >
+          {step >= 2 ? 'Entendi!' : 'Pular'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function ProposalView() {
   const params = useParams()
   const location = useLocation()
@@ -82,12 +190,36 @@ export default function ProposalView() {
   const [error, setError] = useState(null)
 
   // Selection & annotation
-  const [selection, setSelection] = useState(null) // { text, x, y }
-  const [annotating, setAnnotating] = useState(null) // { text } - when form is open
+  const [selection, setSelection] = useState(null)
+  const [annotating, setAnnotating] = useState(null)
   const [annotationText, setAnnotationText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const contentRef = useRef(null)
   const inputRef = useRef(null)
+
+  // Mobile & tutorial
+  const [isMobile, setIsMobile] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 1024 || 'ontouchstart' in window)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  // Show tutorial on first visit
+  useEffect(() => {
+    if (proposal && !localStorage.getItem(`proposal-tutorial-${slug}`)) {
+      const t = setTimeout(() => setShowTutorial(true), 1000)
+      return () => clearTimeout(t)
+    }
+  }, [proposal, slug])
+
+  const dismissTutorial = () => {
+    setShowTutorial(false)
+    localStorage.setItem(`proposal-tutorial-${slug}`, '1')
+  }
 
   useEffect(() => {
     (async () => {
@@ -101,44 +233,48 @@ export default function ProposalView() {
     })()
   }, [slug])
 
-  // Detect text selection inside the proposal content
-  const handleMouseUp = useCallback(() => {
-    const sel = window.getSelection()
-    if (!sel || sel.isCollapsed || !contentRef.current) {
-      // Don't clear if we're in the annotation form
-      if (!annotating) setSelection(null)
-      return
-    }
-
-    // Only if selection is inside proposal content
-    const range = sel.getRangeAt(0)
-    if (!contentRef.current.contains(range.commonAncestorContainer)) {
-      return
-    }
-
-    const text = sel.toString().trim()
-    if (text.length < 3) return
-
-    const rect = range.getBoundingClientRect()
-    const containerRect = contentRef.current.getBoundingClientRect()
-
-    setSelection({
-      text,
-      x: rect.left - containerRect.left + rect.width / 2,
-      y: rect.top - containerRect.top - 8,
-    })
-  }, [annotating])
-
+  // Universal selection detection: selectionchange (mobile) + mouseup (desktop backup)
   useEffect(() => {
-    document.addEventListener('mouseup', handleMouseUp)
-    return () => document.removeEventListener('mouseup', handleMouseUp)
-  }, [handleMouseUp])
+    let debounce
+    const handleSelection = () => {
+      clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        if (annotating) return
+        const sel = window.getSelection()
+        if (!sel || sel.isCollapsed || !contentRef.current) {
+          if (!annotating) setSelection(null)
+          return
+        }
+        try {
+          const range = sel.getRangeAt(0)
+          if (!contentRef.current.contains(range.commonAncestorContainer)) return
+          const text = sel.toString().trim()
+          if (text.length < 3) return
+          const rect = range.getBoundingClientRect()
+          const containerRect = contentRef.current.getBoundingClientRect()
+          setSelection({
+            text,
+            x: rect.left - containerRect.left + rect.width / 2,
+            y: rect.top - containerRect.top - 8,
+          })
+        } catch { /* ignore */ }
+      }, 200)
+    }
+    document.addEventListener('selectionchange', handleSelection)
+    document.addEventListener('mouseup', handleSelection)
+    return () => {
+      document.removeEventListener('selectionchange', handleSelection)
+      document.removeEventListener('mouseup', handleSelection)
+      clearTimeout(debounce)
+    }
+  }, [annotating])
 
   const startAnnotation = () => {
     setAnnotating({ text: selection.text })
     setSelection(null)
     setAnnotationText('')
-    setTimeout(() => inputRef.current?.focus(), 50)
+    window.getSelection()?.removeAllRanges()
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   const cancelAnnotation = () => {
@@ -162,8 +298,8 @@ export default function ProposalView() {
       }))
       setAnnotating(null)
       setAnnotationText('')
-    } catch (err) {
-      alert('Erro ao enviar anotacao')
+    } catch {
+      alert('Erro ao enviar anotação')
     }
     setSubmitting(false)
   }
@@ -206,7 +342,7 @@ export default function ProposalView() {
 </div>
 ${html}
 <div class="footer">
-  <p>Diego - Guy Folkz &middot; Automacao & IA para Negocios</p>
+  <p>Diego - Guy Folkz &middot; Automação & IA para Negócios</p>
   <p>WhatsApp: +55 51 9344-8124</p>
 </div>
 <script>window.print()<\/script>
@@ -227,7 +363,7 @@ ${html}
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-zinc-400 mb-2">404</h1>
-          <p className="text-zinc-500">Proposta nao encontrada</p>
+          <p className="text-zinc-500">Proposta não encontrada</p>
         </div>
       </div>
     )
@@ -238,6 +374,9 @@ ${html}
 
   return (
     <div className="min-h-screen bg-zinc-950 py-6 md:py-10 px-4">
+      {/* Tutorial overlay */}
+      {showTutorial && <TutorialOverlay onDismiss={dismissTutorial} isMobile={isMobile} />}
+
       <div className={`mx-auto ${comments.length > 0 ? 'max-w-5xl' : 'max-w-3xl'} transition-all`}>
         {/* Header */}
         <div className="text-center mb-8">
@@ -257,14 +396,17 @@ ${html}
           )}
         </div>
 
-        {/* Hint + Download */}
+        {/* Hint + Download + Help */}
         <div className="flex items-center justify-between mb-4 px-1 max-w-3xl mx-auto">
-          <p className="text-zinc-600 text-xs flex items-center gap-1.5">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          <button
+            onClick={() => setShowTutorial(true)}
+            className="text-zinc-600 hover:text-zinc-400 text-xs flex items-center gap-1.5 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Selecione qualquer trecho para anotar
-          </p>
+            Como anotar
+          </button>
           <button
             onClick={handleDownload}
             className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
@@ -287,12 +429,12 @@ ${html}
               />
             </div>
 
-            {/* Floating "Anotar" button on text selection */}
-            {selection && (
+            {/* Desktop: Floating "Anotar" button near selection */}
+            {selection && !isMobile && (
               <button
                 onClick={startAnnotation}
                 style={{ left: `${Math.max(16, Math.min(selection.x - 40, 300))}px`, top: `${selection.y}px` }}
-                className="absolute z-50 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg shadow-blue-500/20 -translate-y-full transition-colors flex items-center gap-1.5"
+                className="absolute z-50 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg shadow-blue-500/20 -translate-y-full transition-colors flex items-center gap-1.5 animate-fade-in"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
@@ -328,6 +470,27 @@ ${html}
           )}
         </div>
 
+        {/* Mobile: Fixed bottom bar when text is selected */}
+        {selection && isMobile && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent pt-8">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-3 flex items-center gap-3 shadow-2xl max-w-lg mx-auto">
+              <div className="flex-1 min-w-0">
+                <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Trecho selecionado</p>
+                <p className="text-zinc-300 text-xs truncate mt-0.5">&ldquo;{selection.text}&rdquo;</p>
+              </div>
+              <button
+                onClick={startAnnotation}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl shrink-0 flex items-center gap-2 shadow-lg shadow-blue-500/20"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                Anotar
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Mobile annotations (below content) */}
         {comments.length > 0 && (
           <div className="lg:hidden mt-6 space-y-2">
@@ -351,10 +514,10 @@ ${html}
           </div>
         )}
 
-        {/* Annotation form (floating modal) */}
+        {/* Annotation form (modal - works on mobile + desktop) */}
         {annotating && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={cancelAnnotation}>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-md p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={cancelAnnotation}>
+            <div className="bg-zinc-900 border-t sm:border border-zinc-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="border-l-2 border-blue-500 pl-3 mb-4">
                 <p className="text-zinc-500 text-xs mb-1">Anotando sobre:</p>
                 <p className="text-zinc-300 text-sm italic line-clamp-3">&ldquo;{annotating.text}&rdquo;</p>
@@ -369,13 +532,13 @@ ${html}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 resize-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 mb-3"
                 />
                 <div className="flex gap-2 justify-end">
-                  <button type="button" onClick={cancelAnnotation} className="text-zinc-500 hover:text-zinc-300 text-sm px-3 py-1.5 transition-colors">
+                  <button type="button" onClick={cancelAnnotation} className="text-zinc-500 hover:text-zinc-300 text-sm px-3 py-2 transition-colors">
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={submitting || !annotationText.trim()}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm px-4 py-1.5 rounded-lg transition-colors"
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm px-5 py-2 rounded-lg transition-colors font-medium"
                   >
                     {submitting ? 'Enviando...' : 'Enviar'}
                   </button>
