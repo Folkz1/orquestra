@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
-import { getProposalPublic, addProposalComment, trackProposalEvent } from '../api'
+import { getProposalPublic, addProposalComment, deleteProposalComment, trackProposalEvent } from '../api'
 
 // Generate a stable session ID per browser tab visit
 function getSessionId() {
@@ -401,6 +401,45 @@ export default function ProposalView() {
     setSubmitting(false)
   }
 
+  const handleDeleteComment = async (commentId) => {
+    if (!confirm('Excluir esta anotação?')) return
+    try {
+      await deleteProposalComment(slug, commentId)
+      setProposal(prev => ({
+        ...prev,
+        comments: (prev.comments || []).filter(c => c.id !== commentId),
+      }))
+    } catch {
+      alert('Erro ao excluir anotação')
+    }
+  }
+
+  const scrollToHighlight = (highlightedText) => {
+    if (!highlightedText || !contentRef.current) return
+    const walker = document.createTreeWalker(contentRef.current, NodeFilter.SHOW_TEXT)
+    let node
+    while ((node = walker.nextNode())) {
+      const idx = node.textContent.indexOf(highlightedText.slice(0, 40))
+      if (idx !== -1) {
+        const range = document.createRange()
+        range.setStart(node, idx)
+        range.setEnd(node, Math.min(idx + highlightedText.length, node.textContent.length))
+        const rect = range.getBoundingClientRect()
+        window.scrollTo({ top: window.scrollY + rect.top - window.innerHeight / 3, behavior: 'smooth' })
+        // Flash highlight
+        const mark = document.createElement('mark')
+        mark.className = 'bg-blue-500/30 rounded transition-all duration-1000'
+        range.surroundContents(mark)
+        setTimeout(() => {
+          const parent = mark.parentNode
+          while (mark.firstChild) parent.insertBefore(mark.firstChild, mark)
+          parent.removeChild(mark)
+        }, 2000)
+        return
+      }
+    }
+  }
+
   const handleDownload = () => {
     track('download_pdf')
     const html = renderMarkdown(proposal.content)
@@ -550,7 +589,11 @@ ${html}
                   Anotações ({comments.length})
                 </p>
                 {comments.map(c => (
-                  <div key={c.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs">
+                  <div
+                    key={c.id}
+                    className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs group cursor-pointer hover:border-zinc-700 transition-colors"
+                    onClick={() => scrollToHighlight(c.highlighted_text)}
+                  >
                     {c.highlighted_text && (
                       <div className="border-l-2 border-blue-500/40 pl-2 mb-2 text-zinc-500 italic line-clamp-2">
                         &ldquo;{c.highlighted_text}&rdquo;
@@ -559,7 +602,18 @@ ${html}
                     <p className="text-zinc-300 leading-relaxed">{c.content}</p>
                     <div className="flex items-center justify-between mt-2 text-zinc-600">
                       <span>{c.author_name}</span>
-                      <span>{timeAgo(c.created_at)}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{timeAgo(c.created_at)}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id) }}
+                          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all"
+                          title="Excluir"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -596,7 +650,11 @@ ${html}
               Anotações ({comments.length})
             </p>
             {comments.map(c => (
-              <div key={c.id} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs">
+              <div
+                key={c.id}
+                className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 text-xs"
+                onClick={() => scrollToHighlight(c.highlighted_text)}
+              >
                 {c.highlighted_text && (
                   <div className="border-l-2 border-blue-500/40 pl-2 mb-2 text-zinc-500 italic line-clamp-2">
                     &ldquo;{c.highlighted_text}&rdquo;
@@ -605,7 +663,18 @@ ${html}
                 <p className="text-zinc-300 leading-relaxed">{c.content}</p>
                 <div className="flex items-center justify-between mt-2 text-zinc-600">
                   <span>{c.author_name}</span>
-                  <span>{timeAgo(c.created_at)}</span>
+                  <div className="flex items-center gap-2">
+                    <span>{timeAgo(c.created_at)}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id) }}
+                      className="text-zinc-600 hover:text-red-400 transition-colors p-1"
+                      title="Excluir"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

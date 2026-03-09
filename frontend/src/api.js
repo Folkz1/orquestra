@@ -246,6 +246,15 @@ export function addProposalComment(slug, data) {
   });
 }
 
+export function deleteProposalComment(slug, commentId) {
+  return fetch(`${BASE_URL}/api/proposals/public/${slug}/comments/${commentId}`, {
+    method: 'DELETE',
+  }).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return null;
+  });
+}
+
 export function trackProposalEvent(slug, data) {
   return fetch(`${BASE_URL}/api/proposals/public/${slug}/events`, {
     method: 'POST',
@@ -259,4 +268,9 @@ export function trackProposalEvent(slug, data) {
 
 export function getProposalAnalytics(id) {
   return request(`/api/proposals/${id}/analytics`);
+}
+
+// Client Success / AI Suggestions
+export function getContactSuggestions(contactId) {
+  return request(`/api/contacts/${contactId}/suggestions`);
 }

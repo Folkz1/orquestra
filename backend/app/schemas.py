@@ -36,6 +36,9 @@ class ContactBase(BaseModel):
     notes: Optional[str] = None
     is_group: bool = False
     ignored: bool = False
+    pipeline_stage: str = Field(default="lead", max_length=30)
+    company: Optional[str] = Field(None, max_length=255)
+    email: Optional[str] = Field(None, max_length=255)
 
 
 class ContactCreate(ContactBase):
@@ -51,16 +54,34 @@ class ContactUpdate(BaseModel):
     notes: Optional[str] = None
     is_group: Optional[bool] = None
     ignored: Optional[bool] = None
+    pipeline_stage: Optional[str] = Field(None, max_length=30)
+    company: Optional[str] = Field(None, max_length=255)
+    email: Optional[str] = Field(None, max_length=255)
+    engagement_score: Optional[int] = None
+    next_action: Optional[str] = None
+    next_action_date: Optional[date] = None
+    monthly_revenue: Optional[str] = Field(None, max_length=50)
+    total_revenue: Optional[str] = Field(None, max_length=50)
+    support_ends_at: Optional[datetime] = None
 
 
 class ContactResponse(ContactBase):
     id: UUID
+    pipeline_stage: str = "lead"
+    company: Optional[str] = None
+    email: Optional[str] = None
+    engagement_score: int = 0
+    last_contacted_at: Optional[datetime] = None
+    next_action: Optional[str] = None
+    next_action_date: Optional[date] = None
+    monthly_revenue: Optional[str] = None
+    total_revenue: Optional[str] = None
+    acquired_at: Optional[datetime] = None
+    support_ends_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
     last_message_at: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)
 

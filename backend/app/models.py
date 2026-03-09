@@ -79,6 +79,17 @@ class Contact(Base):
     notes = Column(Text, nullable=True)
     is_group = Column(Boolean, server_default="false", nullable=False)
     ignored = Column(Boolean, server_default="false", nullable=False)
+    pipeline_stage = Column(String(30), server_default="lead", nullable=False)
+    company = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    engagement_score = Column(Integer, server_default="0", nullable=False)
+    last_contacted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    next_action = Column(Text, nullable=True)
+    next_action_date = Column(Date, nullable=True)
+    monthly_revenue = Column(String(50), nullable=True)
+    total_revenue = Column(String(50), nullable=True)
+    acquired_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    support_ends_at = Column(TIMESTAMP(timezone=True), nullable=True)
     created_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

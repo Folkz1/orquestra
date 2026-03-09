@@ -9,6 +9,7 @@ const navItems = [
   { to: '/kanban', label: 'Kanban', icon: '📌' },
   { to: '/youtube-kanban', label: 'YouTube', icon: '📺' },
   { to: '/proposals', label: 'Propostas', icon: '📄' },
+  { to: '/pos-venda', label: 'Pós-Venda', icon: '🤝' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
   { to: '/war-tasks', label: 'War Tasks', icon: '⚔️' },

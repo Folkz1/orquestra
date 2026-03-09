@@ -137,6 +137,26 @@ async def add_comment(
     return comment
 
 
+@router.delete("/public/{slug}/comments/{comment_id}", status_code=204)
+async def delete_comment(
+    slug: str,
+    comment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint - delete a comment from a proposal."""
+    stmt = select(ProposalComment).where(ProposalComment.id == comment_id)
+    result = await db.execute(stmt)
+    comment = result.scalar_one_or_none()
+
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comentario nao encontrado")
+
+    await db.delete(comment)
+    await db.flush()
+
+    logger.info("[PROPOSALS] Deleted comment %s on %s", comment_id, slug)
+
+
 @router.get("/{proposal_id}", response_model=ProposalResponse)
 async def get_proposal(
     proposal_id: UUID,
