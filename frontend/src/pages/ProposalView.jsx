@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import { getProposalPublic } from '../api'
 
 function renderMarkdown(text) {
@@ -40,7 +40,10 @@ function renderMarkdown(text) {
 }
 
 export default function ProposalView() {
-  const { slug } = useParams()
+  const params = useParams()
+  const location = useLocation()
+  // Extract slug from URL path when rendered outside <Route> (public route)
+  const slug = params.slug || location.pathname.replace('/proposta/', '')
   const [proposal, setProposal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
