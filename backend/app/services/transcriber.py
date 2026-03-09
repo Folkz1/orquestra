@@ -320,14 +320,179 @@ async def describe_image(image_bytes: bytes, mimetype: str = "image/jpeg") -> st
     return description
 
 
+def _extract_pdf(file_path: str) -> str:
+    """Extract text from PDF using PyMuPDF."""
+    doc = fitz.open(file_path)
+    text_parts = [page.get_text() for page in doc]
+    num_pages = len(doc)
+    doc.close()
+    text = "\n".join(text_parts).strip()
+    logger.info("[TRANSCRIBER] PDF text: %d chars from %d pages", len(text), num_pages)
+    return text
+
+
+async def _ocr_pdf_via_vision(file_path: str) -> str:
+    """Render PDF pages as images and OCR via vision model."""
+    doc = fitz.open(file_path)
+    descriptions = []
+    max_pages = min(len(doc), 10)
+
+    for i in range(max_pages):
+        page = doc[i]
+        pix = page.get_pixmap(dpi=200)
+        img_bytes = pix.tobytes("png")
+        desc = await describe_image(img_bytes, "image/png")
+        if desc:
+            descriptions.append(f"[Pagina {i + 1}]\n{desc}")
+
+    doc.close()
+    result = "\n\n".join(descriptions)
+    logger.info("[TRANSCRIBER] PDF OCR via vision: %d pages -> %d chars", max_pages, len(result))
+    return result
+
+
+def _extract_docx(file_path: str) -> str:
+    """Extract text from DOCX (Word)."""
+    from docx import Document
+
+    doc = Document(file_path)
+    parts = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            parts.append(para.text)
+    # Also extract text from tables
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+    text = "\n".join(parts).strip()
+    logger.info("[TRANSCRIBER] DOCX text: %d chars", len(text))
+    return text
+
+
+def _extract_xlsx(file_path: str) -> str:
+    """Extract text from XLSX (Excel)."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(file_path, read_only=True, data_only=True)
+    parts = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        parts.append(f"[Planilha: {sheet_name}]")
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(c) for c in row if c is not None]
+            if cells:
+                parts.append(" | ".join(cells))
+    wb.close()
+    text = "\n".join(parts).strip()
+    logger.info("[TRANSCRIBER] XLSX text: %d chars", len(text))
+    return text
+
+
+def _extract_pptx(file_path: str) -> str:
+    """Extract text from PPTX (PowerPoint)."""
+    from pptx import Presentation
+
+    prs = Presentation(file_path)
+    parts = []
+    for i, slide in enumerate(prs.slides, 1):
+        slide_texts = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    if para.text.strip():
+                        slide_texts.append(para.text)
+            if shape.has_table:
+                for row in shape.table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        slide_texts.append(" | ".join(cells))
+        if slide_texts:
+            parts.append(f"[Slide {i}]\n" + "\n".join(slide_texts))
+    text = "\n\n".join(parts).strip()
+    logger.info("[TRANSCRIBER] PPTX text: %d chars from %d slides", len(text), len(prs.slides))
+    return text
+
+
+def _extract_plain_text(file_path: str) -> str:
+    """Read file as plain text (TXT, CSV, JSON, XML, HTML, MD, etc.)."""
+    encodings = ["utf-8", "latin-1", "cp1252"]
+    for enc in encodings:
+        try:
+            with open(file_path, "r", encoding=enc) as f:
+                text = f.read(500_000)  # Max 500KB of text
+            logger.info("[TRANSCRIBER] Plain text: %d chars (%s)", len(text), enc)
+            return text.strip()
+        except (UnicodeDecodeError, ValueError):
+            continue
+    return ""
+
+
+# Extensions that can be read as plain text
+PLAIN_TEXT_EXTENSIONS = {
+    ".txt", ".csv", ".json", ".xml", ".html", ".htm", ".md",
+    ".yaml", ".yml", ".log", ".ini", ".cfg", ".conf", ".toml",
+    ".py", ".js", ".ts", ".sql", ".sh", ".bat", ".css",
+}
+
+# MIME types mapped to format
+MIME_FORMAT_MAP = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/vnd.ms-powerpoint": "ppt",
+    "text/plain": "txt",
+    "text/csv": "csv",
+    "application/json": "json",
+    "text/html": "html",
+    "text/xml": "xml",
+    "application/xml": "xml",
+}
+
+
+def _detect_format(file_path: str, mimetype: str | None) -> str:
+    """Detect document format from extension and mimetype."""
+    ext = os.path.splitext(file_path)[1].lower()
+
+    # Extension-based detection
+    ext_map = {
+        ".pdf": "pdf",
+        ".docx": "docx", ".doc": "doc",
+        ".xlsx": "xlsx", ".xls": "xls",
+        ".pptx": "pptx", ".ppt": "ppt",
+    }
+    if ext in ext_map:
+        return ext_map[ext]
+    if ext in PLAIN_TEXT_EXTENSIONS:
+        return "text"
+
+    # MIME-based fallback
+    if mimetype:
+        mime_lower = mimetype.lower()
+        if mime_lower in MIME_FORMAT_MAP:
+            return MIME_FORMAT_MAP[mime_lower]
+        if mime_lower.startswith("text/"):
+            return "text"
+
+    return "unknown"
+
+
 async def extract_document_text(file_path: str, mimetype: str | None = None) -> str:
     """
-    Extract text from a document file (PDF).
+    Extract text from any document file.
 
-    Strategy:
-    - PDF: PyMuPDF text extraction. If scanned (<100 chars), render pages
-      as images and use vision model for OCR.
-    - Other types: Not supported yet, returns empty string.
+    Supported formats:
+    - PDF: PyMuPDF text extraction, vision OCR fallback for scanned docs
+    - DOCX: python-docx (paragraphs + tables)
+    - XLSX: openpyxl (all sheets, all rows)
+    - PPTX: python-pptx (all slides, shapes + tables)
+    - TXT/CSV/JSON/XML/HTML/MD/code: plain text read
+    - DOC/XLS/PPT (legacy Office): vision OCR via rendered pages
+    - Unknown: skip
 
     Args:
         file_path: Path to the document file on disk.
@@ -336,68 +501,47 @@ async def extract_document_text(file_path: str, mimetype: str | None = None) -> 
     Returns:
         Extracted text content.
     """
-    ext = os.path.splitext(file_path)[1].lower()
-    is_pdf = ext == ".pdf" or (mimetype and "pdf" in mimetype)
+    fmt = _detect_format(file_path, mimetype)
+    logger.info("[TRANSCRIBER] Document format detected: %s (mime=%s)", fmt, mimetype)
 
-    if not is_pdf:
-        logger.info("[TRANSCRIBER] Document type %s/%s not supported for text extraction", ext, mimetype)
+    try:
+        if fmt == "pdf":
+            text = _extract_pdf(file_path)
+            # If scanned PDF (little text), try vision OCR
+            if len(text) < 100 and settings.OPENROUTER_API_KEY:
+                logger.info("[TRANSCRIBER] PDF has little text (%d chars), trying vision OCR...", len(text))
+                ocr_text = await _ocr_pdf_via_vision(file_path)
+                return ocr_text if ocr_text else text
+            return text
+
+        if fmt == "docx":
+            return _extract_docx(file_path)
+
+        if fmt == "xlsx":
+            return _extract_xlsx(file_path)
+
+        if fmt == "pptx":
+            return _extract_pptx(file_path)
+
+        if fmt == "text":
+            return _extract_plain_text(file_path)
+
+        # Legacy Office formats (doc/xls/ppt) - no native parser, try vision
+        if fmt in ("doc", "xls", "ppt") and settings.OPENROUTER_API_KEY:
+            logger.info("[TRANSCRIBER] Legacy Office format %s, trying PyMuPDF render...", fmt)
+            try:
+                # PyMuPDF can open some legacy formats
+                text = _extract_pdf(file_path)
+                if len(text) > 50:
+                    return text
+                return await _ocr_pdf_via_vision(file_path)
+            except Exception:
+                logger.warning("[TRANSCRIBER] PyMuPDF can't handle %s format", fmt)
+                return ""
+
+        logger.info("[TRANSCRIBER] Unsupported document format: %s", fmt)
         return ""
 
-    full_text = ""
-
-    # Try direct text extraction with PyMuPDF
-    try:
-        doc = fitz.open(file_path)
-        num_pages = len(doc)
-        text_parts = []
-        for page in doc:
-            text_parts.append(page.get_text())
-        doc.close()
-
-        full_text = "\n".join(text_parts).strip()
-
-        if len(full_text) > 100:
-            logger.info(
-                "[TRANSCRIBER] PDF text extracted: %d chars from %d pages",
-                len(full_text), num_pages,
-            )
-            return full_text
-
-        logger.info(
-            "[TRANSCRIBER] PDF has little text (%d chars, %d pages), trying vision OCR...",
-            len(full_text), num_pages,
-        )
     except Exception as exc:
-        logger.warning("[TRANSCRIBER] PyMuPDF text extraction failed: %s", exc)
-
-    # Fallback: render pages as images and use vision model (handles scanned PDFs)
-    if not settings.OPENROUTER_API_KEY:
-        logger.warning("[TRANSCRIBER] No OPENROUTER_API_KEY for vision OCR fallback")
-        return full_text
-
-    try:
-        doc = fitz.open(file_path)
-        descriptions = []
-        max_pages = min(len(doc), 10)  # Limit to 10 pages for cost/speed
-
-        for i in range(max_pages):
-            page = doc[i]
-            pix = page.get_pixmap(dpi=200)
-            img_bytes = pix.tobytes("png")
-
-            desc = await describe_image(img_bytes, "image/png")
-            if desc:
-                descriptions.append(f"[Pagina {i + 1}]\n{desc}")
-
-        doc.close()
-
-        result = "\n\n".join(descriptions)
-        logger.info(
-            "[TRANSCRIBER] PDF OCR via vision: %d pages -> %d chars",
-            max_pages, len(result),
-        )
-        return result
-
-    except Exception as exc:
-        logger.error("[TRANSCRIBER] Vision OCR failed for PDF: %s", exc)
-        return full_text
+        logger.error("[TRANSCRIBER] Document extraction failed for %s: %s", fmt, exc)
+        return ""
