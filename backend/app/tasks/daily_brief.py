@@ -11,7 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import settings
 from app.database import async_session
 from app.services.orchestrator import generate_daily_brief, send_telegram_brief
-from app.tasks.proactive_bot import scheduled_proactive_analysis
+from app.tasks.proactive_bot import scheduled_proactive_analysis, run_client_digests
 from app.tasks.scheduled_sender import process_scheduled_messages
 from app.tasks.youtube_daily import daily_youtube_analysis
 
@@ -84,6 +84,17 @@ def start_scheduler():
         timezone="UTC",
     )
 
+    # Client digests: 9:00 UTC (6:00 AM BRT) - summarize conversations before proactive analysis
+    scheduler.add_job(
+        run_client_digests,
+        "cron",
+        hour=9,
+        minute=0,
+        id="client_digests",
+        replace_existing=True,
+        timezone="UTC",
+    )
+
     # Proactive bot: morning at 10:00 UTC (7:00 AM BRT) + afternoon at 17:00 UTC (14:00 BRT)
     scheduler.add_job(
         scheduled_proactive_analysis,
@@ -106,7 +117,7 @@ def start_scheduler():
 
     scheduler.start()
     logger.info(
-        "[DAILY_BRIEF] Scheduler started. Brief at %02d:00 UTC, YouTube at 08:00 UTC, Proactive at 10:00+17:00 UTC, Scheduled msgs every 1min",
+        "[DAILY_BRIEF] Scheduler started. Brief %02d:00, YouTube 08:00, Digests 09:00, Proactive 10:00+17:00 UTC, Msgs every 1min",
         settings.BRIEFING_HOUR,
     )
 

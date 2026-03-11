@@ -140,6 +140,12 @@ export async function listMessages(params: { contact_id?: string; limit?: number
   return api(`/api/messages${q ? '?' + q : ''}`);
 }
 
+// ─── Recordings ─────────────────────────────────────────────────────
+
+export async function listRecordings() {
+  return api('/api/recordings');
+}
+
 // ─── Memory ─────────────────────────────────────────────────────────
 
 export async function searchMemory(query: string, limit = 10) {

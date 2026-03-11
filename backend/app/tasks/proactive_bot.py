@@ -1,8 +1,8 @@
 """
 Orquestra - Proactive WhatsApp Bot
-Analyzes tasks, proposals, contacts, and opportunities daily.
-Sends actionable insights to Diego via WhatsApp.
-Can create/adjust tasks autonomously.
+Two-phase approach:
+1. Client Digest: summarizes full conversations + recordings into contact.notes (runs 1x/day, saves tokens)
+2. Proactive Analysis: uses digests + recent activity for actionable insights (runs 2x/day, cheap)
 """
 
 import json
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.models import Contact, Message, Project, ProjectTask, Proposal
+from app.models import Contact, Message, Project, ProjectTask, Proposal, Recording
 from app.services.llm import chat_completion
 from app.services.whatsapp import send_whatsapp_message
 
@@ -25,29 +25,213 @@ logger = logging.getLogger(__name__)
 DIEGO_PHONE = "5551934481245"
 
 
-async def _gather_intelligence(db: AsyncSession) -> dict:
-    """Gather all relevant data for proactive analysis."""
+# ═══════════════════════════════════════════════════════════════════════
+# PHASE 1: Client Digest (runs 1x/day at 6h BRT = 9h UTC)
+# Summarizes full conversations + recordings → saves in contact.notes
+# ═══════════════════════════════════════════════════════════════════════
+
+async def _build_client_digest(db: AsyncSession, contact: Contact) -> str | None:
+    """Build a comprehensive digest for a single client from all data sources."""
     now = datetime.now(timezone.utc)
-    seven_days_ago = now - timedelta(days=7)
+    name = contact.name or contact.push_name or contact.phone
+
+    # 1. Get ALL messages (last 60 days, up to 100)
+    msgs_stmt = (
+        select(Message)
+        .where(
+            and_(
+                Message.contact_id == contact.id,
+                Message.timestamp >= now - timedelta(days=60),
+            )
+        )
+        .order_by(Message.timestamp.asc())
+        .limit(100)
+    )
+    msgs_result = await db.execute(msgs_stmt)
+    messages = msgs_result.scalars().all()
+
+    if not messages:
+        return None
+
+    # Format conversation
+    conversation_lines = []
+    for m in messages:
+        direction = "Diego" if m.direction == "outgoing" else name
+        content = m.content or m.transcription or ""
+        if not content and m.message_type != "text":
+            content = f"[{m.message_type}]"
+        if content:
+            ts = m.timestamp.strftime("%d/%m %H:%M") if m.timestamp else ""
+            conversation_lines.append(f"[{ts}] {direction}: {content[:500]}")
+
+    # 2. Get recordings/calls related to this contact (by phone match or project)
+    recordings_text = ""
+    if contact.project_id:
+        rec_stmt = (
+            select(Recording)
+            .where(
+                and_(
+                    Recording.project_id == contact.project_id,
+                    Recording.transcription.isnot(None),
+                )
+            )
+            .order_by(Recording.created_at.desc())
+            .limit(5)
+        )
+        rec_result = await db.execute(rec_stmt)
+        recordings = rec_result.scalars().all()
+
+        if recordings:
+            rec_parts = []
+            for r in recordings:
+                title = r.title or "Call sem título"
+                ts = r.created_at.strftime("%d/%m/%Y") if r.created_at else ""
+                summary = r.summary or ""
+                transcript = (r.transcription or "")[:1000]
+                action_items = r.action_items or []
+
+                rec_parts.append(f"--- {title} ({ts}) ---")
+                if summary:
+                    rec_parts.append(f"Resumo: {summary}")
+                if action_items:
+                    rec_parts.append(f"Ações: {json.dumps(action_items, ensure_ascii=False)}")
+                if transcript and not summary:
+                    rec_parts.append(f"Transcrição: {transcript}")
+                rec_parts.append("")
+
+            recordings_text = "\n".join(rec_parts)
+
+    # 3. Get proposals for context
+    prop_stmt = select(Proposal).where(Proposal.contact_id == contact.id)
+    prop_result = await db.execute(prop_stmt)
+    proposals = prop_result.scalars().all()
+    proposals_text = ""
+    if proposals:
+        prop_parts = []
+        for p in proposals:
+            prop_parts.append(
+                f"- {p.title}: R${p.total_value or '?'} | Status: {p.status} | "
+                f"Criada: {p.created_at.strftime('%d/%m/%Y') if p.created_at else '?'} | "
+                f"Vista: {'sim' if p.viewed_at else 'não'}"
+            )
+        proposals_text = "\n".join(prop_parts)
+
+    # 4. Send to LLM for digest
+    conversation = "\n".join(conversation_lines)
+
+    prompt = f"""Analise TODA a comunicação com o cliente abaixo e gere um RESUMO EXECUTIVO.
+
+CLIENTE: {name}
+EMPRESA: {contact.company or 'não informada'}
+TELEFONE: {contact.phone}
+PIPELINE: {contact.pipeline_stage or 'indefinido'}
+RECEITA MENSAL: {contact.monthly_revenue or 'não definida'}
+
+═══ CONVERSAS WHATSAPP (últimos 60 dias) ═══
+{conversation}
+
+{f'═══ GRAVAÇÕES DE CALLS ═══{chr(10)}{recordings_text}' if recordings_text else ''}
+
+{f'═══ PROPOSTAS ═══{chr(10)}{proposals_text}' if proposals_text else ''}
+
+Gere um resumo FACTUAL em formato estruturado. NÃO INVENTE nada que não esteja nas conversas.
+
+Formato obrigatório:
+PROJETO: [o que o Diego está fazendo para esse cliente, baseado nas conversas]
+VALOR COMBINADO: [valor que foi discutido/fechado nas conversas, ou "não mencionado"]
+STATUS REAL: [o que está acontecendo de fato baseado nas últimas mensagens]
+PENDÊNCIAS: [o que ficou pendente nas conversas — entregas, pagamentos, decisões]
+SATISFAÇÃO: [satisfeito/neutro/insatisfeito — baseado no TOM das mensagens do cliente]
+OPORTUNIDADE: [potencial de upsell ou novo serviço identificado nas conversas]
+ÚLTIMA INTERAÇÃO: [resumo da última conversa significativa]
+CONTEXTO CHAVE: [3-5 fatos importantes sobre o relacionamento que ajudam a tomar decisões]"""
+
+    try:
+        digest = await chat_completion(
+            [{"role": "user", "content": prompt}],
+            model=settings.ASSISTANT_CHAT_MODEL,
+            temperature=0.2,
+            max_tokens=800,
+        )
+        return digest.strip()
+    except Exception as exc:
+        logger.error("[DIGEST] Failed to digest client %s: %s", name, exc)
+        return None
+
+
+async def run_client_digests():
+    """
+    Phase 1: Update client digests.
+    Runs 1x/day. Summarizes conversations + recordings into contact.notes.
+    Only processes contacts with activity in the last 30 days.
+    """
+    async with async_session() as db:
+        try:
+            now = datetime.now(timezone.utc)
+            thirty_days_ago = now - timedelta(days=30)
+
+            # Find contacts with recent messages
+            active_contacts_stmt = (
+                select(Contact)
+                .where(
+                    and_(
+                        Contact.is_group == False,
+                        Contact.ignored == False,
+                    )
+                )
+                .join(Message, Message.contact_id == Contact.id)
+                .where(Message.timestamp >= thirty_days_ago)
+                .group_by(Contact.id)
+                .having(func.count(Message.id) >= 3)
+                .order_by(func.max(Message.timestamp).desc())
+                .limit(20)
+            )
+            result = await db.execute(active_contacts_stmt)
+            contacts = result.scalars().all()
+
+            logger.info("[DIGEST] Processing %d active contacts", len(contacts))
+
+            updated = 0
+            for contact in contacts:
+                name = contact.name or contact.push_name or contact.phone
+                digest = await _build_client_digest(db, contact)
+                if digest:
+                    # Prepend date marker and save
+                    dated_digest = f"[Atualizado {now.strftime('%d/%m/%Y')}]\n{digest}"
+                    contact.notes = dated_digest
+                    contact.updated_at = now
+                    updated += 1
+                    logger.info("[DIGEST] Updated digest for %s", name)
+
+            await db.commit()
+            logger.info("[DIGEST] Done. Updated %d/%d contacts", updated, len(contacts))
+
+        except Exception as exc:
+            logger.error("[DIGEST] Job failed: %s", exc, exc_info=True)
+            await db.rollback()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PHASE 2: Proactive Analysis (runs 2x/day at 7h+14h BRT)
+# Uses digests (cheap) + latest activity for actionable insights
+# ═══════════════════════════════════════════════════════════════════════
+
+async def _gather_intelligence(db: AsyncSession) -> dict:
+    """Gather data for proactive analysis — uses digests, not raw conversations."""
+    now = datetime.now(timezone.utc)
     three_days_ago = now - timedelta(days=3)
 
-    # 1. Tasks not done, ordered by priority
+    # 1. Tasks not done
     tasks_stmt = (
         select(ProjectTask, Project)
         .outerjoin(Project, ProjectTask.project_id == Project.id)
         .where(ProjectTask.status.notin_(["done"]))
-        .order_by(
-            ProjectTask.priority.desc(),
-            ProjectTask.created_at.desc(),
-        )
+        .order_by(ProjectTask.priority.desc(), ProjectTask.created_at.desc())
         .limit(30)
     )
     tasks_result = await db.execute(tasks_stmt)
-    tasks_raw = tasks_result.all()
-
     tasks = []
-    for task, project in tasks_raw:
-        age_days = (now - task.created_at).days
+    for task, project in tasks_result.all():
         tasks.append({
             "id": str(task.id),
             "title": task.title,
@@ -55,12 +239,11 @@ async def _gather_intelligence(db: AsyncSession) -> dict:
             "priority": task.priority,
             "assigned_to": task.assigned_to,
             "project": project.name if project else "sem projeto",
-            "age_days": age_days,
+            "age_days": (now - task.created_at).days,
             "description": (task.description or "")[:200],
-            "source": task.source,
         })
 
-    # 2. Open proposals (not accepted/rejected)
+    # 2. Open proposals
     proposals_stmt = (
         select(Proposal)
         .where(Proposal.status.notin_(["accepted", "rejected"]))
@@ -68,44 +251,32 @@ async def _gather_intelligence(db: AsyncSession) -> dict:
         .limit(20)
     )
     proposals_result = await db.execute(proposals_stmt)
-    proposals_raw = proposals_result.scalars().all()
-
     proposals = []
-    for p in proposals_raw:
-        days_since_created = (now - p.created_at).days
-        days_since_viewed = (now - p.viewed_at).days if p.viewed_at else None
+    for p in proposals_result.scalars().all():
         proposals.append({
             "title": p.title,
             "client": p.client_name,
             "status": p.status,
             "value": p.total_value,
-            "days_since_created": days_since_created,
-            "days_since_viewed": days_since_viewed,
-            "has_been_viewed": p.viewed_at is not None,
+            "days_since_created": (now - p.created_at).days,
+            "days_since_viewed": (now - p.viewed_at).days if p.viewed_at else None,
         })
 
-    # 3. Contacts needing attention (all non-group, non-ignored with some activity)
+    # 3. Contacts with DIGESTS (not raw messages — saves tokens)
     contacts_stmt = (
         select(Contact)
-        .where(
-            and_(
-                Contact.is_group == False,
-                Contact.ignored == False,
-            )
-        )
+        .where(and_(Contact.is_group == False, Contact.ignored == False))
         .order_by(Contact.engagement_score.desc(), Contact.updated_at.desc())
-        .limit(30)
+        .limit(25)
     )
     contacts_result = await db.execute(contacts_stmt)
-    contacts_raw = contacts_result.scalars().all()
-
     contacts = []
-    for c in contacts_raw:
+    for c in contacts_result.scalars().all():
         days_since_contact = None
         if c.last_contacted_at:
             days_since_contact = (now - c.last_contacted_at).days
 
-        # Get last 5 messages for each contact (context about what they talked about)
+        # Only get last 5 messages (recent activity, not full history)
         msgs_stmt = (
             select(Message)
             .where(Message.contact_id == c.id)
@@ -113,14 +284,13 @@ async def _gather_intelligence(db: AsyncSession) -> dict:
             .limit(5)
         )
         msgs_result = await db.execute(msgs_stmt)
-        recent_msgs = msgs_result.scalars().all()
-        last_messages = []
-        for m in recent_msgs:
-            direction = "Diego" if m.direction == "outgoing" else (c.name or c.push_name or "cliente")
-            content = (m.content or m.transcription or m.message_type or "")[:100]
-            last_messages.append(f"{direction}: {content}")
+        recent = []
+        for m in reversed(msgs_result.scalars().all()):
+            direction = "Diego" if m.direction == "outgoing" else (c.name or "cliente")
+            content = (m.content or m.transcription or m.message_type or "")[:150]
+            recent.append(f"{direction}: {content}")
 
-        # Get proposals linked to this contact
+        # Get proposals for this contact
         contact_proposals = []
         prop_stmt = select(Proposal).where(Proposal.contact_id == c.id)
         prop_result = await db.execute(prop_stmt)
@@ -129,14 +299,11 @@ async def _gather_intelligence(db: AsyncSession) -> dict:
                 "title": p.title,
                 "status": p.status,
                 "value": p.total_value,
-                "viewed": p.viewed_at is not None,
-                "days_since_created": (now - p.created_at).days,
             })
 
-        # Message count total
+        # Message count
         msg_count_stmt = select(func.count(Message.id)).where(Message.contact_id == c.id)
-        count_result = await db.execute(msg_count_stmt)
-        total_messages = count_result.scalar() or 0
+        total_messages = (await db.execute(msg_count_stmt)).scalar() or 0
 
         contacts.append({
             "name": c.name or c.push_name or c.phone,
@@ -146,62 +313,42 @@ async def _gather_intelligence(db: AsyncSession) -> dict:
             "engagement_score": c.engagement_score,
             "days_since_contact": days_since_contact,
             "monthly_revenue": c.monthly_revenue,
-            "total_revenue": c.total_revenue,
             "next_action": c.next_action,
-            "support_ends_at": c.support_ends_at.strftime("%d/%m/%Y") if c.support_ends_at else None,
             "total_messages": total_messages,
-            "last_messages": last_messages,
+            "digest": c.notes or "Sem resumo disponível",  # <-- THE KEY: uses digest, not raw msgs
+            "recent_messages": recent,  # only last 5 for "what just happened"
             "proposals": contact_proposals,
-            "notes": (c.notes or "")[:200],
         })
 
-    # 4. Projects overview
+    # 4. Projects
     projects_stmt = select(Project).order_by(Project.updated_at.desc()).limit(15)
     projects_result = await db.execute(projects_stmt)
-    projects_raw = projects_result.scalars().all()
-
     projects = []
-    for p in projects_raw:
-        # Count active tasks per project
+    for p in projects_result.scalars().all():
         task_count_stmt = select(func.count(ProjectTask.id)).where(
-            and_(
-                ProjectTask.project_id == p.id,
-                ProjectTask.status.notin_(["done"]),
-            )
+            and_(ProjectTask.project_id == p.id, ProjectTask.status.notin_(["done"]))
         )
-        count_result = await db.execute(task_count_stmt)
-        active_tasks = count_result.scalar() or 0
-
-        projects.append({
-            "name": p.name,
-            "active_tasks": active_tasks,
-        })
+        active_tasks = (await db.execute(task_count_stmt)).scalar() or 0
+        projects.append({"name": p.name, "active_tasks": active_tasks})
 
     # 5. Task stats
-    stats_stmt = (
-        select(ProjectTask.status, func.count(ProjectTask.id))
-        .group_by(ProjectTask.status)
-    )
+    stats_stmt = select(ProjectTask.status, func.count(ProjectTask.id)).group_by(ProjectTask.status)
     stats_result = await db.execute(stats_stmt)
     task_stats = {status: count for status, count in stats_result.all()}
 
-    # 6. Recent messages (last 3 days) - count by contact for activity
+    # 6. Recent activity (last 3 days)
     recent_msgs_stmt = (
         select(
-            Contact.name,
-            Contact.push_name,
-            Contact.phone,
+            Contact.name, Contact.push_name, Contact.phone,
             func.count(Message.id).label("msg_count"),
             func.max(Message.timestamp).label("last_msg"),
         )
         .join(Contact, Message.contact_id == Contact.id)
-        .where(
-            and_(
-                Message.timestamp >= three_days_ago,
-                Message.direction == "incoming",
-                Contact.is_group == False,
-            )
-        )
+        .where(and_(
+            Message.timestamp >= three_days_ago,
+            Message.direction == "incoming",
+            Contact.is_group == False,
+        ))
         .group_by(Contact.id, Contact.name, Contact.push_name, Contact.phone)
         .order_by(func.count(Message.id).desc())
         .limit(10)
@@ -233,15 +380,13 @@ async def _gather_intelligence(db: AsyncSession) -> dict:
 
 
 async def _analyze_with_llm(intelligence: dict) -> dict:
-    """Use LLM to generate proactive insights and actions."""
-    prompt = f"""Você é o Jarbas, consultor de negócios e CTO virtual do Diego (Guy Folkz).
+    """Use LLM to generate proactive insights from digests + data."""
+    prompt = f"""Você é o Jarbas, braço direito do Diego (Guy Folkz - Automação B2B, ticket R$4-15k + recorrência).
+Meta: Motor 100K (R$100k/mês recorrente).
 
-Diego trabalha com Automação & IA para Negócios (B2B, ticket médio R$4-15k + recorrência).
-Meta dele: Motor 100K (R$100k/mês faturamento recorrente).
-Canal YouTube: GuyFolkz (IA, automação, licitações).
-
-Sua missão é AUMENTAR O FATURAMENTO do Diego e MELHORAR o valor entregue aos clientes.
-Analise TODA a inteligência abaixo como um consultor sênior faria.
+REGRA #1: Só fale o que os DADOS confirmam. Se não tem informação, diga "sem dados".
+REGRA #2: Use os DIGESTS dos clientes — eles contêm o resumo real das conversas e acordos.
+REGRA #3: Valores só se estiverem no digest ou nas propostas. Nunca invente números.
 
 DATA: {intelligence['date']}
 
@@ -254,49 +399,24 @@ Backlog: {intelligence['task_stats']['backlog']} | Em progresso: {intelligence['
 ═══ PROPOSTAS PENDENTES ═══
 {json.dumps(intelligence['proposals'], ensure_ascii=False, indent=1)}
 
-═══ CLIENTES (análise profunda) ═══
-Para cada cliente, analise: conversas recentes, propostas, engagement, tempo sem contato, receita.
-Identifique: risco de churn, oportunidade de upsell, necessidade de follow-up, satisfação aparente.
-
+═══ CLIENTES (com digest das conversas reais) ═══
 {json.dumps(intelligence['contacts'], ensure_ascii=False, indent=1)}
-
-═══ PROJETOS ═══
-{json.dumps(intelligence['projects'], ensure_ascii=False, indent=1)}
 
 ═══ ATIVIDADE RECENTE (3 dias) ═══
 {json.dumps(intelligence['recent_activity'], ensure_ascii=False, indent=1)}
 
-Gere um JSON com esta estrutura:
+Gere um JSON:
 {{
-  "urgente": [
-    {{"acao": "ação concreta e específica", "motivo": "impacto financeiro ou risco", "projeto": "nome", "valor_em_jogo": "R$ estimado"}}
-  ],
-  "oportunidades": [
-    {{"acao": "o que fazer exatamente", "potencial": "R$ valor estimado", "contato": "nome", "estrategia": "como abordar"}}
-  ],
-  "follow_ups": [
-    {{"contato": "nome", "acao": "mensagem ou ação específica a tomar", "dias_sem_contato": 5, "contexto": "último assunto conversado"}}
-  ],
-  "analise_clientes": [
-    {{"cliente": "nome", "saude": "verde|amarelo|vermelho", "diagnostico": "análise curta", "proxima_acao": "ação concreta"}}
-  ],
-  "tasks_sugeridas": [
-    {{"titulo": "título da task", "descricao": "por que essa task é necessária AGORA", "prioridade": "high|medium|low", "projeto": "nome do projeto"}}
-  ],
-  "resumo_executivo": "3-5 frases como um consultor falaria: situação geral, maiores riscos, maiores oportunidades, prioridade #1 do dia"
+  "urgente": [{{"acao": "...", "motivo": "...", "valor_em_jogo": "R$ se conhecido"}}],
+  "oportunidades": [{{"acao": "...", "potencial": "R$...", "contato": "...", "estrategia": "..."}}],
+  "follow_ups": [{{"contato": "...", "acao": "...", "dias_sem_contato": N, "contexto": "baseado no digest"}}],
+  "analise_clientes": [{{"cliente": "...", "saude": "verde|amarelo|vermelho", "diagnostico": "baseado no digest REAL", "proxima_acao": "..."}}],
+  "tasks_sugeridas": [{{"titulo": "...", "descricao": "...", "prioridade": "high|medium|low", "projeto": "..."}}],
+  "resumo_executivo": "3-5 frases sobre a situação REAL dos negócios"
 }}
 
-REGRAS CRÍTICAS:
-1. RECEITA PRIMEIRO: priorize ações que geram ou protegem receita
-2. Proposta vista sem resposta >2 dias = follow-up URGENTE (dinheiro na mesa)
-3. Cliente sem contato >5 dias com pipeline ativo = risco de churn
-4. Task alta prioridade parada >3 dias = bloqueio de entrega
-5. Review pendente = Diego precisa testar e liberar
-6. Analise cada cliente individualmente: leia as mensagens, entenda o contexto, sugira EXATAMENTE o que dizer
-7. tasks_sugeridas: APENAS se detectar necessidade real (máx 3), cada uma deve ter impacto claro
-8. Use NOMES REAIS, VALORES REAIS, DATAS REAIS - nada genérico
-9. Se detectar que um cliente precisa de algo que Diego pode vender: flag como oportunidade de upsell
-10. Responda APENAS o JSON, sem texto extra"""
+PRIORIZE: 1) Receita em risco 2) Propostas paradas 3) Clientes sem contato 4) Oportunidades de upsell
+Responda APENAS o JSON."""
 
     response = await chat_completion(
         [{"role": "user", "content": prompt}],
@@ -305,7 +425,6 @@ REGRAS CRÍTICAS:
         max_tokens=3000,
     )
 
-    # Parse JSON from response
     try:
         match = re.search(r"\{.*\}", response, re.DOTALL)
         if match:
@@ -315,11 +434,8 @@ REGRAS CRÍTICAS:
 
     logger.error("[PROACTIVE] Failed to parse LLM response: %s", response[:500])
     return {
-        "urgente": [],
-        "oportunidades": [],
-        "follow_ups": [],
-        "tasks_sugeridas": [],
-        "resumo_executivo": response[:500],
+        "urgente": [], "oportunidades": [], "follow_ups": [],
+        "tasks_sugeridas": [], "resumo_executivo": response[:500],
     }
 
 
@@ -330,7 +446,6 @@ def _format_whatsapp_message(analysis: dict, stats: dict) -> str:
     parts.append(f"_{datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC_")
     parts.append("")
 
-    # Stats line
     parts.append(
         f"Kanban: {stats['backlog']} backlog | "
         f"{stats['in_progress']} em progresso | "
@@ -339,13 +454,11 @@ def _format_whatsapp_message(analysis: dict, stats: dict) -> str:
     )
     parts.append("")
 
-    # Executive summary
     resumo = analysis.get("resumo_executivo", "")
     if resumo:
         parts.append(f"*Resumo:* {resumo}")
         parts.append("")
 
-    # Urgent actions
     urgentes = analysis.get("urgente", [])
     if urgentes:
         parts.append("*URGENTE:*")
@@ -355,7 +468,6 @@ def _format_whatsapp_message(analysis: dict, stats: dict) -> str:
                 parts.append(f"    _{item['motivo']}_")
         parts.append("")
 
-    # Opportunities
     oportunidades = analysis.get("oportunidades", [])
     if oportunidades:
         parts.append("*OPORTUNIDADES:*")
@@ -366,7 +478,6 @@ def _format_whatsapp_message(analysis: dict, stats: dict) -> str:
             parts.append(line)
         parts.append("")
 
-    # Follow-ups needed
     follow_ups = analysis.get("follow_ups", [])
     if follow_ups:
         parts.append("*FOLLOW-UP:*")
@@ -377,7 +488,6 @@ def _format_whatsapp_message(analysis: dict, stats: dict) -> str:
                 parts.append(f"    → {item['acao']}")
         parts.append("")
 
-    # Client health
     clientes = analysis.get("analise_clientes", [])
     if clientes:
         parts.append("*SAÚDE DOS CLIENTES:*")
@@ -388,7 +498,6 @@ def _format_whatsapp_message(analysis: dict, stats: dict) -> str:
                 parts.append(f"    → {c['proxima_acao']}")
         parts.append("")
 
-    # Suggested tasks
     tasks = analysis.get("tasks_sugeridas", [])
     if tasks:
         parts.append(f"*TASKS CRIADAS ({len(tasks)}):*")
@@ -413,7 +522,6 @@ async def _create_suggested_tasks(db: AsyncSession, tasks_sugeridas: list[dict])
         if not title:
             continue
 
-        # Find project by name if provided
         project_id = None
         project_name = suggestion.get("projeto", "")
         if project_name:
@@ -425,7 +533,7 @@ async def _create_suggested_tasks(db: AsyncSession, tasks_sugeridas: list[dict])
             if proj:
                 project_id = proj.id
 
-        # Check for duplicate (same title in last 7 days)
+        # Check for duplicate
         dup_stmt = select(ProjectTask).where(
             and_(
                 ProjectTask.title.ilike(f"%{title[:50]}%"),
@@ -434,7 +542,6 @@ async def _create_suggested_tasks(db: AsyncSession, tasks_sugeridas: list[dict])
         )
         dup_result = await db.execute(dup_stmt)
         if dup_result.scalar_one_or_none():
-            logger.info("[PROACTIVE] Skipping duplicate task: %s", title[:50])
             continue
 
         task = ProjectTask(
@@ -443,12 +550,12 @@ async def _create_suggested_tasks(db: AsyncSession, tasks_sugeridas: list[dict])
             description=suggestion.get("descricao", "")[:2000] or None,
             status="backlog",
             priority=suggestion.get("prioridade", "medium"),
-            source="proactive_bot",
+            source="auto",
             assigned_to="diego",
         )
         db.add(task)
         created += 1
-        logger.info("[PROACTIVE] Created task: %s (project=%s)", title[:50], project_name)
+        logger.info("[PROACTIVE] Created task: %s", title[:50])
 
     if created:
         await db.flush()
@@ -456,11 +563,7 @@ async def _create_suggested_tasks(db: AsyncSession, tasks_sugeridas: list[dict])
 
 
 async def run_proactive_analysis(db: AsyncSession | None = None) -> dict:
-    """
-    Main entry point for the proactive bot.
-    Can be called from scheduler or manually via API.
-    Returns the analysis result.
-    """
+    """Main entry point. Can be called from scheduler or API."""
     own_session = db is None
     if own_session:
         session = async_session()
@@ -470,33 +573,19 @@ async def run_proactive_analysis(db: AsyncSession | None = None) -> dict:
 
     try:
         logger.info("[PROACTIVE] Starting proactive analysis...")
-
-        # 1. Gather intelligence
         intelligence = await _gather_intelligence(db)
         logger.info(
-            "[PROACTIVE] Gathered: %d tasks, %d proposals, %d contacts, %d recent",
+            "[PROACTIVE] Gathered: %d tasks, %d proposals, %d contacts",
             len(intelligence["tasks"]),
             len(intelligence["proposals"]),
             len(intelligence["contacts"]),
-            len(intelligence["recent_activity"]),
         )
 
-        # 2. LLM analysis
         analysis = await _analyze_with_llm(intelligence)
-        logger.info(
-            "[PROACTIVE] Analysis: %d urgent, %d opportunities, %d follow-ups, %d tasks",
-            len(analysis.get("urgente", [])),
-            len(analysis.get("oportunidades", [])),
-            len(analysis.get("follow_ups", [])),
-            len(analysis.get("tasks_sugeridas", [])),
-        )
-
-        # 3. Create suggested tasks
         tasks_created = 0
         if analysis.get("tasks_sugeridas"):
             tasks_created = await _create_suggested_tasks(db, analysis["tasks_sugeridas"])
 
-        # 4. Format and send WhatsApp message
         message = _format_whatsapp_message(analysis, intelligence["task_stats"])
         phone = settings.OWNER_WHATSAPP or DIEGO_PHONE
         sent = await send_whatsapp_message(phone, message)
@@ -513,7 +602,7 @@ async def run_proactive_analysis(db: AsyncSession | None = None) -> dict:
             "message_preview": message[:500],
             "stats": intelligence["task_stats"],
         }
-        logger.info("[PROACTIVE] Done. WhatsApp=%s, tasks_created=%d", sent, tasks_created)
+        logger.info("[PROACTIVE] Done. WhatsApp=%s, tasks=%d", sent, tasks_created)
         return result
 
     except Exception as exc:

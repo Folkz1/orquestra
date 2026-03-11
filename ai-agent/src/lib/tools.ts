@@ -156,15 +156,15 @@ export const sendWhatsApp = tool({
 });
 
 export const getConversation = tool({
-  description: 'Busca o histórico de conversa WhatsApp com um contato. Útil para entender contexto antes de agir.',
+  description: 'Busca o histórico COMPLETO de conversa WhatsApp com um contato. Use para entender acordos, valores, situação real.',
   parameters: z.object({
     contact_id: z.string().describe('ID do contato (UUID)'),
   }),
   execute: async ({ contact_id }) => {
     const messages = await orq.getConversation(contact_id);
-    return messages.slice(-20).map((m: any) => ({
+    return messages.slice(-50).map((m: any) => ({
       direction: m.direction,
-      content: (m.content || m.transcription || m.message_type || '').slice(0, 200),
+      content: (m.content || m.transcription || '').slice(0, 500) || `[${m.message_type}]`,
       timestamp: m.timestamp,
     }));
   },
@@ -246,6 +246,26 @@ export const runProactiveAnalysis = tool({
   execute: async () => orq.triggerProactive(),
 });
 
+// ─── Recordings / Calls ─────────────────────────────────────────────
+
+export const listRecordings = tool({
+  description: 'Lista gravações de calls com transcrições. Use para entender acordos verbais, valores combinados, decisões.',
+  parameters: z.object({}),
+  execute: async () => {
+    const recordings = await orq.listRecordings();
+    return recordings.map((r: any) => ({
+      id: r.id,
+      title: r.title,
+      project: r.project_name,
+      duration_seconds: r.duration_seconds,
+      summary: r.summary,
+      action_items: r.action_items,
+      transcription: (r.transcription || '').slice(0, 1000),
+      created_at: r.created_at,
+    }));
+  },
+});
+
 // ─── Export all tools ───────────────────────────────────────────────
 
 export const allTools = {
@@ -261,5 +281,6 @@ export const allTools = {
   listProposals,
   searchMemory,
   saveMemory,
+  listRecordings,
   runProactiveAnalysis,
 };
