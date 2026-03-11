@@ -36,13 +36,20 @@ export async function POST(req: Request) {
   const allMessages = [...history, newMessage];
 
   try {
+    // Race generateText against a 55s timeout (Vercel/EasyPanel default is 60s)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 55_000);
+
     const result = await generateText({
       model: openrouter(AI_MODEL),
       system: SYSTEM_PROMPT + (phone ? `\n\nEsta conversa é via WhatsApp com o número ${phone}.` : ''),
       messages: allMessages,
       tools: allTools,
-      maxSteps: 8,
+      maxSteps: 5,
+      abortSignal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     // Save to session memory
     addMessages(sessionId, [newMessage]);
@@ -64,11 +71,17 @@ export async function POST(req: Request) {
       session_id: sessionId,
     });
   } catch (error: any) {
-    console.error('[JARBAS] Generate error:', error);
+    console.error('[JARBAS] Generate error:', error?.message, error?.cause || '');
+
+    const isTimeout = error?.name === 'AbortError' || error?.message?.includes('abort');
+    const friendlyMsg = isTimeout
+      ? 'Demorou demais pra processar. Tenta uma pergunta mais direta (ex: "status do João" em vez de "me conta tudo sobre o João").'
+      : 'Deu um erro aqui. Tenta de novo em um instante.';
+
     return Response.json({
-      text: 'Deu um erro aqui. Tenta de novo em um instante.',
+      text: friendlyMsg,
       error: error.message,
-    }, { status: 500 });
+    }, { status: isTimeout ? 504 : 500 });
   }
 }
 
