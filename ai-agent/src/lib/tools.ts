@@ -156,13 +156,13 @@ export const sendWhatsApp = tool({
 });
 
 export const getConversation = tool({
-  description: 'Busca o histórico COMPLETO de conversa WhatsApp com um contato. Use para entender acordos, valores, situação real.',
+  description: 'Busca as ÚLTIMAS 20 mensagens WhatsApp com um contato. Para resumo completo, use searchContacts (campo notes tem o digest diário). Use esta tool só para ver mensagens recentes.',
   parameters: z.object({
     contact_id: z.string().describe('ID do contato (UUID)'),
   }),
   execute: async ({ contact_id }) => {
     const messages = await orq.getConversation(contact_id);
-    return messages.slice(-50).map((m: any) => ({
+    return messages.slice(-20).map((m: any) => ({
       direction: m.direction,
       content: (m.content || m.transcription || '').slice(0, 500) || `[${m.message_type}]`,
       timestamp: m.timestamp,
