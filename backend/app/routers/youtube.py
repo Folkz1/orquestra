@@ -5,11 +5,14 @@ Trend analysis, content briefs, and channel analytics for GuyFolkz.
 
 import logging
 import os
+import json
+import tempfile
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from fastapi.responses import FileResponse
+import httpx
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,8 +20,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models import MemoryEmbedding
-from app.schemas import YouTubeAnalyzeRequest, YouTubeAnalyzeResponse, YouTubeSendBriefRequest
+from app.schemas import (
+    YouTubeAnalyzeRequest,
+    YouTubeAnalyzeResponse,
+    YouTubeChannelStats,
+    YouTubeScheduleRequest,
+    YouTubeSendBriefRequest,
+    YouTubeUploadUrlRequest,
+    YouTubeVideoUpdate,
+)
 from app.services.youtube import analyze_channel_trends, generate_content_brief
+from app.services.youtube_data import (
+    build_oauth_authorization_url,
+    decode_oauth_state,
+    encode_oauth_state,
+    exchange_oauth_code,
+    fetch_current_channel_id,
+    get_or_create_project_by_name,
+    get_channel_stats,
+    get_project_access_token,
+    get_project_by_name,
+    get_video_detail,
+    list_channel_videos,
+    publish_video,
+    resolve_oauth_client_config,
+    save_youtube_oauth_credentials,
+    schedule_video,
+    set_thumbnail,
+    update_video_metadata,
+    upload_video,
+)
 from app.services.whatsapp import send_content_brief_to_whatsapp
 from app.services.memory import store_memory
 
@@ -27,6 +58,94 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 THUMBNAILS_DIR = os.path.join(settings.UPLOAD_DIR, "thumbnails")
+
+
+def _ok(data: Any) -> dict[str, Any]:
+    return {"status": "ok", "data": data}
+
+
+def _error(message: str, status_code: int = 400) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "error", "data": {"message": message}},
+    )
+
+
+def _error_status_code(message: str) -> int:
+    lowered = message.lower()
+    if "not found" in lowered:
+        return 404
+    if "invalid" in lowered or "missing" in lowered:
+        return 400
+    return 400
+
+
+def _resolve_project_name(project_name: str | None) -> str:
+    return project_name or settings.YOUTUBE_PROJECT_NAME
+
+
+def _parse_tags_field(raw_tags: str | None) -> list[str]:
+    if not raw_tags:
+        return []
+
+    try:
+        parsed = json.loads(raw_tags)
+        if isinstance(parsed, list):
+            return [str(tag).strip() for tag in parsed if str(tag).strip()]
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    return [part.strip() for part in raw_tags.split(",") if part.strip()]
+
+
+def _build_redirect_uri(request: Request) -> str:
+    return settings.YOUTUBE_OAUTH_REDIRECT_URI or str(request.url_for("youtube_oauth_callback"))
+
+
+def _create_temp_path(prefix: str, suffix: str) -> str:
+    fd, temp_path = tempfile.mkstemp(prefix=prefix, suffix=suffix or ".bin")
+    os.close(fd)
+    return temp_path
+
+
+async def _save_upload_to_temp(upload: UploadFile, prefix: str) -> str:
+    extension = os.path.splitext(upload.filename or "")[1] or ".bin"
+    temp_path = _create_temp_path(prefix, extension)
+
+    with open(temp_path, "wb") as output_file:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            output_file.write(chunk)
+
+    await upload.close()
+    return temp_path
+
+
+async def _download_url_to_temp(url: str, prefix: str) -> str:
+    extension = os.path.splitext(httpx.URL(url).path)[1] or ".bin"
+    temp_path = _create_temp_path(prefix, extension)
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(300.0, connect=30.0),
+        follow_redirects=True,
+    ) as client:
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            with open(temp_path, "wb") as output_file:
+                async for chunk in response.aiter_bytes():
+                    output_file.write(chunk)
+
+    return temp_path
+
+
+def _cleanup_temp_file(file_path: str | None) -> None:
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            logger.warning("[YOUTUBE] Failed to remove temp file %s", file_path)
 
 
 # ─── Briefing Models ────────────────────────────────────────────────
@@ -404,3 +523,335 @@ async def youtube_send_brief(
         "video_ideas_count": len(video_ideas),
         "trends_count": len(result.get("trends", [])),
     }
+
+
+@router.get("/oauth/authorize")
+async def youtube_oauth_authorize(
+    request: Request,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        project = await get_or_create_project_by_name(db, resolved_project_name)
+        client_id, _ = resolve_oauth_client_config(project)
+        redirect_uri = _build_redirect_uri(request)
+        state = encode_oauth_state(resolved_project_name)
+        authorization_url = build_oauth_authorization_url(client_id, redirect_uri, state)
+        logger.info("[YOUTUBE] OAuth authorize project=%s", resolved_project_name)
+        return RedirectResponse(url=authorization_url, status_code=302)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] OAuth authorize failed for %s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.get("/oauth/callback", name="youtube_oauth_callback")
+async def youtube_oauth_callback(
+    request: Request,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    project_name: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    if error:
+        logger.error("[YOUTUBE] OAuth callback error=%s", error)
+        return _error(f"Google OAuth error: {error}", 400)
+    if not code:
+        return _error("Missing OAuth code", 400)
+    if not state and not project_name:
+        return _error("Missing OAuth state", 400)
+
+    try:
+        if state:
+            payload = decode_oauth_state(state)
+            resolved_project_name = payload.get("project_name") or _resolve_project_name(project_name)
+        else:
+            resolved_project_name = _resolve_project_name(project_name)
+
+        project = await get_or_create_project_by_name(db, resolved_project_name)
+        client_id, client_secret = resolve_oauth_client_config(project)
+        redirect_uri = _build_redirect_uri(request)
+        token_data = await exchange_oauth_code(client_id, client_secret, code, redirect_uri)
+
+        existing_refresh_token = ((project.credentials or {}).get("youtube") or {}).get("refresh_token")
+        refresh_token = token_data.get("refresh_token") or existing_refresh_token
+        if not refresh_token:
+            raise ValueError(
+                "Google OAuth callback did not return refresh_token. "
+                "Revoke the app in Google Account permissions and authorize again."
+            )
+
+        access_token = token_data["access_token"]
+        channel_id = await fetch_current_channel_id(access_token)
+        await save_youtube_oauth_credentials(
+            db,
+            resolved_project_name,
+            client_id,
+            client_secret,
+            refresh_token,
+            channel_id,
+        )
+        await db.commit()
+
+        logger.info(
+            "[YOUTUBE] OAuth callback saved credentials project=%s channel_id=%s",
+            resolved_project_name,
+            channel_id,
+        )
+        return _ok(
+            {
+                "project_name": resolved_project_name,
+                "channel_id": channel_id,
+                "refresh_token_saved": True,
+                "scopes": token_data.get("scope", "").split(),
+            }
+        )
+    except Exception as exc:
+        await db.rollback()
+        message = str(exc)
+        logger.error("[YOUTUBE] OAuth callback failed: %s", message)
+        return _error(message, _error_status_code(message))
+
+
+@router.post("/upload")
+async def youtube_upload_video(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    description: str = Form(""),
+    tags: str = Form("[]"),
+    category_id: str = Form("28"),
+    privacy_status: str = Form("private"),
+    thumbnail: UploadFile | None = File(default=None),
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    video_path: str | None = None
+    thumbnail_path: str | None = None
+
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        parsed_tags = _parse_tags_field(tags)
+        video_path = await _save_upload_to_temp(file, "youtube-upload-")
+        if thumbnail:
+            thumbnail_path = await _save_upload_to_temp(thumbnail, "youtube-thumbnail-")
+
+        result = await upload_video(
+            access_token=access_token,
+            file_path=video_path,
+            title=title,
+            description=description,
+            tags=parsed_tags,
+            category_id=category_id,
+            privacy_status=privacy_status,
+            thumbnail_path=thumbnail_path,
+        )
+        logger.info(
+            "[YOUTUBE] Uploaded file to YouTube project=%s video_id=%s",
+            resolved_project_name,
+            result.get("video_id"),
+        )
+        return _ok(result)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Upload failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+    finally:
+        _cleanup_temp_file(video_path)
+        _cleanup_temp_file(thumbnail_path)
+
+
+@router.post("/upload-url")
+async def youtube_upload_video_from_url(
+    body: YouTubeUploadUrlRequest,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name or body.project_name)
+    video_path: str | None = None
+    thumbnail_path: str | None = None
+
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        video_path = await _download_url_to_temp(body.source_url, "youtube-url-upload-")
+        if body.thumbnail_url:
+            thumbnail_path = await _download_url_to_temp(body.thumbnail_url, "youtube-url-thumbnail-")
+
+        result = await upload_video(
+            access_token=access_token,
+            file_path=video_path,
+            title=body.title,
+            description=body.description,
+            tags=body.tags,
+            category_id=body.category_id,
+            privacy_status=body.privacy_status,
+            thumbnail_path=thumbnail_path,
+        )
+        logger.info(
+            "[YOUTUBE] Uploaded URL to YouTube project=%s video_id=%s",
+            resolved_project_name,
+            result.get("video_id"),
+        )
+        return _ok(result)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Upload-url failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+    finally:
+        _cleanup_temp_file(video_path)
+        _cleanup_temp_file(thumbnail_path)
+
+
+@router.put("/video/{video_id}")
+async def youtube_update_video_metadata(
+    video_id: str,
+    body: YouTubeVideoUpdate,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    update_payload = body.model_dump(exclude_unset=True)
+    if not update_payload:
+        return _error("At least one metadata field must be provided", 400)
+
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        result = await update_video_metadata(
+            access_token=access_token,
+            video_id=video_id,
+            **update_payload,
+        )
+        logger.info("[YOUTUBE] Updated metadata video_id=%s project=%s", video_id, resolved_project_name)
+        return _ok(result)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Metadata update failed video_id=%s: %s", video_id, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.post("/video/{video_id}/thumbnail")
+async def youtube_set_video_thumbnail(
+    video_id: str,
+    thumbnail: UploadFile = File(...),
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    thumbnail_path: str | None = None
+
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        thumbnail_path = await _save_upload_to_temp(thumbnail, "youtube-video-thumbnail-")
+        success = await set_thumbnail(access_token, video_id, thumbnail_path)
+        logger.info("[YOUTUBE] Thumbnail set video_id=%s project=%s", video_id, resolved_project_name)
+        return _ok({"video_id": video_id, "thumbnail_updated": success})
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Thumbnail update failed video_id=%s: %s", video_id, message)
+        return _error(message, _error_status_code(message))
+    finally:
+        _cleanup_temp_file(thumbnail_path)
+
+
+@router.post("/video/{video_id}/publish")
+async def youtube_publish_video(
+    video_id: str,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        result = await publish_video(access_token, video_id)
+        logger.info("[YOUTUBE] Published video_id=%s project=%s", video_id, resolved_project_name)
+        return _ok(result)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Publish failed video_id=%s: %s", video_id, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.post("/video/{video_id}/schedule")
+async def youtube_schedule_video(
+    video_id: str,
+    body: YouTubeScheduleRequest,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        result = await schedule_video(access_token, video_id, body.publish_at)
+        logger.info("[YOUTUBE] Scheduled video_id=%s project=%s", video_id, resolved_project_name)
+        return _ok(result)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Schedule failed video_id=%s: %s", video_id, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.get("/channel/stats")
+async def youtube_channel_stats(
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        channel_id = youtube_credentials.get("channel_id", "")
+        stats = await get_channel_stats(access_token, channel_id)
+        recent_videos = await list_channel_videos(access_token, channel_id, max_results=10)
+        response = YouTubeChannelStats(
+            subscribers=stats["subscribers"],
+            total_views=stats["total_views"],
+            total_videos=stats["total_videos"],
+            recent_videos=recent_videos,
+        )
+        logger.info("[YOUTUBE] Channel stats fetched project=%s", resolved_project_name)
+        return _ok(response.model_dump())
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Channel stats failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.get("/videos")
+async def youtube_list_channel_videos(
+    max_results: int = Query(default=20, ge=1, le=50),
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        videos = await list_channel_videos(
+            access_token=access_token,
+            channel_id=youtube_credentials.get("channel_id", ""),
+            max_results=max_results,
+        )
+        logger.info("[YOUTUBE] Listed %d videos project=%s", len(videos), resolved_project_name)
+        return _ok({"items": videos, "total": len(videos)})
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] List videos failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.get("/video/{video_id}")
+async def youtube_get_video(
+    video_id: str,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        detail = await get_video_detail(access_token, video_id)
+        logger.info("[YOUTUBE] Video detail fetched video_id=%s project=%s", video_id, resolved_project_name)
+        return _ok(detail)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Video detail failed video_id=%s: %s", video_id, message)
+        return _error(message, _error_status_code(message))

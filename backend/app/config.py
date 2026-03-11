@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     APP_SECRET_KEY: str = ""
     UPLOAD_DIR: str = "/app/uploads"
     MAX_AUDIO_SIZE_MB: int = 100
+    YOUTUBE_PROJECT_NAME: str = "GuyFolkz"
+    YOUTUBE_API_KEY: str = ""
+    YOUTUBE_OAUTH_CLIENT_ID: str = ""
+    YOUTUBE_OAUTH_CLIENT_SECRET: str = ""
+    YOUTUBE_OAUTH_REDIRECT_URI: str = ""
+    YOUTUBE_OAUTH_SCOPES: str = (
+        "https://www.googleapis.com/auth/youtube,"
+        "https://www.googleapis.com/auth/yt-analytics.readonly"
+    )
 
     # Daily briefing
     BRIEFING_HOUR: int = 7

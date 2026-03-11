@@ -17,6 +17,7 @@ import YouTubeKanban from './pages/YouTubeKanban'
 import Proposals from './pages/Proposals'
 import ProposalView from './pages/ProposalView'
 import ClientSuccess from './pages/ClientSuccess'
+import YouTubeAnalytics from './pages/YouTubeAnalytics'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
@@ -41,6 +42,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/recordings" element={<Recordings />} />
         <Route path="/kanban" element={<Kanban />} />
         <Route path="/youtube-kanban" element={<YouTubeKanban />} />
+        <Route path="/youtube-analytics" element={<YouTubeAnalytics />} />
         <Route path="/proposals" element={<Proposals />} />
         <Route path="/proposta/:slug" element={<ProposalView />} />
         <Route path="/pos-venda" element={<ClientSuccess />} />

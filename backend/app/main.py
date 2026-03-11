@@ -5,6 +5,7 @@ Orquestra - FastAPI Application Entry Point
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+APP_ROOT = Path("/app")
+if not (APP_ROOT / "alembic.ini").exists():
+    APP_ROOT = Path(__file__).resolve().parents[1]
+ALEMBIC_INI = APP_ROOT / "alembic.ini"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,13 +36,13 @@ async def lifespan(app: FastAPI):
     try:
         import subprocess, os as _os
         env = _os.environ.copy()
-        env["PYTHONPATH"] = "/app"
+        env["PYTHONPATH"] = str(APP_ROOT)
         result = subprocess.run(
-            ["alembic", "upgrade", "head"],
+            ["alembic", "-c", str(ALEMBIC_INI), "upgrade", "head"],
             capture_output=True,
             text=True,
             timeout=120,
-            cwd="/app",
+            cwd=str(APP_ROOT),
             env=env,
         )
         if result.returncode == 0:
@@ -95,6 +101,8 @@ EXEMPT_PATHS = {
     "/api/youtube/briefings/latest",
     "/api/youtube/briefings",
     "/api/youtube/analytics",
+    "/api/youtube/oauth/authorize",
+    "/api/youtube/oauth/callback",
     "/api/youtube/thumbnails",
     "/docs",
     "/redoc",
@@ -112,7 +120,14 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
     # Exempt paths (exact or prefix match for webhooks/youtube)
-    if path in EXEMPT_PATHS or path.startswith("/api/webhook") or path.startswith("/api/youtube/briefings/latest/videos") or path.startswith("/api/youtube/thumbnails/") or path.startswith("/api/proposals/public/"):
+    if (
+        path in EXEMPT_PATHS
+        or path.startswith("/api/webhook")
+        or path.startswith("/api/youtube/briefings/latest/videos")
+        or path.startswith("/api/youtube/thumbnails/")
+        or path.startswith("/api/youtube/oauth/")
+        or path.startswith("/api/proposals/public/")
+    ):
         return await call_next(request)
 
     # Check Authorization header
@@ -149,10 +164,10 @@ async def debug_db():
     # Run alembic and capture output
     try:
         import os as _os2
-        env2 = _os2.environ.copy(); env2["PYTHONPATH"] = "/app"
+        env2 = _os2.environ.copy(); env2["PYTHONPATH"] = str(APP_ROOT)
         result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            capture_output=True, text=True, timeout=120, cwd="/app", env=env2,
+            ["alembic", "-c", str(ALEMBIC_INI), "upgrade", "head"],
+            capture_output=True, text=True, timeout=120, cwd=str(APP_ROOT), env=env2,
         )
         alembic_out = result.stdout + result.stderr
         alembic_rc = result.returncode

@@ -274,3 +274,27 @@ export function getProposalAnalytics(id) {
 export function getContactSuggestions(contactId) {
   return request(`/api/contacts/${contactId}/suggestions`);
 }
+
+// YouTube Analytics
+export function getYouTubeChannelStats(projectName = 'GuyFolkz') {
+  return request(`/api/youtube/channel/stats?project_name=${encodeURIComponent(projectName)}`);
+}
+
+export function getYouTubeVideos(maxResults = 50, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/videos?max_results=${maxResults}&project_name=${encodeURIComponent(projectName)}`);
+}
+
+export function getYouTubeVideoDetail(videoId, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/video/${videoId}?project_name=${encodeURIComponent(projectName)}`);
+}
+
+export function getYouTubeAnalyticsHistory(limit = 30) {
+  return request(`/api/youtube/analytics?limit=${limit}`);
+}
+
+export function saveYouTubeAnalytics(data) {
+  return request('/api/youtube/analytics', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
