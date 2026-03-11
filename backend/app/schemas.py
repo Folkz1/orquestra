@@ -142,6 +142,7 @@ class RecordingResponse(RecordingBase):
     decisions: list[dict[str, Any]] = Field(default_factory=list)
     key_topics: list[str] = Field(default_factory=list)
     processed: bool = False
+    project_name: Optional[str] = None
     recorded_at: datetime
     created_at: datetime
 
@@ -262,6 +263,56 @@ class MemoryStatsResponse(BaseModel):
 
 
 # ─── YouTube Schemas ─────────────────────────────────────────────────────
+
+
+class YouTubeUploadRequest(BaseModel):
+    title: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    category_id: str = "28"
+    privacy_status: str = "private"
+    project_name: str = "GuyFolkz"
+
+
+class YouTubeUploadUrlRequest(YouTubeUploadRequest):
+    source_url: str
+    thumbnail_url: Optional[str] = None
+
+
+class YouTubeUploadResponse(BaseModel):
+    status: str
+    video_id: str
+    url: str
+    privacy_status: str
+
+
+class YouTubeVideoUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list[str]] = None
+    privacy_status: Optional[str] = None
+
+
+class YouTubeScheduleRequest(BaseModel):
+    publish_at: str
+
+
+class YouTubeChannelStats(BaseModel):
+    subscribers: int
+    total_views: int
+    total_videos: int
+    recent_videos: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class YouTubeVideoDetail(BaseModel):
+    video_id: str
+    title: str
+    views: int
+    likes: int
+    comments: int
+    published_at: str
+    privacy_status: str
+    thumbnail_url: str
 
 
 class YouTubeAnalyzeRequest(BaseModel):

@@ -115,22 +115,32 @@ def _parse_json_response(text: str) -> dict:
     raise ValueError(f"Could not parse JSON from LLM response: {text[:200]}...")
 
 
-async def generate_meeting_summary(transcription: str) -> dict:
+async def generate_meeting_summary(transcription: str, known_projects: list[str] | None = None) -> dict:
     """
     Generate a structured summary of a meeting/recording transcription.
 
     Args:
         transcription: Full text transcription of the recording.
+        known_projects: Optional list of known project names for auto-detection.
 
     Returns:
-        Dict with keys: title, summary, action_items, decisions, key_topics
+        Dict with keys: title, summary, action_items, decisions, key_topics, detected_project
     """
+    project_hint = ""
+    if known_projects:
+        project_hint = (
+            f"\n\nProjetos conhecidos do Diego: {', '.join(known_projects)}. "
+            "Se a gravacao mencionar algum desses projetos, inclua o campo "
+            '"detected_project" com o nome EXATO do projeto mais relevante. '
+            "Se nenhum projeto for mencionado, use null."
+        )
+
     messages = [
         {
             "role": "system",
             "content": (
-                "Voce e um assistente de produtividade. Analise a transcricao de uma "
-                "reuniao/gravacao e retorne um JSON com a seguinte estrutura:\n"
+                "Voce e um assistente de produtividade do Diego, um desenvolvedor brasileiro. "
+                "Analise a transcricao de uma reuniao/gravacao e retorne um JSON com a seguinte estrutura:\n"
                 "{\n"
                 '  "title": "Titulo curto e descritivo da reuniao",\n'
                 '  "summary": "Resumo executivo em 2-3 paragrafos",\n'
@@ -140,9 +150,11 @@ async def generate_meeting_summary(transcription: str) -> dict:
                 '  "decisions": [\n'
                 '    {"decision": "descricao", "context": "contexto breve"}\n'
                 "  ],\n"
-                '  "key_topics": ["topico1", "topico2"]\n'
+                '  "key_topics": ["topico1", "topico2"],\n'
+                '  "detected_project": "nome do projeto ou null"\n'
                 "}\n\n"
                 "Responda APENAS com o JSON, sem texto adicional."
+                + project_hint
             ),
         },
         {

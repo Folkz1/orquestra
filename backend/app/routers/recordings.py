@@ -21,10 +21,11 @@ from fastapi import (
 )
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import async_session, get_db
-from app.models import Recording
+from app.models import Project, Recording
 from app.schemas import PaginatedResponse, RecordingResponse
 from app.services.llm import generate_meeting_summary
 from app.services.memory import store_memory
@@ -33,6 +34,14 @@ from app.services.transcriber import transcribe_audio
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _recording_to_response(recording: Recording) -> RecordingResponse:
+    """Convert Recording ORM to response, resolving project_name."""
+    resp = RecordingResponse.model_validate(recording)
+    if recording.project_id and hasattr(recording, "project") and recording.project:
+        resp.project_name = recording.project.name
+    return resp
 
 
 async def process_recording(recording_id: str):
@@ -66,12 +75,30 @@ async def process_recording(recording_id: str):
                 "[Transcription error"
             ):
                 try:
-                    summary_data = await generate_meeting_summary(recording.transcription)
+                    # Fetch known project names for auto-detection
+                    proj_stmt = select(Project.id, Project.name).where(Project.status == "active")
+                    proj_result = await db.execute(proj_stmt)
+                    projects_map = {row.name: row.id for row in proj_result.all()}
+                    known_projects = list(projects_map.keys())
+
+                    summary_data = await generate_meeting_summary(
+                        recording.transcription, known_projects=known_projects
+                    )
                     recording.title = recording.title or summary_data.get("title", "")
                     recording.summary = summary_data.get("summary", "")
                     recording.action_items = summary_data.get("action_items", [])
                     recording.decisions = summary_data.get("decisions", [])
                     recording.key_topics = summary_data.get("key_topics", [])
+
+                    # Auto-associate project if detected and not already set
+                    detected = summary_data.get("detected_project")
+                    if detected and not recording.project_id:
+                        for pname, pid in projects_map.items():
+                            if pname.lower() == detected.lower() or detected.lower() in pname.lower():
+                                recording.project_id = pid
+                                logger.info("[RECORDINGS] Auto-detected project: %s -> %s", detected, pname)
+                                break
+
                     logger.info("[RECORDINGS] Summary generated for %s", recording_id)
                 except Exception as exc:
                     logger.error(
@@ -91,12 +118,20 @@ async def process_recording(recording_id: str):
                     if recording.summary:
                         memory_content = f"{recording.summary}\n\n{recording.transcription}"
 
+                    # Resolve project name for memory storage
+                    resolved_project_name = None
+                    if recording.project_id:
+                        for pname, pid in projects_map.items():
+                            if pid == recording.project_id:
+                                resolved_project_name = pname
+                                break
+
                     await store_memory(
                         db,
                         content=memory_content,
                         source_type="recording",
                         source_id=str(recording.id),
-                        project_name=None,  # Could resolve project name if needed
+                        project_name=resolved_project_name,
                         metadata={
                             "title": recording.title or "",
                             "key_topics": recording.key_topics or [],
@@ -196,7 +231,7 @@ async def list_recordings(
     db: AsyncSession = Depends(get_db),
 ):
     """List recordings with filters and pagination."""
-    stmt = select(Recording)
+    stmt = select(Recording).options(selectinload(Recording.project))
     count_stmt = select(func.count(Recording.id))
 
     filters = []
@@ -242,7 +277,7 @@ async def list_recordings(
     total_pages = math.ceil(total / per_page) if total > 0 else 0
 
     return PaginatedResponse(
-        items=[RecordingResponse.model_validate(rec) for rec in recordings],
+        items=[_recording_to_response(rec) for rec in recordings],
         total=total,
         page=page,
         page_size=per_page,
@@ -256,14 +291,14 @@ async def get_recording(
     db: AsyncSession = Depends(get_db),
 ):
     """Get full details of a single recording."""
-    stmt = select(Recording).where(Recording.id == recording_id)
+    stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
     result = await db.execute(stmt)
     recording = result.scalar_one_or_none()
 
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
 
-    return RecordingResponse.model_validate(recording)
+    return _recording_to_response(recording)
 
 
 @router.post("/{recording_id}/reprocess", response_model=RecordingResponse)
