@@ -5,5 +5,5 @@ export const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://apps-evolutio
 export const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 export const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'guyfolkiz';
 export const DIEGO_PHONE = process.env.DIEGO_PHONE || '5551934481245';
-export const AI_MODEL = process.env.AI_MODEL || 'anthropic/claude-sonnet-4';
-export const AI_MODEL_FAST = process.env.AI_MODEL_FAST || 'x-ai/grok-4.1-fast';
+export const AI_MODEL = process.env.AI_MODEL || 'x-ai/grok-4.1-fast';
+export const AI_MODEL_SMART = process.env.AI_MODEL_SMART || 'anthropic/claude-sonnet-4';
