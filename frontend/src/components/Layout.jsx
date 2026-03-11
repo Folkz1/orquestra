@@ -13,7 +13,6 @@ const navItems = [
   { to: '/pos-venda', label: 'Pós-Venda', icon: '🤝' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
-  { to: '/war-tasks', label: 'War Tasks', icon: '⚔️' },
   { to: '/settings', label: 'Config', icon: '⚙️' },
 ]
 

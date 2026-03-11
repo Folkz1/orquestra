@@ -140,26 +140,6 @@ export function syncProjects() {
   });
 }
 
-// Notion
-export function getNotionDatabases() {
-  return request('/api/notion/databases');
-}
-
-export function importNotion(data) {
-  return request('/api/notion/import', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export function getNotionStatus() {
-  return request('/api/notion/status');
-}
-
-export function getWarTasks() {
-  return request('/api/notion/war-tasks');
-}
-
 // Tasks (Kanban)
 export function getTasks(params = {}) {
   const query = new URLSearchParams();

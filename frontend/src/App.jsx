@@ -10,7 +10,6 @@ import Contacts from './pages/Contacts'
 import Memory from './pages/Memory'
 import Recordings from './pages/Recordings'
 import Settings from './pages/Settings'
-import WarTasks from './pages/WarTasks'
 import Kanban from './pages/Kanban'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeKanban from './pages/YouTubeKanban'
@@ -46,7 +45,6 @@ function AppRoutes({ onLogout }) {
         <Route path="/proposals" element={<Proposals />} />
         <Route path="/proposta/:slug" element={<ProposalView />} />
         <Route path="/pos-venda" element={<ClientSuccess />} />
-        <Route path="/war-tasks" element={<WarTasks />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>
