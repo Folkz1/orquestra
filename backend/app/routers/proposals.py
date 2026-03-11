@@ -80,6 +80,19 @@ async def create_proposal(
     await db.flush()
     await db.refresh(proposal)
 
+    # Propagate initial data to linked contact (company name, engagement bump)
+    if contact_id:
+        contact_stmt = select(Contact).where(Contact.id == contact_id)
+        contact_result = await db.execute(contact_stmt)
+        contact = contact_result.scalar_one_or_none()
+        if contact:
+            if data.client_name and not contact.company:
+                contact.company = data.client_name
+            contact.engagement_score = max(contact.engagement_score or 0, 20)
+            contact.last_contacted_at = datetime.now(timezone.utc)
+            await db.flush()
+            logger.info("[PROPOSALS] Initial propagation to contact %s", contact_id)
+
     logger.info("[PROPOSALS] Created: %s (%s)", proposal.slug, proposal.id)
     return proposal
 
@@ -102,6 +115,14 @@ async def get_proposal_public(
         proposal.viewed_at = datetime.now(timezone.utc)
         if proposal.status == "sent":
             proposal.status = "viewed"
+        # Propagate view event to linked contact
+        if proposal.contact_id:
+            contact_stmt = select(Contact).where(Contact.id == proposal.contact_id)
+            contact_result = await db.execute(contact_stmt)
+            contact = contact_result.scalar_one_or_none()
+            if contact:
+                contact.engagement_score = max(contact.engagement_score or 0, 40)
+                contact.last_contacted_at = datetime.now(timezone.utc)
         await db.flush()
         await db.refresh(proposal)
         logger.info("[PROPOSALS] Viewed: %s", proposal.slug)
@@ -191,7 +212,7 @@ async def update_proposal(
     for field, value in update_data.items():
         setattr(proposal, field, value)
 
-    # Auto-update contact pipeline_stage based on proposal status
+    # Auto-propagate proposal data to linked contact
     if "status" in update_data and proposal.contact_id:
         new_status = update_data["status"]
         contact_stmt = select(Contact).where(Contact.id == proposal.contact_id)
@@ -201,6 +222,9 @@ async def update_proposal(
             stage_map = {
                 "accepted": "onboarding",
                 "rejected": "lead",
+                "sent": "lead",
+                "viewed": "lead",
+                "negotiation": "lead",
             }
             new_stage = stage_map.get(new_status)
             if new_stage and contact.pipeline_stage != new_stage:
@@ -210,6 +234,31 @@ async def update_proposal(
                     "[PROPOSALS] Auto-moved contact %s pipeline: %s -> %s (proposal %s = %s)",
                     contact.id, old_stage, new_stage, proposal_id, new_status,
                 )
+
+            # Propagate business data from proposal to contact
+            if new_status == "accepted":
+                if proposal.client_name and not contact.company:
+                    contact.company = proposal.client_name
+                if proposal.total_value:
+                    contact.monthly_revenue = str(proposal.total_value)
+                    contact.total_revenue = str(proposal.total_value)
+                if not contact.acquired_at:
+                    contact.acquired_at = datetime.now(timezone.utc)
+                # Boost engagement on acceptance
+                contact.engagement_score = max(contact.engagement_score or 0, 80)
+                contact.next_action = f"Onboarding: {proposal.title}"
+                contact.last_contacted_at = datetime.now(timezone.utc)
+                logger.info(
+                    "[PROPOSALS] Propagated business data to contact %s from proposal %s",
+                    contact.id, proposal_id,
+                )
+            elif new_status == "viewed":
+                # Bump engagement when client views the proposal
+                contact.engagement_score = max(contact.engagement_score or 0, 40)
+                contact.last_contacted_at = datetime.now(timezone.utc)
+            elif new_status == "negotiation":
+                contact.engagement_score = max(contact.engagement_score or 0, 60)
+                contact.next_action = f"Negociação: {proposal.title}"
 
     await db.flush()
     await db.refresh(proposal)
