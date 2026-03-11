@@ -1,0 +1,9 @@
+export const ORQUESTRA_API = process.env.ORQUESTRA_API_URL || 'https://orquestra-backend.jz9bd8.easypanel.host';
+export const ORQUESTRA_TOKEN = process.env.ORQUESTRA_TOKEN || 'orquestra-secret-key-2026';
+export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+export const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://apps-evolution-api.klx2s6.easypanel.host';
+export const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+export const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'guyfolkiz';
+export const DIEGO_PHONE = process.env.DIEGO_PHONE || '5551934481245';
+export const AI_MODEL = process.env.AI_MODEL || 'anthropic/claude-sonnet-4';
+export const AI_MODEL_FAST = process.env.AI_MODEL_FAST || 'x-ai/grok-4.1-fast';

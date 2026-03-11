@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     ASSISTANT_CHAT_MODEL: str = "x-ai/grok-4.1-fast"  # OpenRouter model for owner chat
     ASSISTANT_CONTEXT_TURNS: int = 30  # number of conversation turns to use per client
 
+    # Jarbas AI Agent (Vercel AI SDK)
+    JARBAS_AI_AGENT_URL: str = "http://localhost:3333"
+
     # App
     APP_SECRET_KEY: str = ""
     UPLOAD_DIR: str = "/app/uploads"

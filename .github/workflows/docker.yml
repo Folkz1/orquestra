@@ -8,6 +8,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_BACKEND: ghcr.io/folkz1/orquestra-backend
   IMAGE_FRONTEND: ghcr.io/folkz1/orquestra-frontend
+  IMAGE_AI_AGENT: ghcr.io/folkz1/orquestra-ai-agent
 
 jobs:
   build-backend:
@@ -49,3 +50,23 @@ jobs:
           tags: |
             ${{ env.IMAGE_FRONTEND }}:latest
             ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
+
+  build-ai-agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./ai-agent
+          push: true
+          tags: |
+            ${{ env.IMAGE_AI_AGENT }}:latest
+            ${{ env.IMAGE_AI_AGENT }}:${{ github.sha }}

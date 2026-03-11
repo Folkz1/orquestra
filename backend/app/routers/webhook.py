@@ -31,6 +31,9 @@ from app.services.whatsapp import send_whatsapp_message
 from app.config import settings
 from app.services.transcriber import describe_image, extract_document_text, transcribe_audio
 
+# Jarbas AI Agent endpoint (Vercel AI SDK)
+JARBAS_AI_AGENT_URL = settings.JARBAS_AI_AGENT_URL
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -536,7 +539,40 @@ async def evolution_webhook(
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "chat":
-                    reply = cmd.get("reply") or await owner_chat_reply(db, content, contact.id)
+                    # Try Jarbas AI Agent (Vercel AI SDK) first, fallback to built-in
+                    reply = cmd.get("reply")
+                    if not reply:
+                        try:
+                            import httpx
+                            async with httpx.AsyncClient(timeout=60.0) as client:
+                                resp = await client.post(
+                                    f"{JARBAS_AI_AGENT_URL}/api/chat/generate",
+                                    json={
+                                        "message": content,
+                                        "phone": phone,
+                                        "session_id": f"whatsapp_{phone}",
+                                    },
+                                )
+                                if resp.status_code == 200:
+                                    data = resp.json()
+                                    reply = data.get("text", "")
+                                    tools_used = data.get("toolsUsed", [])
+                                    if tools_used:
+                                        logger.info(
+                                            "[WEBHOOK] Jarbas AI used %d tools: %s",
+                                            len(tools_used),
+                                            [t["tool"] for t in tools_used],
+                                        )
+                                else:
+                                    logger.warning(
+                                        "[WEBHOOK] Jarbas AI returned %d, falling back",
+                                        resp.status_code,
+                                    )
+                        except Exception as exc:
+                            logger.warning("[WEBHOOK] Jarbas AI unreachable (%s), fallback", exc)
+
+                    if not reply:
+                        reply = await owner_chat_reply(db, content, contact.id)
                     await send_whatsapp_message(phone, reply[:3500])
                     return {"status": "owner_command"}
             except Exception as exc:
