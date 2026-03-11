@@ -7,7 +7,11 @@ import logging
 
 from app.config import settings
 from app.database import async_session
-from app.services.youtube import analyze_channel_trends
+from app.services.youtube import (
+    analyze_channel_trends,
+    build_youtube_workspace,
+    get_project_youtube_strategy,
+)
 from app.services.whatsapp import send_content_brief_to_whatsapp
 from app.services.orchestrator import send_telegram_brief
 from app.services.memory import store_memory
@@ -34,10 +38,15 @@ async def daily_youtube_analysis():
 
     async with async_session() as db:
         try:
+            strategy = await get_project_youtube_strategy(db, settings.YOUTUBE_PROJECT_NAME, persist_default=False)
+            workspace = await build_youtube_workspace(db, settings.YOUTUBE_PROJECT_NAME)
+
             # 1. Analyze trends
             result = await analyze_channel_trends(
                 topics=DEFAULT_TOPICS,
                 sources=DEFAULT_SOURCES,
+                strategy_context=strategy,
+                channel_snapshot=workspace.get("channel_audit"),
             )
 
             video_ideas = result.get("video_ideas", [])

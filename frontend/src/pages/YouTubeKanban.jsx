@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { uploadYouTubeVideo, publishYouTubeVideo, scheduleYouTubeVideo } from '../api'
+import { getYouTubeWorkspace, publishYouTubeVideo, scheduleYouTubeVideo, uploadYouTubeVideo } from '../api'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 const TOKEN = () => localStorage.getItem('orquestra_token')
@@ -758,7 +758,102 @@ function StatCard({ label, value }) {
   )
 }
 
+function WorkspaceMetric({ label, value, sub, tone = 'zinc' }) {
+  const tones = {
+    zinc: 'text-zinc-100',
+    red: 'text-red-400',
+    amber: 'text-amber-400',
+    green: 'text-green-400',
+    blue: 'text-blue-400',
+  }
+
+  return (
+    <div className="bg-zinc-900/60 rounded-xl border border-zinc-800 p-3">
+      <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className={`text-xl font-bold mt-1 ${tones[tone] || tones.zinc}`}>{value}</p>
+      {sub && <p className="text-[11px] text-zinc-500 mt-1">{sub}</p>}
+    </div>
+  )
+}
+
+function StrategySeriesCard({ series }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">{series.content_role}</p>
+          <h3 className="text-base font-bold text-zinc-100 mt-1">{series.name}</h3>
+        </div>
+        <span className="text-[10px] px-2 py-1 rounded-full bg-amber-500/10 text-amber-400">{series.cadence}</span>
+      </div>
+      <p className="text-sm text-zinc-300 leading-relaxed">{series.summary}</p>
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        <StatCard label="Pipeline" value={series.ideas_in_pipeline || 0} />
+        <StatCard label="Planejados" value={series.episodes_planned || 0} />
+        <StatCard label="Serie" value={series.episodes_total || 0} />
+      </div>
+      {series.next_episode?.title && (
+        <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/70 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Proximo episodio</p>
+          <p className="text-sm text-zinc-200 mt-1">{series.next_episode.title}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function IdeaLaneCard({ lane }) {
+  const ideas = lane.ideas || []
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Serie</p>
+          <h3 className="text-base font-bold text-zinc-100">{lane.series}</h3>
+        </div>
+        <span className="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-400">{ideas.length} ideias</span>
+      </div>
+      {lane.objective && <p className="text-xs text-zinc-500 mb-3">{lane.objective}</p>}
+      <div className="space-y-2">
+        {ideas.slice(0, 4).map((idea, index) => (
+          <div key={`${lane.series}-${index}`} className="rounded-lg bg-zinc-950/70 border border-zinc-800 p-3">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500">{idea.status || 'seed'}</span>
+              {idea.urgency && <span className="text-[10px] text-amber-400">{idea.urgency}</span>}
+            </div>
+            <p className="text-sm text-zinc-200 leading-snug">{idea.title}</p>
+            {idea.hook && <p className="text-[11px] text-zinc-500 mt-2 line-clamp-2">{idea.hook}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ─── Kanban Card ─────────────────────────────────────────── */
+
+function PlaybookList({ title, items = [], tone = 'amber' }) {
+  const toneClass = {
+    amber: 'text-amber-400 border-amber-500/20 bg-amber-500/5',
+    blue: 'text-blue-400 border-blue-500/20 bg-blue-500/5',
+    green: 'text-green-400 border-green-500/20 bg-green-500/5',
+  }
+
+  if (!items.length) return null
+
+  return (
+    <div className={`rounded-xl border p-4 ${toneClass[tone] || toneClass.amber}`}>
+      <p className="text-[10px] uppercase tracking-wider mb-3">{title}</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item, index) => (
+          <span key={`${title}-${index}`} className="text-[11px] px-2.5 py-1 rounded-full bg-zinc-950/70 border border-zinc-800 text-zinc-300">
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
   const [changing, setChanging] = useState(false)
@@ -831,12 +926,20 @@ export default function YouTubeKanban() {
   const [briefings, setBriefings] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeVideo, setActiveVideo] = useState(null)
+  const [workspace, setWorkspace] = useState(null)
 
   useEffect(() => {
-    fetch(`${API_URL}/api/youtube/briefings/latest`)
-      .then(res => res.json())
-      .then(data => {
-        setBriefings(data.briefing ? [data.briefing] : [])
+    Promise.all([
+      fetch(`${API_URL}/api/youtube/briefings/latest`)
+        .then(res => res.json())
+        .catch(() => ({ briefing: null })),
+      getYouTubeWorkspace().catch(() => null),
+    ])
+      .then(([data, workspaceData]) => {
+        setBriefings(data?.briefing ? [data.briefing] : [])
+        if (workspaceData?.status === 'ok') {
+          setWorkspace(workspaceData.data || null)
+        }
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -885,7 +988,7 @@ export default function YouTubeKanban() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-zinc-100">YouTube - Videos</h1>
+          <h1 className="text-xl font-bold text-zinc-100">YouTube Workspace</h1>
           <p className="text-xs text-zinc-500 mt-1">{allVideos.length} videos no pipeline</p>
         </div>
         <a href="/youtube-briefing" target="_blank" rel="noopener noreferrer"
@@ -894,7 +997,166 @@ export default function YouTubeKanban() {
         </a>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 min-h-[60vh]">
+      {workspace && (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+            <div className="xl:col-span-2 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Sistema Editorial</p>
+                  <h2 className="text-lg font-bold text-zinc-100 mt-1">{workspace.strategy?.north_star || 'YouTube como topo de funil B2B'}</h2>
+                  <p className="text-sm text-zinc-400 mt-2 max-w-2xl">{workspace.strategy?.positioning}</p>
+                </div>
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wider text-amber-500">Meta</p>
+                  <p className="text-sm font-semibold text-amber-300">{workspace.strategy?.goal || 'Motor 100K'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(workspace.series_health || []).map(series => (
+                  <StrategySeriesCard key={series.name} series={series} />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5">
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Diagnostico do Canal</p>
+                  <h2 className="text-lg font-bold text-zinc-100 mt-1">{workspace.channel_audit?.stage || 'Canal em crescimento'}</h2>
+                </div>
+                {workspace.channel_audit?.warning && <span className="text-[10px] text-amber-400">fallback</span>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <WorkspaceMetric label="Inscritos" value={workspace.channel_audit?.subscribers || 0} tone="red" />
+                <WorkspaceMetric label="Media Views" value={workspace.channel_audit?.avg_views || 0} tone="amber" />
+                <WorkspaceMetric label="Mediana" value={workspace.channel_audit?.median_views || 0} tone="green" />
+                <WorkspaceMetric
+                  label="Melhor video"
+                  value={workspace.channel_audit?.best_video?.views || 0}
+                  sub={workspace.channel_audit?.best_video?.title || 'Sem dados'}
+                  tone="blue"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">O que esta funcionando</p>
+                  <div className="space-y-2">
+                    {(workspace.channel_audit?.top_patterns || []).slice(0, 3).map((item, index) => (
+                      <div key={index} className="rounded-lg bg-zinc-900/70 border border-zinc-800 p-3 text-sm text-zinc-300">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Gaps e oportunidades</p>
+                  <div className="space-y-2">
+                    {(workspace.channel_audit?.opportunity_gaps || []).slice(0, 3).map((item, index) => (
+                      <div key={index} className="rounded-lg bg-zinc-900/70 border border-zinc-800 p-3 text-sm text-zinc-300">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+            <div className="xl:col-span-2 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Manual do Canal</p>
+                  <h2 className="text-lg font-bold text-zinc-100 mt-1">{workspace.playbook?.big_idea || 'Operar sistemas atraves de IA'}</h2>
+                  {workspace.playbook?.brand_narrative && (
+                    <p className="text-sm text-zinc-400 mt-2 max-w-2xl">{workspace.playbook.brand_narrative}</p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Formula</p>
+                  <p className="text-sm font-semibold text-zinc-200">{workspace.playbook?.editorial_formula || 'busca, prova, oferta'}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <PlaybookList title="Pilares" items={workspace.playbook?.content_pillars || []} tone="amber" />
+                <PlaybookList title="Padroes de Titulo" items={workspace.playbook?.title_patterns || []} tone="blue" />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Origem Editorial</p>
+              <h2 className="text-lg font-bold text-zinc-100 mt-1">Centralizado na Orquestra</h2>
+
+              <div className="grid grid-cols-2 gap-3 mt-4 mb-4">
+                <WorkspaceMetric label="Arquivos fonte" value={workspace.playbook?.source_count || 0} tone="blue" />
+                <WorkspaceMetric
+                  label="Ultima sync"
+                  value={workspace.playbook?.last_synced_at ? 'ok' : 'pendente'}
+                  tone={workspace.playbook?.last_synced_at ? 'green' : 'amber'}
+                  sub={workspace.playbook?.last_synced_at || 'sem importacao ainda'}
+                />
+              </div>
+
+              {workspace.playbook?.voice_promise_style && (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4 mb-3">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Promessa na abertura</p>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{workspace.playbook.voice_promise_style}</p>
+                </div>
+              )}
+
+              <PlaybookList title="Frases de assinatura" items={workspace.playbook?.signature_phrases || []} tone="green" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+            <div className="xl:col-span-2 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5">
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Ideias Novas na Plataforma</p>
+                  <h2 className="text-lg font-bold text-zinc-100 mt-1">Toda ideia nova precisa cair em uma das duas series</h2>
+                </div>
+                <div className="text-[10px] text-zinc-500">{workspace.pipeline?.videos_total || 0} itens no pipeline</div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(workspace.series_lanes || []).map(lane => (
+                  <IdeaLaneCard key={lane.series} lane={lane} />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Proximas Acoes</p>
+              <h2 className="text-lg font-bold text-zinc-100 mt-1 mb-4">O que fazer agora</h2>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <WorkspaceMetric label="Ideias" value={workspace.pipeline?.by_status?.ideia || 0} />
+                <WorkspaceMetric label="Thumb pronta" value={workspace.pipeline?.by_status?.thumbnail_pronta || 0} tone="blue" />
+                <WorkspaceMetric label="Pronto gravar" value={workspace.pipeline?.by_status?.pronto_gravar || 0} tone="green" />
+                <WorkspaceMetric label="Publicado" value={workspace.pipeline?.by_status?.publicado || 0} tone="amber" />
+              </div>
+
+              <div className="space-y-2">
+                {(workspace.next_actions || []).map((action, index) => (
+                  <div key={index} className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 text-[10px] font-bold text-amber-400">{index + 1}</span>
+                      <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 min-h-[60vh]">
         {COLUMNS.map(col => {
           const videos = allVideos.filter(v => (v.video.status || 'ideia') === col.key)
           return (

@@ -29,7 +29,13 @@ from app.schemas import (
     YouTubeUploadUrlRequest,
     YouTubeVideoUpdate,
 )
-from app.services.youtube import analyze_channel_trends, generate_content_brief
+from app.services.youtube import (
+    analyze_channel_trends,
+    build_youtube_workspace,
+    generate_content_brief,
+    get_project_youtube_strategy,
+    save_project_youtube_strategy,
+)
 from app.services.youtube_data import (
     build_oauth_authorization_url,
     decode_oauth_state,
@@ -193,6 +199,10 @@ class AnalyticsSave(BaseModel):
     median_views: int = 0
     max_views: int = 0
     videos: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class StrategySave(BaseModel):
+    strategy: dict[str, Any] = Field(default_factory=dict)
 
 
 # ─── Briefings (public) ────────────────────────────────────────────
@@ -417,6 +427,57 @@ async def get_analytics(
     ]
 
 
+@router.get("/strategy")
+async def youtube_get_strategy(
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        strategy = await get_project_youtube_strategy(db, resolved_project_name, persist_default=True)
+        await db.commit()
+        return _ok({"project_name": resolved_project_name, "strategy": strategy})
+    except Exception as exc:
+        await db.rollback()
+        message = str(exc)
+        logger.error("[YOUTUBE] Strategy load failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.put("/strategy")
+async def youtube_put_strategy(
+    body: StrategySave,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        strategy = await save_project_youtube_strategy(db, resolved_project_name, body.strategy)
+        await db.commit()
+        logger.info("[YOUTUBE] Strategy updated project=%s", resolved_project_name)
+        return _ok({"project_name": resolved_project_name, "strategy": strategy})
+    except Exception as exc:
+        await db.rollback()
+        message = str(exc)
+        logger.error("[YOUTUBE] Strategy update failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.get("/workspace")
+async def youtube_workspace(
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        workspace = await build_youtube_workspace(db, resolved_project_name)
+        return _ok(workspace)
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Workspace failed project=%s: %s", resolved_project_name, message)
+        return _error(message, _error_status_code(message))
+
+
 @router.post("/analyze", response_model=YouTubeAnalyzeResponse)
 async def youtube_analyze(
     body: YouTubeAnalyzeRequest,
@@ -426,9 +487,13 @@ async def youtube_analyze(
     Analyze YouTube trends and generate content ideas.
     Stores the analysis in vector memory for future reference.
     """
+    strategy = await get_project_youtube_strategy(db, settings.YOUTUBE_PROJECT_NAME, persist_default=False)
+    workspace = await build_youtube_workspace(db, settings.YOUTUBE_PROJECT_NAME)
     result = await analyze_channel_trends(
         topics=body.topics,
         sources=body.sources,
+        strategy_context=strategy,
+        channel_snapshot=workspace.get("channel_audit"),
     )
 
     # Store analysis in memory for future context
@@ -491,10 +556,15 @@ async def youtube_send_brief(
     db: AsyncSession = Depends(get_db),
 ):
     """Generate trend analysis and send the brief via WhatsApp."""
+    strategy = await get_project_youtube_strategy(db, settings.YOUTUBE_PROJECT_NAME, persist_default=False)
+    workspace = await build_youtube_workspace(db, settings.YOUTUBE_PROJECT_NAME)
+
     # Generate the analysis
     result = await analyze_channel_trends(
         topics=body.topics,
         sources=body.sources,
+        strategy_context=strategy,
+        channel_snapshot=workspace.get("channel_audit"),
     )
 
     # Send via WhatsApp
