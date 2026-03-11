@@ -133,6 +133,13 @@ export function generateBrief() {
   });
 }
 
+// Proactive Bot
+export function triggerProactive() {
+  return request('/api/proactive/trigger', {
+    method: 'POST',
+  });
+}
+
 // Sync
 export function syncProjects() {
   return request('/api/sync/projects', {
