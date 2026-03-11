@@ -1,15 +1,88 @@
 """
 Orquestra - WhatsApp Service
-Send messages via Evolution API.
+Send messages via Evolution API with Brazilian phone number fallback.
 """
 
 import logging
+import re
 
 import httpx
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _get_instance_key(instance_name: str) -> str:
+    """Resolve API key for a given instance (supports multi-instance)."""
+    if settings.EVOLUTION_INSTANCES:
+        try:
+            import json
+            instances = json.loads(settings.EVOLUTION_INSTANCES) if isinstance(
+                settings.EVOLUTION_INSTANCES, str
+            ) else settings.EVOLUTION_INSTANCES
+            if instance_name in instances:
+                return instances[instance_name]
+        except Exception:
+            pass
+    return settings.EVOLUTION_API_KEY
+
+
+def _phone_variants(phone: str) -> list[str]:
+    """
+    Generate phone number variants for Brazilian numbers.
+    Brazilian mobile: 55 + DDD(2) + 9 + 8 digits = 13 digits
+    Brazilian landline: 55 + DDD(2) + 8 digits = 12 digits
+
+    If number has 13 digits (with 9): try as-is, then without the 9
+    If number has 12 digits (without 9): try as-is, then with the 9
+    Non-BR numbers: return as-is only.
+    """
+    digits = re.sub(r'\D', '', phone)
+
+    # Only apply logic to Brazilian numbers (start with 55)
+    if not digits.startswith('55') or len(digits) < 12:
+        return [digits]
+
+    ddd = digits[2:4]
+    rest = digits[4:]
+
+    if len(digits) == 13 and rest.startswith('9'):
+        # Has the 9 → try as-is, then without
+        without_9 = f"55{ddd}{rest[1:]}"
+        return [digits, without_9]
+    elif len(digits) == 12 and not rest.startswith('9'):
+        # Missing the 9 → try as-is, then with
+        with_9 = f"55{ddd}9{rest}"
+        return [digits, with_9]
+
+    return [digits]
+
+
+async def _send_single(
+    phone: str,
+    message: str,
+    instance_name: str,
+    api_key: str,
+) -> tuple[bool, str | None]:
+    """Send a single message attempt. Returns (success, error_message)."""
+    url = f"{settings.EVOLUTION_API_URL}/message/sendText/{instance_name}"
+    headers = {
+        "apikey": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "number": phone,
+        "text": message,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
 
 
 async def send_whatsapp_message(
@@ -19,6 +92,8 @@ async def send_whatsapp_message(
 ) -> bool:
     """
     Send a WhatsApp text message via Evolution API.
+    Automatically tries phone number variants (with/without digit 9)
+    for Brazilian numbers if the first attempt fails.
 
     Args:
         phone: Phone number (digits only, with country code, e.g., "5551999998888").
@@ -37,27 +112,33 @@ async def send_whatsapp_message(
         logger.warning("[WHATSAPP] No Evolution instance configured, skipping send")
         return False
 
-    url = f"{settings.EVOLUTION_API_URL}/message/sendText/{instance_name}"
-    headers = {
-        "apikey": settings.EVOLUTION_API_KEY,
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "number": phone,
-        "text": message,
-    }
+    api_key = _get_instance_key(instance_name)
+    variants = _phone_variants(phone)
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
+    for i, variant in enumerate(variants):
+        success, error = await _send_single(variant, message, instance_name, api_key)
+        if success:
+            if i > 0:
+                logger.info(
+                    "[WHATSAPP] Message sent to %s (fallback from %s) via %s",
+                    variant, phone, instance_name,
+                )
+            else:
+                logger.info(
+                    "[WHATSAPP] Message sent to %s via %s", variant, instance_name,
+                )
+            return True
+        else:
+            logger.warning(
+                "[WHATSAPP] Attempt %d/%d failed for %s: %s",
+                i + 1, len(variants), variant, error,
+            )
 
-        logger.info("[WHATSAPP] Message sent to %s via instance %s", phone, instance_name)
-        return True
-
-    except Exception as exc:
-        logger.error("[WHATSAPP] Failed to send message to %s: %s", phone, exc)
-        return False
+    logger.error(
+        "[WHATSAPP] All attempts failed for %s (%d variants tried)",
+        phone, len(variants),
+    )
+    return False
 
 
 async def send_content_brief_to_whatsapp(

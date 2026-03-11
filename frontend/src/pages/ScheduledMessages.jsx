@@ -4,6 +4,7 @@ import {
   createScheduledMessage,
   updateScheduledMessage,
   deleteScheduledMessage,
+  retryScheduledMessage,
   getContacts,
 } from '../api'
 
@@ -177,12 +178,23 @@ export default function ScheduledMessages() {
     }
   }
 
+  const handleRetry = async (id) => {
+    try {
+      await retryScheduledMessage(id)
+      await loadMessages()
+    } catch (err) {
+      console.error('[SCHEDULED] Retry failed:', err)
+      alert('Erro ao reenviar: ' + (err.data?.detail || err.message))
+    }
+  }
+
   const selectContact = (contact) => {
     setForm((f) => ({ ...f, phone: contact.phone }))
   }
 
   const pendingCount = messages.filter((m) => m.status === 'pending').length
   const sentCount = messages.filter((m) => m.status === 'sent').length
+  const failedCount = messages.filter((m) => m.status === 'failed').length
 
   return (
     <div className="animate-fade-in">
@@ -191,7 +203,7 @@ export default function ScheduledMessages() {
         <div>
           <h1 className="text-2xl font-bold text-white">Mensagens Agendadas</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            {pendingCount} pendente{pendingCount !== 1 ? 's' : ''} · {sentCount} enviada{sentCount !== 1 ? 's' : ''}
+            {pendingCount} pendente{pendingCount !== 1 ? 's' : ''} · {sentCount} enviada{sentCount !== 1 ? 's' : ''}{failedCount > 0 ? ` · ${failedCount} falha${failedCount !== 1 ? 's' : ''}` : ''}
           </p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
@@ -280,8 +292,8 @@ export default function ScheduledMessages() {
                       </span>
                     )}
                     {msg.error_message && (
-                      <span className="text-red-400" title={msg.error_message}>
-                        Erro: {msg.error_message.slice(0, 50)}
+                      <span className="text-red-400 block mt-1" title={msg.error_message}>
+                        Erro: {msg.error_message.slice(0, 120)}
                       </span>
                     )}
                     {msg.evolution_instance && (
@@ -307,6 +319,14 @@ export default function ScheduledMessages() {
                         Cancelar
                       </button>
                     </>
+                  )}
+                  {msg.status === 'failed' && (
+                    <button
+                      onClick={() => handleRetry(msg.id)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-zinc-800 text-blue-400 hover:bg-blue-500/20 font-medium"
+                    >
+                      Reenviar
+                    </button>
                   )}
                   {msg.status !== 'sent' && (
                     <button

@@ -106,8 +106,8 @@ async def update_scheduled_message(
     if not msg:
         raise HTTPException(status_code=404, detail="Scheduled message not found")
 
-    if msg.status in ("sent", "failed"):
-        raise HTTPException(status_code=400, detail="Cannot update a message that was already sent or failed")
+    if msg.status in ("sent",):
+        raise HTTPException(status_code=400, detail="Cannot update a sent message")
 
     if data.message_text is not None:
         msg.message_text = data.message_text
@@ -124,6 +124,31 @@ async def update_scheduled_message(
     await db.flush()
     await db.refresh(msg)
     logger.info("[SCHEDULED_MESSAGES] Updated: %s", msg.id)
+    return _to_response(msg)
+
+
+@router.post("/{message_id}/retry", response_model=ScheduledMessageResponse)
+async def retry_scheduled_message(
+    message_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retry a failed message — resets to pending with scheduled_for = now."""
+    stmt = select(ScheduledMessage).where(ScheduledMessage.id == message_id)
+    result = await db.execute(stmt)
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Scheduled message not found")
+
+    if msg.status != "failed":
+        raise HTTPException(status_code=400, detail="Only failed messages can be retried")
+
+    msg.status = "pending"
+    msg.error_message = None
+    msg.scheduled_for = datetime.now(timezone.utc)
+    msg.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.refresh(msg)
+    logger.info("[SCHEDULED_MESSAGES] Retrying: %s to %s", msg.id, msg.phone)
     return _to_response(msg)
 
 

@@ -286,6 +286,12 @@ export function deleteScheduledMessage(id) {
   });
 }
 
+export function retryScheduledMessage(id) {
+  return request(`/api/scheduled-messages/${id}/retry`, {
+    method: 'POST',
+  });
+}
+
 export function getProposalAnalytics(id) {
   return request(`/api/proposals/${id}/analytics`);
 }
@@ -345,4 +351,19 @@ export function updateYouTubeVideoMetadata(videoId, data, projectName = 'GuyFolk
     method: 'PUT',
     body: JSON.stringify(data),
   });
+}
+
+export function getYouTubeStrategy(projectName = 'GuyFolkz') {
+  return request(`/api/youtube/strategy?project_name=${encodeURIComponent(projectName)}`);
+}
+
+export function saveYouTubeStrategy(strategy, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/strategy?project_name=${encodeURIComponent(projectName)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ strategy }),
+  });
+}
+
+export function getYouTubeWorkspace(projectName = 'GuyFolkz') {
+  return request(`/api/youtube/workspace?project_name=${encodeURIComponent(projectName)}`);
 }
