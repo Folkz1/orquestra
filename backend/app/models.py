@@ -471,3 +471,66 @@ class ProposalEvent(Base):
 
     def __repr__(self):
         return f"<ProposalEvent {self.event_type} {self.proposal_id}>"
+
+
+class CredentialLink(Base):
+    __tablename__ = "credential_links"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token = Column(String(64), unique=True, nullable=False)
+    client_name = Column(String(255), nullable=False)
+    fields = Column(JSONB, server_default="[]", nullable=False)
+    submitted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    project = relationship("Project", lazy="selectin")
+    credentials = relationship("ClientCredential", back_populates="link", lazy="selectin", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<CredentialLink {self.client_name} {self.token[:8]}>"
+
+
+class ClientCredential(Base):
+    __tablename__ = "client_credentials"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    link_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("credential_links.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    field_name = Column(String(255), nullable=False)
+    field_label = Column(String(255), nullable=False)
+    encrypted_value = Column(Text, nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    link = relationship("CredentialLink", back_populates="credentials")
+
+    def __repr__(self):
+        return f"<ClientCredential {self.field_name}>"
