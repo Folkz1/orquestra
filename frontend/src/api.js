@@ -367,3 +367,19 @@ export function saveYouTubeStrategy(strategy, projectName = 'GuyFolkz') {
 export function getYouTubeWorkspace(projectName = 'GuyFolkz') {
   return request(`/api/youtube/workspace?project_name=${encodeURIComponent(projectName)}`);
 }
+
+// Credentials Portal
+export function getCredentialLinks() {
+  return request('/api/credentials/links');
+}
+
+export function createCredentialLink(data) {
+  return request('/api/credentials/links', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function getProjectCredentials(projectId) {
+  return request(`/api/credentials/project/${projectId}/masked`);
+}

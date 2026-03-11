@@ -18,6 +18,7 @@ import ProposalView from './pages/ProposalView'
 import ClientSuccess from './pages/ClientSuccess'
 import YouTubeAnalytics from './pages/YouTubeAnalytics'
 import ScheduledMessages from './pages/ScheduledMessages'
+import Credentials from './pages/Credentials'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
@@ -47,6 +48,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/proposta/:slug" element={<ProposalView />} />
         <Route path="/pos-venda" element={<ClientSuccess />} />
         <Route path="/mensagens-agendadas" element={<ScheduledMessages />} />
+        <Route path="/credenciais" element={<Credentials />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>
