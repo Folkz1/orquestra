@@ -346,6 +346,46 @@ class YouTubeSendBriefRequest(BaseModel):
     )
 
 
+# ─── Scheduled Message Schemas ───────────────────────────────────────────
+
+
+class ScheduledMessageCreate(BaseModel):
+    phone: str = Field(..., max_length=20, description="Phone with country code, e.g. 554185126488")
+    message_text: str = Field(..., min_length=1, description="Message text to send")
+    scheduled_for: datetime = Field(..., description="When to send (ISO 8601 with timezone)")
+    evolution_instance: Optional[str] = Field(None, max_length=100, description="Evolution instance name")
+    contact_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScheduledMessageUpdate(BaseModel):
+    message_text: Optional[str] = None
+    scheduled_for: Optional[datetime] = None
+    status: Optional[str] = Field(None, pattern=r"^(pending|cancelled)$")
+    evolution_instance: Optional[str] = None
+    metadata_json: Optional[dict[str, Any]] = None
+
+
+class ScheduledMessageResponse(BaseModel):
+    id: UUID
+    phone: str
+    message_text: str
+    scheduled_for: datetime
+    status: str
+    error_message: Optional[str] = None
+    evolution_instance: Optional[str] = None
+    contact_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    sent_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    contact_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class WhatsAppSendRequest(BaseModel):
     phone: str = Field(..., description="Phone number with country code")
     message: str = Field(..., description="Message text to send")

@@ -357,6 +357,49 @@ class ProposalComment(Base):
         return f"<ProposalComment {self.author_name}>"
 
 
+class ScheduledMessage(Base):
+    __tablename__ = "scheduled_messages"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    phone = Column(String(20), nullable=False)
+    message_text = Column(Text, nullable=False)
+    scheduled_for = Column(TIMESTAMP(timezone=True), nullable=False)
+    status = Column(String(20), server_default="pending", nullable=False)  # pending/sent/failed/cancelled
+    error_message = Column(Text, nullable=True)
+    evolution_instance = Column(String(100), nullable=True)
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    metadata_json = Column(JSONB, server_default="{}", nullable=False)
+    sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    contact = relationship("Contact", lazy="selectin")
+    project = relationship("Project", lazy="selectin")
+
+    def __repr__(self):
+        return f"<ScheduledMessage {self.phone} {self.status} {self.scheduled_for}>"
+
+
 class AssistantDraft(Base):
     __tablename__ = "assistant_drafts"
 

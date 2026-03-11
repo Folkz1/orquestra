@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import settings
 from app.database import async_session
 from app.services.orchestrator import generate_daily_brief, send_telegram_brief
+from app.tasks.scheduled_sender import process_scheduled_messages
 from app.tasks.youtube_daily import daily_youtube_analysis
 
 logger = logging.getLogger(__name__)
@@ -82,9 +83,18 @@ def start_scheduler():
         timezone="UTC",
     )
 
+    # Scheduled messages - check every minute
+    scheduler.add_job(
+        process_scheduled_messages,
+        "interval",
+        minutes=1,
+        id="scheduled_messages",
+        replace_existing=True,
+    )
+
     scheduler.start()
     logger.info(
-        "[DAILY_BRIEF] Scheduler started. Brief at %02d:00 UTC, YouTube at 08:00 UTC",
+        "[DAILY_BRIEF] Scheduler started. Brief at %02d:00 UTC, YouTube at 08:00 UTC, Scheduled msgs every 1min",
         settings.BRIEFING_HOUR,
     )
 
