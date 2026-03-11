@@ -13,7 +13,7 @@ from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import AssistantDraft, Contact, Message
+from app.models import AssistantDraft, Contact, Message, Project, ProjectTask
 from app.services.llm import chat_completion
 from app.services.memory import search_memory
 from app.services.whatsapp import send_whatsapp_message
@@ -412,6 +412,35 @@ async def _build_owner_recent_context(db: AsyncSession, owner_contact_id: UUID |
     return "\n".join(lines)
 
 
+async def _get_tasks_context(db: AsyncSession) -> str:
+    """Get open tasks context for the assistant."""
+    from sqlalchemy import case, func
+    stmt = (
+        select(ProjectTask, Project)
+        .outerjoin(Project, ProjectTask.project_id == Project.id)
+        .where(ProjectTask.status.notin_(["done"]))
+        .order_by(
+            case(
+                (ProjectTask.priority == "high", 0),
+                (ProjectTask.priority == "medium", 1),
+                else_=2,
+            ),
+            ProjectTask.created_at.desc(),
+        )
+        .limit(15)
+    )
+    rows = (await db.execute(stmt)).all()
+    if not rows:
+        return "Nenhuma task aberta no momento."
+
+    lines = []
+    for task, project in rows:
+        prio = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(task.priority, "⚪")
+        proj_name = project.name if project else "?"
+        lines.append(f"{prio} [{task.status}] {task.title[:80]} ({proj_name})")
+    return "\n".join(lines)
+
+
 async def owner_chat_reply(db: AsyncSession, text: str, owner_contact_id: UUID | None = None) -> str:
     pending = await list_open_threads(db, limit=8)
     lines = []
@@ -419,13 +448,23 @@ async def owner_chat_reply(db: AsyncSession, text: str, owner_contact_id: UUID |
         lines.append(f"{i}. {item['name']} ({item['phone']}): {item['preview']}")
     pending_block = "\n".join(lines) if lines else "Sem conversas em aberto no momento."
 
+    tasks_block = await _get_tasks_context(db)
+
     system = (
-        "Você é o assistente pessoal e comercial do Diego no WhatsApp. "
+        "Você é o Jarbas, CTO e consultor de negócios do Diego no WhatsApp. "
         "Fale em português BR, com tom humano, natural, direto e contextual. "
         "Você NÃO fala como sistema, não expõe bastidores, não cita parser/JSON/comando/action/endpoints. "
         "Entenda intenção antes de processo. Ferramentas ficam invisíveis; entregue resultado útil em linguagem de gente. "
         "Mantenha continuidade da conversa (não trate cada mensagem como assunto novo quando for continuação). "
-        "Quando fizer sentido, sugira texto pronto e opção de áudio de forma natural. "
+        "\n\n"
+        "CAPACIDADES (use quando Diego pedir):\n"
+        "- Criar tasks no kanban: se Diego pedir algo como 'cria task disso', 'adiciona no kanban', 'faz', 'bota pra fazer'\n"
+        "- Sugerir próximas ações de negócio\n"
+        "- Analisar clientes e oportunidades\n"
+        "\n"
+        "Se Diego confirmar uma ação do relatório proativo ou pedir para criar task, "
+        "retorne JSON no formato: {\"reply\": \"mensagem para Diego\", \"tasks\": [{\"title\": \"...\", \"priority\": \"high|medium|low\", \"project\": \"nome\"}]}\n"
+        "Se NÃO houver ação de task, retorne APENAS texto normal (sem JSON).\n"
         "Só peça confirmação quando houver risco real de envio/ação errada."
     )
     owner_recent = await _build_owner_recent_context(db, owner_contact_id, limit=20)
@@ -434,15 +473,67 @@ async def owner_chat_reply(db: AsyncSession, text: str, owner_contact_id: UUID |
         f"Mensagem do Diego: {text}\n\n"
         f"Contexto recente da conversa com Diego (últimas 20 mensagens):\n{owner_recent or 'Sem contexto recente.'}\n\n"
         f"Conversas em aberto agora:\n{pending_block}\n\n"
-        "Responda como um assistente humano de confiança, em no máximo 12 linhas, "
-        "sem linguagem técnica e com próximo passo claro quando útil."
+        f"Tasks no kanban:\n{tasks_block}\n\n"
+        "Responda como um parceiro de negócios de confiança, em no máximo 12 linhas, "
+        "direto e com próximo passo claro quando útil."
     )
-    return (await chat_completion(
+    response = (await chat_completion(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         model=_assistant_model(),
         temperature=0.35,
-        max_tokens=500,
+        max_tokens=800,
     )).strip()
+
+    # Check if response contains task creation JSON
+    import json as _json
+    try:
+        match = re.search(r"\{.*\}", response, re.DOTALL)
+        if match:
+            data = _json.loads(match.group())
+            if isinstance(data, dict) and data.get("tasks"):
+                # Create tasks
+                created_titles = []
+                for t in data["tasks"][:3]:
+                    title = (t.get("title") or "").strip()
+                    if not title:
+                        continue
+                    # Find project
+                    project_id = None
+                    proj_name = t.get("project", "")
+                    if proj_name:
+                        proj_stmt = select(Project).where(
+                            Project.name.ilike(f"%{proj_name}%")
+                        ).limit(1)
+                        proj_result = await db.execute(proj_stmt)
+                        proj = proj_result.scalar_one_or_none()
+                        if proj:
+                            project_id = proj.id
+
+                    task = ProjectTask(
+                        project_id=project_id,
+                        title=title[:500],
+                        status="backlog",
+                        priority=t.get("priority", "medium"),
+                        source="whatsapp_bot",
+                        assigned_to="diego",
+                    )
+                    db.add(task)
+                    created_titles.append(title)
+
+                if created_titles:
+                    await db.flush()
+                    logger.info("[ASSISTANT] Created %d tasks from WhatsApp: %s", len(created_titles), created_titles)
+
+                # Return the reply text (not the JSON)
+                reply = data.get("reply", "")
+                if reply:
+                    if created_titles:
+                        reply += f"\n\n✅ {len(created_titles)} task(s) criada(s) no kanban."
+                    return reply
+    except (ValueError, _json.JSONDecodeError):
+        pass
+
+    return response
 
 
 async def parse_owner_natural_message(text: str) -> dict:
