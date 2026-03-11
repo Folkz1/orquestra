@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { uploadYouTubeVideo, publishYouTubeVideo, scheduleYouTubeVideo } from '../api'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 const TOKEN = () => localStorage.getItem('orquestra_token')
@@ -92,6 +93,14 @@ function gerarDescricaoYouTube(video) {
 function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose }) {
   const [changing, setChanging] = useState(false)
   const [copied, setCopied] = useState(null) // track which section was copied
+  const [uploadState, setUploadState] = useState({ step: 'idle', progress: '', error: '', videoId: video.youtube_video_id || '' })
+  const [scheduleDate, setScheduleDate] = useState('')
+  const [teleprompter, setTeleprompter] = useState(false)
+  const [teleSpeed, setTeleSpeed] = useState(2) // pixels per frame tick
+  const [telePaused, setTelePaused] = useState(true)
+  const videoFileRef = useRef()
+  const teleRef = useRef()
+  const teleScrollRef = useRef(null)
   const status = video.status || 'ideia'
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.ideia
   const thumbnailUrl = getThumbUrl(video)
@@ -130,6 +139,100 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
     setTimeout(() => setCopied(null), 2000)
   }
 
+  // Teleprompter auto-scroll
+  useEffect(() => {
+    if (!teleprompter || telePaused) {
+      if (teleScrollRef.current) { cancelAnimationFrame(teleScrollRef.current); teleScrollRef.current = null }
+      return
+    }
+    function tick() {
+      if (teleRef.current) {
+        teleRef.current.scrollTop += teleSpeed * 0.5
+      }
+      teleScrollRef.current = requestAnimationFrame(tick)
+    }
+    teleScrollRef.current = requestAnimationFrame(tick)
+    return () => { if (teleScrollRef.current) cancelAnimationFrame(teleScrollRef.current) }
+  }, [teleprompter, telePaused, teleSpeed])
+
+  // Teleprompter keyboard: space=pause, up/down=speed
+  useEffect(() => {
+    if (!teleprompter) return
+    function handleKey(e) {
+      if (e.code === 'Space') { e.preventDefault(); setTelePaused(p => !p) }
+      if (e.code === 'ArrowUp') { e.preventDefault(); setTeleSpeed(s => Math.min(s + 1, 10)) }
+      if (e.code === 'ArrowDown') { e.preventDefault(); setTeleSpeed(s => Math.max(s - 1, 1)) }
+      if (e.code === 'Escape') { setTeleprompter(false); setTelePaused(true) }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [teleprompter])
+
+  // Build teleprompter text
+  function buildTeleprompterText() {
+    const parts = []
+    const title = video.chosen_title || video.title
+    parts.push(title.toUpperCase())
+    parts.push('')
+    if (video.hook) { parts.push('── HOOK (primeiros 30s) ──'); parts.push(video.hook); parts.push('') }
+    if (video.pontos_chave?.length > 0) {
+      parts.push('── O QUE FALAR ──')
+      video.pontos_chave.forEach((p, i) => parts.push(`${i + 1}. ${p}`))
+      parts.push('')
+    }
+    if (video.roteiro && Object.keys(video.roteiro).length > 0) {
+      parts.push('── ROTEIRO ──')
+      Object.entries(video.roteiro).forEach(([key, val]) => { parts.push(`[${key.toUpperCase()}]`); parts.push(val); parts.push('') })
+    }
+    if (video.dinamica) { parts.push('── DINAMICA ──'); parts.push(video.dinamica); parts.push('') }
+    parts.push('── CTA FINAL ──')
+    parts.push('Sua empresa esta perdendo dinheiro com processos manuais? Clica no link da descricao e me chama no WhatsApp.')
+    return parts.join('\n')
+  }
+
+  // Teleprompter fullscreen mode
+  if (teleprompter) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        {/* Controls */}
+        <div className="flex items-center justify-between px-6 py-3 bg-zinc-900/80 border-b border-zinc-800">
+          <button onClick={() => { setTeleprompter(false); setTelePaused(true) }}
+            className="text-zinc-400 hover:text-zinc-200 text-sm flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Fechar Teleprompter
+          </button>
+          <div className="flex items-center gap-4">
+            <button onClick={() => setTelePaused(p => !p)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${telePaused ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+              {telePaused ? '▶ Play' : '⏸ Pausar'}
+            </button>
+            <div className="flex items-center gap-2 text-zinc-400 text-xs">
+              <span>Velocidade:</span>
+              <button onClick={() => setTeleSpeed(s => Math.max(s - 1, 1))} className="w-6 h-6 bg-zinc-800 rounded hover:bg-zinc-700 flex items-center justify-center">-</button>
+              <span className="text-zinc-200 font-bold w-4 text-center">{teleSpeed}</span>
+              <button onClick={() => setTeleSpeed(s => Math.min(s + 1, 10))} className="w-6 h-6 bg-zinc-800 rounded hover:bg-zinc-700 flex items-center justify-center">+</button>
+            </div>
+            <span className="text-[10px] text-zinc-600">Space=pausar | ↑↓=velocidade | Esc=fechar</span>
+          </div>
+        </div>
+        {/* Content */}
+        <div ref={teleRef} className="flex-1 overflow-y-auto px-8 sm:px-16 md:px-32">
+          {/* Top spacer so text starts at center */}
+          <div className="h-[45vh]" />
+          <div className="text-2xl sm:text-3xl md:text-4xl text-zinc-100 leading-relaxed font-medium whitespace-pre-line text-center max-w-3xl mx-auto">
+            {buildTeleprompterText()}
+          </div>
+          {/* Bottom spacer */}
+          <div className="h-[80vh]" />
+        </div>
+        {/* Center line indicator */}
+        <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 bg-red-500/30 pointer-events-none" />
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-zinc-950/98 overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6">
@@ -142,6 +245,11 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
             Kanban
           </button>
           <div className="flex items-center gap-2">
+            {/* Teleprompter button */}
+            <button onClick={() => { setTeleprompter(true); setTelePaused(true) }}
+              className="text-[11px] px-3 py-1 rounded-full bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors font-semibold">
+              Teleprompter
+            </button>
             <span className={`text-[11px] px-2.5 py-1 rounded-full font-semibold ${cfg.color}`}>{cfg.label}</span>
             {nextStatus[status] && (
               <button onClick={handleAdvance} disabled={changing}
@@ -397,6 +505,145 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
             <CheckItem done={true} label="CTA WhatsApp B2B" />
             <CheckItem done={true} label="Descricao do YouTube gerada" />
           </div>
+        </Section>
+
+        {/* ═══ 11. PUBLICAR NO YOUTUBE ═══ */}
+        <Section title="Publicar no YouTube" subtitle="Upload, agendar ou publicar direto" accent="red" num="11">
+          {uploadState.videoId ? (
+            /* Vídeo já uploaded - opções de agendar/publicar */
+            <div className="space-y-3">
+              <div className="bg-green-500/10 rounded-lg p-3 border border-green-500/20">
+                <p className="text-xs text-green-400 font-semibold">Video enviado ao YouTube</p>
+                <a href={`https://www.youtube.com/watch?v=${uploadState.videoId}`} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-green-300 hover:text-green-200 underline">
+                  youtube.com/watch?v={uploadState.videoId}
+                </a>
+              </div>
+
+              {/* Agendar */}
+              <div className="bg-zinc-800/60 rounded-lg p-3">
+                <label className="text-[10px] text-zinc-500 uppercase font-semibold block mb-2">Agendar publicacao</label>
+                <div className="flex gap-2">
+                  <input type="datetime-local" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-amber-500" />
+                  <button onClick={async () => {
+                    if (!scheduleDate) return
+                    setUploadState(s => ({ ...s, step: 'scheduling' }))
+                    try {
+                      const isoDate = new Date(scheduleDate).toISOString()
+                      await scheduleYouTubeVideo(uploadState.videoId, isoDate)
+                      setUploadState(s => ({ ...s, step: 'scheduled', progress: `Agendado para ${scheduleDate}` }))
+                      // Salvar youtube_video_id e status no briefing
+                      const form = new FormData()
+                      form.append('status', 'publicado')
+                      await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: form })
+                      onStatusChange(index, { ...video, status: 'publicado', youtube_video_id: uploadState.videoId })
+                    } catch (e) {
+                      setUploadState(s => ({ ...s, step: 'error', error: e.message }))
+                    }
+                  }} disabled={uploadState.step === 'scheduling' || !scheduleDate}
+                    className="px-4 py-2 bg-amber-500/15 text-amber-300 text-sm font-semibold rounded-lg hover:bg-amber-500/25 transition-colors disabled:opacity-50">
+                    {uploadState.step === 'scheduling' ? '...' : 'Agendar'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Publicar agora */}
+              <button onClick={async () => {
+                if (!confirm('Publicar o video AGORA no YouTube?')) return
+                setUploadState(s => ({ ...s, step: 'publishing' }))
+                try {
+                  await publishYouTubeVideo(uploadState.videoId)
+                  setUploadState(s => ({ ...s, step: 'published', progress: 'Video publicado!' }))
+                  const form = new FormData()
+                  form.append('status', 'publicado')
+                  await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: form })
+                  onStatusChange(index, { ...video, status: 'publicado', youtube_video_id: uploadState.videoId })
+                } catch (e) {
+                  setUploadState(s => ({ ...s, step: 'error', error: e.message }))
+                }
+              }} disabled={uploadState.step === 'publishing'}
+                className="w-full py-3 bg-red-500/15 text-red-300 text-sm font-bold rounded-lg hover:bg-red-500/25 transition-colors disabled:opacity-50 border border-red-500/20">
+                {uploadState.step === 'publishing' ? 'Publicando...' : 'Publicar Agora (publico)'}
+              </button>
+
+              {uploadState.step === 'scheduled' && (
+                <p className="text-xs text-green-400 text-center">{uploadState.progress}</p>
+              )}
+              {uploadState.step === 'published' && (
+                <p className="text-xs text-green-400 text-center font-bold">Video PUBLICO no YouTube!</p>
+              )}
+            </div>
+          ) : (
+            /* Upload do video */
+            <div className="space-y-3">
+              <input ref={videoFileRef} type="file" accept="video/*" className="hidden" onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                setUploadState({ step: 'uploading', progress: `Enviando ${file.name} (${(file.size / 1024 / 1024).toFixed(0)}MB)...`, error: '', videoId: '' })
+
+                const title = video.chosen_title || video.title
+                const tags = video.tags_youtube?.length > 0 ? video.tags_youtube : (video.keywords || [])
+
+                const form = new FormData()
+                form.append('file', file)
+                form.append('title', title)
+                form.append('description', descricaoYT)
+                form.append('tags', JSON.stringify(tags))
+                form.append('category_id', '28')
+                form.append('privacy_status', 'private')
+
+                // Enviar thumbnail junto se existir
+                if (thumbnailUrl && video.thumbnail_data) {
+                  try {
+                    const resp = await fetch(video.thumbnail_data)
+                    const blob = await resp.blob()
+                    form.append('thumbnail', blob, 'thumbnail.png')
+                  } catch {} // best effort
+                }
+
+                try {
+                  const result = await uploadYouTubeVideo(form)
+                  const vid = result?.data?.video_id || result?.video_id
+                  if (vid) {
+                    setUploadState({ step: 'uploaded', progress: 'Upload completo!', error: '', videoId: vid })
+                    // Salvar youtube_video_id no briefing
+                    const patchForm = new FormData()
+                    patchForm.append('youtube_video_id', vid)
+                    fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: patchForm }).catch(() => {})
+                  } else {
+                    setUploadState(s => ({ ...s, step: 'error', error: 'Resposta sem video_id' }))
+                  }
+                } catch (err) {
+                  setUploadState(s => ({ ...s, step: 'error', error: err.message || 'Erro no upload' }))
+                }
+              }} />
+
+              <button onClick={() => videoFileRef.current?.click()} disabled={uploadState.step === 'uploading'}
+                className="w-full py-4 bg-red-500/10 text-red-300 rounded-xl border-2 border-dashed border-red-500/20 hover:border-red-500/40 hover:bg-red-500/15 transition-all disabled:opacity-50 flex flex-col items-center gap-2">
+                {uploadState.step === 'uploading' ? (
+                  <>
+                    <span className="w-6 h-6 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                    <span className="text-sm font-semibold">{uploadState.progress}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <span className="text-sm font-bold">Selecionar Video (.mp4)</span>
+                    <span className="text-[10px] text-zinc-500">Envia como privado, depois voce agenda ou publica</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {uploadState.error && (
+            <div className="mt-2 bg-red-500/10 rounded-lg p-2 border border-red-500/20">
+              <p className="text-xs text-red-400">{uploadState.error}</p>
+            </div>
+          )}
         </Section>
 
         {/* ═══ CTA PADRAO ═══ */}

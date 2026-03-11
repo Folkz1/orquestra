@@ -318,3 +318,31 @@ export function saveYouTubeAnalytics(data) {
     body: JSON.stringify(data),
   });
 }
+
+// YouTube Upload & Publish
+export function uploadYouTubeVideo(formData, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/upload?project_name=${encodeURIComponent(projectName)}`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export function publishYouTubeVideo(videoId, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/video/${videoId}/publish?project_name=${encodeURIComponent(projectName)}`, {
+    method: 'POST',
+  });
+}
+
+export function scheduleYouTubeVideo(videoId, publishAt, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/video/${videoId}/schedule?project_name=${encodeURIComponent(projectName)}`, {
+    method: 'POST',
+    body: JSON.stringify({ publish_at: publishAt }),
+  });
+}
+
+export function updateYouTubeVideoMetadata(videoId, data, projectName = 'GuyFolkz') {
+  return request(`/api/youtube/video/${videoId}?project_name=${encodeURIComponent(projectName)}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}

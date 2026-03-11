@@ -270,6 +270,7 @@ async def update_video(
     chosen_title: Optional[str] = Form(None),
     status: Optional[str] = Form(None),
     thumbnail_prompts_ptbr: Optional[str] = Form(None),
+    youtube_video_id: Optional[str] = Form(None),
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -299,6 +300,9 @@ async def update_video(
 
     if status is not None:
         video["status"] = status
+
+    if youtube_video_id is not None:
+        video["youtube_video_id"] = youtube_video_id
 
     if thumbnail_prompts_ptbr is not None:
         import json as _json

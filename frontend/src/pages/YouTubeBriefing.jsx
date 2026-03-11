@@ -324,6 +324,112 @@ function VideoDetail({ video, index, onUpdate, onClose }) {
           </button>
         </Section>
 
+        {/* ─── SECTION: Roteiro Completo de Producao ─── */}
+        <Section title="Roteiro Completo de Producao">
+          {/* Contexto / Briefing do assunto */}
+          {video.contexto && (
+            <div className="mb-4">
+              <label className="text-[10px] text-green-400 uppercase font-semibold tracking-wider">Contexto - Por que esse video importa</label>
+              <p className="text-sm text-zinc-200 mt-1.5 leading-relaxed whitespace-pre-line bg-zinc-800/60 rounded-lg p-3">{video.contexto}</p>
+            </div>
+          )}
+
+          {/* Pontos-chave */}
+          {video.pontos_chave?.length > 0 && (
+            <div className="mb-4">
+              <label className="text-[10px] text-green-400 uppercase font-semibold tracking-wider">O que falar no video</label>
+              <div className="space-y-1.5 mt-1.5">
+                {video.pontos_chave.map((ponto, i) => (
+                  <div key={i} className="flex gap-2.5 items-start bg-zinc-800/60 rounded-lg p-2.5">
+                    <span className="text-green-400 font-bold text-sm flex-shrink-0">{i + 1}.</span>
+                    <p className="text-sm text-zinc-200 leading-relaxed">{ponto}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Roteiro 3 atos detalhado */}
+          {video.roteiro && Object.keys(video.roteiro).length > 0 && (
+            <div className="mb-4">
+              <label className="text-[10px] text-green-400 uppercase font-semibold tracking-wider">Estrutura do Video (3 Atos)</label>
+              <div className="space-y-2 mt-1.5">
+                {Object.entries(video.roteiro).map(([key, val]) => {
+                  const num = key.includes('Problema') || key.startsWith('1') ? '1' : key.includes('Execu') || key.startsWith('2') ? '2' : key.includes('CTA') || key.startsWith('3') ? '3' : ''
+                  const colors = { '1': 'border-red-500/20 bg-red-500/5', '2': 'border-blue-500/20 bg-blue-500/5', '3': 'border-green-500/20 bg-green-500/5' }
+                  return (
+                    <div key={key} className={`rounded-lg border p-3 ${colors[num] || 'border-zinc-700/50 bg-zinc-800/60'}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        {num && <span className="text-sm font-black text-zinc-300">{num}</span>}
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase">{key.replace(/^\d+-?/, '')}</span>
+                      </div>
+                      <p className="text-sm text-zinc-200 leading-relaxed">{val}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Dinamica de producao */}
+          {video.dinamica && (
+            <div className="mb-4">
+              <label className="text-[10px] text-purple-400 uppercase font-semibold tracking-wider">Dinamica - Como gravar</label>
+              <p className="text-sm text-zinc-200 mt-1.5 leading-relaxed whitespace-pre-line bg-zinc-800/60 rounded-lg p-3">{video.dinamica}</p>
+            </div>
+          )}
+
+          {/* Referencias */}
+          {video.referencias?.length > 0 && (
+            <div className="mb-4">
+              <label className="text-[10px] text-cyan-400 uppercase font-semibold tracking-wider">Referencias e Links</label>
+              <div className="space-y-1.5 mt-1.5">
+                {video.referencias.map((ref, i) => (
+                  <a key={i} href={ref.url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 bg-zinc-800/60 rounded-lg p-2.5 hover:bg-zinc-800 transition-colors group">
+                    <span className="text-cyan-400 text-sm">🔗</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-cyan-300 group-hover:text-cyan-200 truncate">{ref.title || ref.url}</p>
+                      {ref.nota && <p className="text-[10px] text-zinc-500 truncate">{ref.nota}</p>}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Descricao YouTube pronta */}
+          {video.descricao_youtube && (
+            <div className="mb-4">
+              <label className="text-[10px] text-red-400 uppercase font-semibold tracking-wider">Descricao YouTube (pronta)</label>
+              <div className="bg-zinc-800/60 rounded-lg p-3 mt-1.5 relative">
+                <pre className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{video.descricao_youtube}</pre>
+                <button onClick={() => navigator.clipboard.writeText(video.descricao_youtube)}
+                  className="absolute top-2 right-2 text-[10px] bg-zinc-700 text-zinc-400 px-2 py-1 rounded hover:text-zinc-200 hover:bg-zinc-600 transition-colors">
+                  Copiar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tags YouTube */}
+          {video.tags_youtube?.length > 0 && (
+            <div>
+              <label className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">Tags YouTube</label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {video.tags_youtube.map((tag, i) => (
+                  <span key={i} className="text-xs bg-zinc-700/50 text-zinc-300 px-2 py-1 rounded-md">{tag}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!video.contexto && !video.pontos_chave?.length && (!video.roteiro || Object.keys(video.roteiro).length === 0) && (
+            <p className="text-xs text-zinc-600 italic text-center py-4">Roteiro completo sera gerado no proximo briefing</p>
+          )}
+        </Section>
+
         {/* ─── Action: Mark Ready ─── */}
         {status === 'thumbnail_pronta' && (
           <button onClick={handleMarkReady} disabled={saving}
