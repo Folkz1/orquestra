@@ -11,6 +11,7 @@ const navItems = [
   { to: '/youtube-analytics', label: 'YT Analytics', icon: '📈' },
   { to: '/proposals', label: 'Propostas', icon: '📄' },
   { to: '/pos-venda', label: 'Pós-Venda', icon: '🤝' },
+  { to: '/mensagens-agendadas', label: 'Agendamentos', icon: '📅' },
   { to: '/projects', label: 'Projetos', icon: '📁' },
   { to: '/briefs', label: 'Briefings', icon: '📋' },
   { to: '/settings', label: 'Config', icon: '⚙️' },

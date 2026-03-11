@@ -246,6 +246,39 @@ export function trackProposalEvent(slug, data) {
   }).catch(() => {}); // Silent fail - analytics should never break UX
 }
 
+// ─── Scheduled Messages ─────────────────────────────────────────────
+
+export function getScheduledMessages(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, value);
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/scheduled-messages${qs ? '?' + qs : ''}`);
+}
+
+export function createScheduledMessage(data) {
+  return request('/api/scheduled-messages', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateScheduledMessage(id, data) {
+  return request(`/api/scheduled-messages/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteScheduledMessage(id) {
+  return request(`/api/scheduled-messages/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export function getProposalAnalytics(id) {
   return request(`/api/proposals/${id}/analytics`);
 }
