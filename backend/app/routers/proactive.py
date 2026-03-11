@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.tasks.proactive_bot import run_proactive_analysis
+from app.tasks.proactive_bot import run_proactive_analysis, run_client_digests
 
 logger = logging.getLogger(__name__)
 
@@ -22,3 +22,10 @@ async def trigger_proactive(db: AsyncSession = Depends(get_db)):
     result = await run_proactive_analysis(db)
     await db.commit()
     return result
+
+
+@router.post("/digests")
+async def trigger_digests():
+    """Manually trigger client digests (summarize conversations)."""
+    await run_client_digests()
+    return {"status": "done"}
