@@ -262,11 +262,18 @@ async def submit_credentials(
         if not value or not value.strip():
             continue
         field_def = field_map.get(field_name, {})
+        # For custom fields (custom_xxx), derive a readable label from the key
+        if field_def:
+            label = field_def.get("label", field_name)
+        elif field_name.startswith("custom_"):
+            label = field_name[7:].replace("_", " ").title()
+        else:
+            label = field_name
         cred = ClientCredential(
             link_id=link.id,
             project_id=link.project_id,
             field_name=field_name,
-            field_label=field_def.get("label", field_name),
+            field_label=label,
             encrypted_value=_encrypt(value.strip()),
         )
         db.add(cred)
@@ -357,6 +364,14 @@ def _portal_html(client_name: str, project_name: str, fields: list, token: str, 
             <form id="credForm" onsubmit="submitForm(event)">
                 {fields_html}
 
+                <div class="custom-section">
+                    <div class="custom-header">
+                        <span class="custom-title">Credenciais adicionais</span>
+                        <button type="button" class="add-btn" onclick="addCustomField()">+ Adicionar credencial</button>
+                    </div>
+                    <div id="customFields"></div>
+                </div>
+
                 <button type="submit" class="submit-btn" id="submitBtn">
                     🔒 Salvar Credenciais
                 </button>
@@ -369,6 +384,23 @@ def _portal_html(client_name: str, project_name: str, fields: list, token: str, 
     </div>
 
     <script>
+    let customCount = 0;
+
+    function addCustomField() {{
+        customCount++;
+        const container = document.getElementById('customFields');
+        const row = document.createElement('div');
+        row.className = 'custom-row';
+        row.id = 'custom-row-' + customCount;
+        row.innerHTML = `
+            <input type="text" class="custom-name" placeholder="Nome (ex: API Key do CRM)" data-idx="${{customCount}}">
+            <input type="password" class="custom-value" placeholder="Valor" data-idx="${{customCount}}">
+            <button type="button" class="toggle-btn" onclick="toggleVisibility(this)">👁</button>
+            <button type="button" class="remove-btn" onclick="this.parentElement.remove()">✕</button>
+        `;
+        container.appendChild(row);
+    }}
+
     function toggleVisibility(btn) {{
         const input = btn.previousElementSibling;
         if (input.type === 'password') {{
@@ -387,10 +419,22 @@ def _portal_html(client_name: str, project_name: str, fields: list, token: str, 
         btn.textContent = '⏳ Salvando...';
 
         const credentials = {{}};
-        const inputs = document.querySelectorAll('#credForm input');
-        inputs.forEach(input => {{
+        // Pre-defined fields
+        const predefined = document.querySelectorAll('#credForm .field input');
+        predefined.forEach(input => {{
             if (input.value.trim()) {{
                 credentials[input.name] = input.value.trim();
+            }}
+        }});
+
+        // Custom fields
+        const customRows = document.querySelectorAll('.custom-row');
+        customRows.forEach(row => {{
+            const nameEl = row.querySelector('.custom-name');
+            const valueEl = row.querySelector('.custom-value');
+            if (nameEl.value.trim() && valueEl.value.trim()) {{
+                const key = 'custom_' + nameEl.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                credentials[key] = valueEl.value.trim();
             }}
         }});
 
@@ -417,7 +461,8 @@ def _portal_html(client_name: str, project_name: str, fields: list, token: str, 
                 resultDiv.innerHTML = '<strong>✅ ' + data.message + '</strong><br>Você pode fechar esta página.';
                 btn.textContent = '✅ Salvo!';
                 // Clear inputs
-                inputs.forEach(input => input.value = '');
+                predefined.forEach(input => input.value = '');
+                document.getElementById('customFields').innerHTML = '';
             }} else {{
                 resultDiv.className = 'result error';
                 resultDiv.innerHTML = '<strong>❌ Erro:</strong> ' + (data.detail || 'Erro desconhecido');
@@ -564,4 +609,62 @@ def _base_css() -> str:
         font-size: 11px;
         margin-top: 24px;
     }
+    .custom-section {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid #334155;
+    }
+    .custom-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .custom-title {
+        color: #94a3b8;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .add-btn {
+        background: none;
+        border: 1px dashed #3b82f6;
+        color: #60a5fa;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .add-btn:hover { background: rgba(59,130,246,0.1); }
+    .custom-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .custom-row input {
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: #f1f5f9;
+        font-size: 13px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .custom-row input:focus { border-color: #3b82f6; }
+    .custom-row .custom-name { flex: 2; }
+    .custom-row .custom-value { flex: 3; font-family: 'SF Mono', 'Fira Code', monospace; }
+    .remove-btn {
+        background: none;
+        border: none;
+        color: #ef4444;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 4px 8px;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+    .remove-btn:hover { opacity: 1; }
     """
