@@ -762,62 +762,72 @@ async def bulk_create_active_links(
     expires_at = datetime.now(timezone.utc) + timedelta(hours=req.expires_hours) if req.expires_hours else None
 
     for contact in contacts:
-        if not _is_client_contact(contact):
-            continue
+        try:
+            if not _is_client_contact(contact):
+                continue
 
-        project = _resolve_contact_project(contact, active_projects, project_by_id)
-        if not project:
+            project = _resolve_contact_project(contact, active_projects, project_by_id)
+            if not project:
+                skipped.append(
+                    {
+                        "contact_id": str(contact.id),
+                        "client_name": contact.name or contact.push_name or contact.phone,
+                        "reason": "Sem projeto ativo vinculado",
+                    }
+                )
+                continue
+
+            client_name = (contact.name or contact.push_name or contact.phone or "Cliente").strip()
+            link = links_by_pair.get((project.id, contact.id)) or links_by_name.get((project.id, client_name.lower()))
+
+            if link:
+                changed = False
+                if link.contact_id != contact.id:
+                    link.contact_id = contact.id
+                    changed = True
+                if not link.is_active:
+                    link.is_active = True
+                    changed = True
+                if not link.visible_sections:
+                    link.visible_sections = sections
+                    changed = True
+                if req.replace_welcome_message or not link.welcome_message:
+                    link.welcome_message = _default_welcome_message(client_name, project.name)
+                    changed = True
+                if link.expires_at is None and expires_at is not None:
+                    link.expires_at = expires_at
+                    changed = True
+                link.project = project
+                link.contact = contact
+                if changed:
+                    updated.append({"contact_id": str(contact.id), "client_name": client_name, "project_name": project.name})
+                continue
+
+            link = ClientPortalLink(
+                project_id=project.id,
+                contact_id=contact.id,
+                token=secrets.token_urlsafe(32),
+                client_name=client_name,
+                visible_sections=sections,
+                welcome_message=_default_welcome_message(client_name, project.name),
+                expires_at=expires_at,
+            )
+            db.add(link)
+            link.project = project
+            link.contact = contact
+            existing_links.append(link)
+            links_by_pair[(project.id, contact.id)] = link
+            links_by_name[(project.id, client_name.lower())] = link
+            created.append({"contact_id": str(contact.id), "client_name": client_name, "project_name": project.name})
+        except Exception as exc:
+            logger.exception("[CLIENT_PORTAL] bulk sync failed for contact=%s", contact.id)
             skipped.append(
                 {
                     "contact_id": str(contact.id),
                     "client_name": contact.name or contact.push_name or contact.phone,
-                    "reason": "Sem projeto ativo vinculado",
+                    "reason": f"Erro ao sincronizar: {exc}",
                 }
             )
-            continue
-
-        client_name = (contact.name or contact.push_name or contact.phone or "Cliente").strip()
-        link = links_by_pair.get((project.id, contact.id)) or links_by_name.get((project.id, client_name.lower()))
-
-        if link:
-            changed = False
-            if link.contact_id != contact.id:
-                link.contact_id = contact.id
-                changed = True
-            if not link.is_active:
-                link.is_active = True
-                changed = True
-            if not link.visible_sections:
-                link.visible_sections = sections
-                changed = True
-            if req.replace_welcome_message or not link.welcome_message:
-                link.welcome_message = _default_welcome_message(client_name, project.name)
-                changed = True
-            if link.expires_at is None and expires_at is not None:
-                link.expires_at = expires_at
-                changed = True
-            link.project = project
-            link.contact = contact
-            if changed:
-                updated.append({"contact_id": str(contact.id), "client_name": client_name, "project_name": project.name})
-            continue
-
-        link = ClientPortalLink(
-            project_id=project.id,
-            contact_id=contact.id,
-            token=secrets.token_urlsafe(32),
-            client_name=client_name,
-            visible_sections=sections,
-            welcome_message=_default_welcome_message(client_name, project.name),
-            expires_at=expires_at,
-        )
-        db.add(link)
-        link.project = project
-        link.contact = contact
-        existing_links.append(link)
-        links_by_pair[(project.id, contact.id)] = link
-        links_by_name[(project.id, client_name.lower())] = link
-        created.append({"contact_id": str(contact.id), "client_name": client_name, "project_name": project.name})
 
     await db.flush()
     return {
@@ -827,7 +837,6 @@ async def bulk_create_active_links(
         "created": created,
         "updated": updated,
         "skipped": skipped[:20],
-        "links": [_serialize_link(link, request) for link in existing_links if link.contact_id],
     }
 
 
