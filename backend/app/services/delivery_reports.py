@@ -17,6 +17,11 @@ from app.services.whatsapp import send_whatsapp_message
 logger = logging.getLogger(__name__)
 
 PAYMENT_TERMS = ("pix", "pagamento", "comprovante", "pago", "paguei", "transferi")
+STOPWORDS = {
+    "proposta", "comercial", "projeto", "sistema", "para", "com", "via", "uma",
+    "de", "do", "da", "das", "dos", "por", "que", "this", "chatbot", "entregas",
+    "v2", "and", "the",
+}
 
 
 def _parse_json_response(text: str) -> dict:
@@ -70,6 +75,28 @@ def _message_body(message: Message) -> str:
     return body[:700]
 
 
+def _extract_keywords_from_proposal(proposal: Proposal) -> list[str]:
+    chunks = [proposal.title or "", proposal.client_name or "", proposal.content[:1500] if proposal.content else ""]
+    words = re.findall(r"[A-Za-zÀ-ÿ0-9]{4,}", " ".join(chunks).lower())
+    keywords: list[str] = []
+    for word in words:
+        normalized = word.strip("-_ ")
+        if normalized in STOPWORDS or normalized.isdigit():
+            continue
+        if normalized not in keywords:
+            keywords.append(normalized)
+    return keywords[:18]
+
+
+def _message_relevance_score(message: Message, keywords: list[str]) -> int:
+    haystack = f"{message.content or ''}\n{message.transcription or ''}".lower()
+    score = 0
+    for keyword in keywords:
+        if keyword in haystack:
+            score += 1
+    return score
+
+
 def _format_messages(messages: list[Message]) -> str:
     if not messages:
         return "Sem mensagens recentes."
@@ -109,6 +136,35 @@ async def _get_recent_messages(db: AsyncSession, contact_id: UUID, limit: int = 
     return messages
 
 
+async def _get_relevant_messages(
+    db: AsyncSession,
+    proposal: Proposal,
+    contact_id: UUID,
+    limit: int = 50,
+    search_window: int = 200,
+) -> list[Message]:
+    keywords = _extract_keywords_from_proposal(proposal)
+    stmt = (
+        select(Message)
+        .where(Message.contact_id == contact_id)
+        .order_by(desc(Message.timestamp))
+        .limit(search_window)
+    )
+    result = await db.execute(stmt)
+    candidates = list(result.scalars().all())
+
+    relevant = [
+        message for message in candidates
+        if _message_relevance_score(message, keywords) > 0
+    ]
+    if not relevant:
+        relevant = candidates[:limit]
+
+    relevant = relevant[:limit]
+    relevant.reverse()
+    return relevant
+
+
 async def _get_payment_messages(db: AsyncSession, contact_id: UUID, limit: int = 20) -> list[Message]:
     filters = [Message.content.ilike(f"%{term}%") for term in PAYMENT_TERMS]
     filters.extend(Message.transcription.ilike(f"%{term}%") for term in PAYMENT_TERMS)
@@ -124,6 +180,21 @@ async def _get_payment_messages(db: AsyncSession, contact_id: UUID, limit: int =
     messages = list(result.scalars().all())
     messages.reverse()
     return messages
+
+
+async def _get_relevant_payment_messages(
+    db: AsyncSession,
+    proposal: Proposal,
+    contact_id: UUID,
+    limit: int = 20,
+) -> list[Message]:
+    messages = await _get_payment_messages(db, contact_id, limit=80)
+    keywords = _extract_keywords_from_proposal(proposal)
+    relevant = [
+        message for message in messages
+        if _message_relevance_score(message, keywords) > 0
+    ]
+    return relevant[:limit] or messages[:limit]
 
 
 def _normalize_report_payload(payload: dict, proposal: Proposal) -> dict:
@@ -174,8 +245,8 @@ async def generate_delivery_report(
     if not contact:
         raise ValueError("Contato vinculado nao encontrado para essa proposta")
 
-    recent_messages = await _get_recent_messages(db, contact.id)
-    payment_messages = await _get_payment_messages(db, contact.id)
+    recent_messages = await _get_relevant_messages(db, proposal, contact.id)
+    payment_messages = await _get_relevant_payment_messages(db, proposal, contact.id)
 
     prompt = (
         "Analise a proposta comercial e a conversa com o cliente.\n\n"
@@ -199,6 +270,9 @@ async def generate_delivery_report(
         "- Use category=core quando foi entregue conforme o escopo.\n"
         "- Use category=upgrade quando entregou melhor que o proposto.\n"
         "- Use category=extra quando nao estava no escopo original.\n"
+        "- O digest historico do contato serve apenas como contexto auxiliar. Nunca deixe ele sobrescrever o escopo da proposta atual.\n"
+        "- Ignore mensagens ou contexto de outros projetos/escopos do mesmo cliente que nao estejam ligados a esta proposta.\n"
+        "- Se nao houver evidencia suficiente de entrega real desta proposta, deixe delivered_scope vazio ou conservador.\n"
         "- Sempre marque delivered_scope.in_proposal como true ou false.\n"
         "- Se faltar certeza em algum valor, sinalize na description e mantenha o JSON valido.\n"
         "- Responda somente com JSON."
