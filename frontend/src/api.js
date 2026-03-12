@@ -51,8 +51,19 @@ export function getHealth() {
 }
 
 // Projects
-export function getProjects() {
-  return request('/api/projects');
+export function getProjects(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, String(value));
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/projects${qs ? '?' + qs : ''}`);
+}
+
+export function getProjectOptions() {
+  return request('/api/projects/options');
 }
 
 export function createProject(data) {

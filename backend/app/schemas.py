@@ -183,6 +183,15 @@ class ProjectStats(BaseModel):
     last_activity: Optional[datetime] = None
 
 
+class ProjectOptionResponse(BaseModel):
+    id: UUID
+    name: str
+    status: str = "active"
+    color: str = "#3b82f6"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProjectResponse(ProjectBase):
     id: UUID
     credentials: dict[str, Any] = Field(default_factory=dict)

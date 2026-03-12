@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # Jarbas AI Agent (Vercel AI SDK)
     JARBAS_AI_AGENT_URL: str = "http://localhost:3333"
+    CLIENT_PORTAL_URL: str = ""
 
     # App
     APP_SECRET_KEY: str = ""

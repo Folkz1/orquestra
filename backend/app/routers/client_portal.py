@@ -69,8 +69,16 @@ def _normalize_sections(sections: Optional[list[str]]) -> list[str]:
 
 
 def _portal_base_url(request: Request) -> str:
-    configured = getattr(settings, "CLIENT_PORTAL_URL", "") or getattr(settings, "CREDENTIAL_PORTAL_URL", "")
-    return (configured or str(request.base_url)).rstrip("/")
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").strip()
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").strip()
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+
+    configured = (getattr(settings, "CLIENT_PORTAL_URL", "") or "").strip()
+    if configured:
+        return configured.rstrip("/")
+
+    return str(request.base_url).rstrip("/")
 
 
 def _safe_color(value: Optional[str]) -> str:

@@ -6,14 +6,21 @@ CRUD operations for projects with stats.
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models import Message, Project, Recording
-from app.schemas import ProjectCreate, ProjectCredentialsUpdate, ProjectResponse, ProjectStats, ProjectUpdate
+from app.schemas import (
+    ProjectCreate,
+    ProjectCredentialsUpdate,
+    ProjectOptionResponse,
+    ProjectResponse,
+    ProjectStats,
+    ProjectUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +85,51 @@ async def _build_project_response(
     )
 
 
+@router.get("/options", response_model=list[ProjectOptionResponse])
+async def list_project_options(
+    db: AsyncSession = Depends(get_db),
+):
+    """List lightweight project options for selectors/dropdowns."""
+    stmt = select(Project).order_by(Project.name.asc())
+    result = await db.execute(stmt)
+    projects = result.scalars().all()
+    return [
+        ProjectOptionResponse(
+            id=project.id,
+            name=project.name,
+            status=project.status,
+            color=project.color,
+        )
+        for project in projects
+    ]
+
+
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects(
+    compact: bool = Query(False, description="Return lightweight project data without computed stats"),
     db: AsyncSession = Depends(get_db),
 ):
     """List all projects with computed stats."""
     stmt = select(Project).order_by(Project.name.asc())
     result = await db.execute(stmt)
     projects = result.scalars().all()
+
+    if compact:
+        return [
+            ProjectResponse(
+                id=project.id,
+                name=project.name,
+                description=project.description,
+                status=project.status,
+                color=project.color,
+                keywords=project.keywords or [],
+                credentials=project.credentials or {},
+                created_at=project.created_at,
+                updated_at=project.updated_at,
+                stats=ProjectStats(),
+            )
+            for project in projects
+        ]
 
     return [await _build_project_response(db, p) for p in projects]
 

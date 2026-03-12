@@ -3,7 +3,7 @@ import {
   createClientPortalLink,
   deleteClientPortalLink,
   getClientPortalLinks,
-  getProjects,
+  getProjectOptions,
   updateClientPortalLink,
 } from '../api'
 
@@ -11,8 +11,10 @@ const SECTION_OPTIONS = [
   { key: 'tasks', label: 'Tasks' },
   { key: 'timeline', label: 'Timeline' },
   { key: 'proposals', label: 'Propostas' },
-  { key: 'recordings', label: 'Gravações' },
+  { key: 'recordings', label: 'Gravacoes' },
 ]
+
+const PUBLIC_PORTAL_FALLBACK = 'https://orquestra-backend.jz9bd8.easypanel.host'
 
 const emptyForm = {
   projectId: '',
@@ -26,16 +28,33 @@ function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const minutes = Math.floor(diff / 60000)
   if (minutes < 1) return 'agora'
-  if (minutes < 60) return `${minutes}min atrás`
+  if (minutes < 60) return `${minutes}min atras`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h atrás`
+  if (hours < 24) return `${hours}h atras`
   const days = Math.floor(hours / 24)
-  return `${days}d atrás`
+  return `${days}d atras`
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return 'Não informado'
+  if (!dateStr) return 'Nao informado'
   return new Date(dateStr).toLocaleString('pt-BR')
+}
+
+function normalizePortalUrl(url) {
+  if (!url) return ''
+
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.includes('wordpress_')) {
+      return `${PUBLIC_PORTAL_FALLBACK}${parsed.pathname}`
+    }
+    return parsed.toString()
+  } catch {
+    if (url.startsWith('/')) {
+      return `${PUBLIC_PORTAL_FALLBACK}${url}`
+    }
+    return url
+  }
 }
 
 function StatusBadge({ active, expiresAt }) {
@@ -56,25 +75,44 @@ export default function ClientPortal() {
   const [expanded, setExpanded] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [busyId, setBusyId] = useState(null)
+  const [projectsLoading, setProjectsLoading] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
     loadData()
   }, [])
 
+  useEffect(() => {
+    if (showCreate && projects.length === 0 && !projectsLoading) {
+      loadProjects()
+    }
+  }, [showCreate, projects.length, projectsLoading])
+
   async function loadData() {
     setLoading(true)
     try {
-      const [linksData, projectsData] = await Promise.all([
-        getClientPortalLinks(),
-        getProjects(),
-      ])
-      setLinks(linksData || [])
-      setProjects(Array.isArray(projectsData) ? projectsData : projectsData.items || [])
+      const linksData = await getClientPortalLinks()
+      setLinks(
+        (linksData || []).map((link) => ({
+          ...link,
+          portal_url: normalizePortalUrl(link.portal_url),
+        }))
+      )
     } catch (error) {
       console.error('[ClientPortal] load failed:', error)
     }
     setLoading(false)
+  }
+
+  async function loadProjects() {
+    setProjectsLoading(true)
+    try {
+      const projectsData = await getProjectOptions()
+      setProjects(Array.isArray(projectsData) ? projectsData : projectsData.items || [])
+    } catch (error) {
+      console.error('[ClientPortal] project options failed:', error)
+    }
+    setProjectsLoading(false)
   }
 
   function resetForm() {
@@ -106,8 +144,9 @@ export default function ClientPortal() {
         visible_sections: form.visibleSections,
         expires_hours: 720,
       })
-      await navigator.clipboard.writeText(result.portal_url)
-      alert(`Link criado e copiado.\n\n${result.portal_url}`)
+      const portalUrl = normalizePortalUrl(result.portal_url)
+      await navigator.clipboard.writeText(portalUrl)
+      alert(`Link criado e copiado.\n\n${portalUrl}`)
       setShowCreate(false)
       resetForm()
       await loadData()
@@ -119,10 +158,10 @@ export default function ClientPortal() {
 
   async function copyLink(url) {
     try {
-      await navigator.clipboard.writeText(url)
+      await navigator.clipboard.writeText(normalizePortalUrl(url))
       alert('Link copiado.')
     } catch (error) {
-      alert('Não foi possível copiar o link automaticamente.')
+      alert('Nao foi possivel copiar o link automaticamente.')
     }
   }
 
@@ -163,7 +202,7 @@ export default function ClientPortal() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Portal Cliente</h1>
-          <p className="text-sm text-zinc-400 mt-1">Links públicos read-only para acompanhar tarefas, timeline, propostas e gravações.</p>
+          <p className="text-sm text-zinc-400 mt-1">Links publicos read-only para acompanhar tarefas, timeline, propostas e gravacoes.</p>
         </div>
         <button
           onClick={() => setShowCreate((value) => !value)}
@@ -185,8 +224,9 @@ export default function ClientPortal() {
                 onChange={(event) => setForm((current) => ({ ...current, projectId: event.target.value }))}
                 className="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100"
                 required
+                disabled={projectsLoading}
               >
-                <option value="">Selecione...</option>
+                <option value="">{projectsLoading ? 'Carregando...' : 'Selecione...'}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>{project.name}</option>
                 ))}
@@ -212,12 +252,12 @@ export default function ClientPortal() {
               onChange={(event) => setForm((current) => ({ ...current, welcomeMessage: event.target.value }))}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-3 text-sm text-zinc-100 resize-none"
               rows={3}
-              placeholder="Acompanhe aqui a evolução do seu projeto."
+              placeholder="Acompanhe aqui a evolucao do seu projeto."
             />
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400 font-medium block mb-2">Seções visíveis</label>
+            <label className="text-xs text-zinc-400 font-medium block mb-2">Secoes visiveis</label>
             <div className="grid sm:grid-cols-2 gap-2">
               {SECTION_OPTIONS.map((section) => {
                 const checked = form.visibleSections.includes(section.key)
@@ -267,9 +307,9 @@ export default function ClientPortal() {
 
       {links.length === 0 ? (
         <div className="text-center py-16">
-          <p className="text-4xl mb-4">🌐</p>
+          <p className="text-4xl mb-4">PC</p>
           <p className="text-zinc-300">Nenhum link de portal criado</p>
-          <p className="text-zinc-500 text-sm mt-1">Crie um portal público para o cliente acompanhar o andamento do projeto.</p>
+          <p className="text-zinc-500 text-sm mt-1">Crie um portal publico para o cliente acompanhar o andamento do projeto.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -284,17 +324,17 @@ export default function ClientPortal() {
                   style={{ borderLeft: `4px solid ${projectColor}` }}
                 >
                   <div className="flex items-start gap-4">
-                    <div className="text-2xl">{link.is_active ? '🌐' : '⏸️'}</div>
+                    <div className="text-2xl">{link.is_active ? 'PC' : 'OFF'}</div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-zinc-100 font-medium">{link.client_name}</span>
                         <StatusBadge active={link.is_active} expiresAt={link.expires_at} />
                       </div>
                       <p className="text-xs text-zinc-500 mt-1">
-                        {link.project_name} · {link.view_count || 0} visualizações · criado {timeAgo(link.created_at)}
+                        {link.project_name} · {link.view_count || 0} visualizacoes · criado {timeAgo(link.created_at)}
                       </p>
                       <p className="text-xs text-zinc-600 mt-1">
-                        Último acesso: {link.last_viewed_at ? timeAgo(link.last_viewed_at) : 'nunca'}
+                        Ultimo acesso: {link.last_viewed_at ? timeAgo(link.last_viewed_at) : 'nunca'}
                       </p>
                     </div>
                   </div>
@@ -309,7 +349,7 @@ export default function ClientPortal() {
                     >
                       Copiar link
                     </button>
-                    <span className="text-zinc-600 text-sm">{isExpanded ? '▲' : '▼'}</span>
+                    <span className="text-zinc-600 text-sm">{isExpanded ? '^' : 'v'}</span>
                   </div>
                 </div>
 
@@ -317,7 +357,7 @@ export default function ClientPortal() {
                   <div className="px-4 pb-4 border-t border-zinc-800 pt-4 space-y-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="bg-zinc-800/60 border border-zinc-700 rounded-lg p-4">
-                        <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Configuração</p>
+                        <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Configuracao</p>
                         <p className="text-sm text-zinc-200">{link.welcome_message || 'Sem mensagem personalizada.'}</p>
                         <div className="flex flex-wrap gap-2 mt-3">
                           {(link.visible_sections || []).map((section) => (
@@ -330,14 +370,14 @@ export default function ClientPortal() {
 
                       <div className="bg-zinc-800/60 border border-zinc-700 rounded-lg p-4">
                         <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Tracking</p>
-                        <p className="text-sm text-zinc-200">Visualizações: {link.view_count || 0}</p>
-                        <p className="text-sm text-zinc-400 mt-1">Último acesso: {formatDate(link.last_viewed_at)}</p>
+                        <p className="text-sm text-zinc-200">Visualizacoes: {link.view_count || 0}</p>
+                        <p className="text-sm text-zinc-400 mt-1">Ultimo acesso: {formatDate(link.last_viewed_at)}</p>
                         <p className="text-sm text-zinc-400 mt-1">Expira em: {formatDate(link.expires_at)}</p>
                       </div>
                     </div>
 
                     <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-3">
-                      <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">URL pública</p>
+                      <p className="text-xs text-zinc-500 uppercase tracking-wide mb-2">URL publica</p>
                       <p className="text-sm text-zinc-300 break-all">{link.portal_url}</p>
                     </div>
 
