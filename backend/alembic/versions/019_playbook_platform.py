@@ -15,7 +15,6 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("""
-    -- Módulos do playbook (ex: Fundação, Projetos, WhatsApp, etc.)
     CREATE TABLE IF NOT EXISTS playbook_modules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         slug TEXT UNIQUE NOT NULL,
@@ -27,9 +26,10 @@ def upgrade() -> None:
         is_published BOOLEAN DEFAULT false,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
+    )
+    """)
 
-    -- Passos dentro de cada módulo
+    op.execute("""
     CREATE TABLE IF NOT EXISTS playbook_steps (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         module_id UUID NOT NULL REFERENCES playbook_modules(id) ON DELETE CASCADE,
@@ -44,9 +44,10 @@ def upgrade() -> None:
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(module_id, slug)
-    );
+    )
+    """)
 
-    -- Alunos/membros da plataforma
+    op.execute("""
     CREATE TABLE IF NOT EXISTS playbook_enrollments (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         phone TEXT UNIQUE NOT NULL,
@@ -58,27 +59,26 @@ def upgrade() -> None:
         expires_at TIMESTAMPTZ,
         payment_method TEXT,
         notes TEXT
-    );
+    )
+    """)
 
-    -- Progresso do aluno por passo
+    op.execute("""
     CREATE TABLE IF NOT EXISTS playbook_progress (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         enrollment_id UUID NOT NULL REFERENCES playbook_enrollments(id) ON DELETE CASCADE,
         step_id UUID NOT NULL REFERENCES playbook_steps(id) ON DELETE CASCADE,
         completed_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(enrollment_id, step_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_playbook_steps_module ON playbook_steps(module_id, order_num);
-    CREATE INDEX IF NOT EXISTS idx_playbook_progress_enrollment ON playbook_progress(enrollment_id);
-    CREATE INDEX IF NOT EXISTS idx_playbook_enrollments_phone ON playbook_enrollments(phone);
+    )
     """)
+
+    op.execute("CREATE INDEX IF NOT EXISTS idx_playbook_steps_module ON playbook_steps(module_id, order_num)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_playbook_progress_enrollment ON playbook_progress(enrollment_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_playbook_enrollments_phone ON playbook_enrollments(phone)")
 
 
 def downgrade() -> None:
-    op.execute("""
-    DROP TABLE IF EXISTS playbook_progress;
-    DROP TABLE IF EXISTS playbook_enrollments;
-    DROP TABLE IF EXISTS playbook_steps;
-    DROP TABLE IF EXISTS playbook_modules;
-    """)
+    op.execute("DROP TABLE IF EXISTS playbook_progress")
+    op.execute("DROP TABLE IF EXISTS playbook_enrollments")
+    op.execute("DROP TABLE IF EXISTS playbook_steps")
+    op.execute("DROP TABLE IF EXISTS playbook_modules")
