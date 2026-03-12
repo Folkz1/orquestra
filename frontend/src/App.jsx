@@ -30,6 +30,10 @@ function AppRoutes({ onLogout }) {
     return <YouTubeBriefing />
   }
 
+  if (location.pathname.startsWith('/app/chat')) {
+    return <WhatsAppChat appMode />
+  }
+
   return (
     <Layout onLogout={onLogout}>
       <Routes>
@@ -37,6 +41,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/dashboard" element={<Navigate to="/chat" replace />} />
         <Route path="/mensagens" element={<Navigate to="/chat" replace />} />
         <Route path="/chat" element={<WhatsAppChat />} />
+        <Route path="/app/chat" element={<WhatsAppChat appMode />} />
         <Route path="/gravador" element={<Recorder />} />
         <Route path="/recorder" element={<Navigate to="/gravador" replace />} />
         <Route path="/briefs" element={<Briefs />} />

@@ -1,5 +1,5 @@
-const CACHE_NAME = 'orquestra-v3';
-const APP_SHELL = ['/', '/chat', '/index.html'];
+const CACHE_NAME = 'orquestra-v4';
+const APP_SHELL = ['/', '/chat', '/app/chat', '/index.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -51,14 +51,14 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title || 'Orquestra', {
       body: payload.body || 'Nova atualizacao no chat',
-      data: payload.data || { url: '/chat' },
+      data: payload.data || { url: '/app/chat' },
     })
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/chat';
+  const targetUrl = event.notification.data?.url || '/app/chat';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
@@ -95,7 +95,7 @@ self.addEventListener('message', async (event) => {
     const { title, body, data } = event.data;
     await self.registration.showNotification(title || 'Orquestra', {
       body: body || 'Nova mensagem',
-      data: data || { url: '/chat' },
+      data: data || { url: '/app/chat' },
     });
   }
 

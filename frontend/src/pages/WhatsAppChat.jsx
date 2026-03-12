@@ -13,6 +13,7 @@ import {
 } from '../api'
 import { useMessageSocket } from '../hooks/useMessageSocket'
 import { usePushNotifications } from '../hooks/usePushNotifications'
+import { isStandalonePWA } from '../lib/native'
 
 function upsertConversation(list, nextConversation) {
   const filtered = list.filter((item) => item.contact_id !== nextConversation.contact_id)
@@ -54,7 +55,7 @@ function getQuickReplies(context, suggestion) {
   return replies.slice(0, 4)
 }
 
-export default function WhatsAppChat() {
+export default function WhatsAppChat({ appMode = false }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [conversations, setConversations] = useState([])
   const [messages, setMessages] = useState([])
@@ -71,6 +72,7 @@ export default function WhatsAppChat() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const selectedContactId = searchParams.get('contact') || ''
   const { permission, requestPermission, notify } = usePushNotifications()
+  const installedApp = isStandalonePWA()
 
   async function loadConversations() {
     setLoadingList(true)
@@ -174,7 +176,7 @@ export default function WhatsAppChat() {
         notify({
           title: event.contact.name,
           body: event.message.content || `[${event.message.message_type}]`,
-          data: { url: `/chat?contact=${event.contact_id}` },
+          data: { url: `/app/chat?contact=${event.contact_id}` },
         })
       }
     }
@@ -255,6 +257,59 @@ export default function WhatsAppChat() {
     setInstallPrompt(null)
   }
 
+  const unreadTotal = conversations.reduce((total, item) => total + (item.unread_count || 0), 0)
+
+  if (appMode) {
+    return (
+      <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#080b10_0%,#0b1017_100%)]">
+        <header className="border-b border-white/8 bg-black/30 px-4 py-4 sm:px-6">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
+            <div>
+              <p className="eyebrow">Orquestra app</p>
+              <h1 className="mt-2 text-2xl font-semibold text-white">Chat em tempo real</h1>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-400">
+                {unreadTotal} nao lidas
+              </div>
+              <div className={`rounded-full px-3 py-2 text-xs font-medium ${socketStatus === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                {socketStatus === 'open' ? 'online' : 'reconectando'}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 px-3 py-3 sm:px-4">
+          <div className="mx-auto grid h-[calc(100vh-7.5rem)] max-w-[1600px] gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <ConversationList
+              conversations={conversations}
+              loading={loadingList}
+              search={search}
+              onSearchChange={setSearch}
+              unreadOnly={unreadOnly}
+              onUnreadToggle={setUnreadOnly}
+              selectedContactId={selectedContactId}
+              onSelect={(contactId) => setSearchParams({ contact: contactId })}
+            />
+
+            <ChatThread
+              conversation={activeConversation}
+              messages={messages}
+              loading={loadingThread}
+              draft={draft}
+              onDraftChange={setDraft}
+              onSend={handleSend}
+              sending={sending}
+              quickReplies={quickReplies}
+              socketStatus={socketStatus}
+            />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <section className="flex items-center justify-between gap-4">
@@ -266,11 +321,25 @@ export default function WhatsAppChat() {
           </p>
         </div>
 
+        {!installedApp && (
+          <div className="flex shrink-0 items-center gap-2 lg:hidden">
+            {installPrompt ? (
+              <button type="button" onClick={handleInstallApp} className="btn-primary">
+                Instalar
+              </button>
+            ) : (
+              <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-zinc-400">
+                Chrome/Edge &gt; Instalar Orquestra
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="hidden items-center gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3 lg:flex">
           <div>
             <p className="metric-label">Nao lidas</p>
             <p className="mt-1 text-lg font-semibold text-white">
-              {conversations.reduce((total, item) => total + (item.unread_count || 0), 0)}
+              {unreadTotal}
             </p>
           </div>
           <div className="h-10 w-px bg-white/10" />
@@ -278,6 +347,23 @@ export default function WhatsAppChat() {
             <p className="metric-label">PWA</p>
             <p className="mt-1 text-lg font-semibold text-white">{permission === 'granted' ? 'ON' : 'OFF'}</p>
           </div>
+          {!installedApp && (
+            <>
+              <div className="h-10 w-px bg-white/10" />
+              <div className="min-w-[180px]">
+                <p className="metric-label">Instalacao</p>
+                {installPrompt ? (
+                  <button type="button" onClick={handleInstallApp} className="btn-primary mt-2 px-4 py-2 text-sm">
+                    Instalar app
+                  </button>
+                ) : (
+                  <p className="mt-1 text-sm text-zinc-400">
+                    No Chrome/Edge: menu do navegador &gt; `Instalar Orquestra`
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </section>
 

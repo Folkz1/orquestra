@@ -2,7 +2,7 @@
   "name": "Orquestra",
   "short_name": "Orquestra",
   "description": "Chat WhatsApp PWA da Orquestra com contexto inteligente",
-  "start_url": "/chat",
+  "start_url": "/app/chat",
   "scope": "/",
   "display": "standalone",
   "background_color": "#090b10",
