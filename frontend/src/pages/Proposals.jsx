@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getProposals, createProposal, updateProposal, deleteProposal, getProposalAnalytics } from '../api'
+import DeliveryReportPanel from '../components/DeliveryReportPanel'
 
 const STATUS_COLORS = {
   draft: 'bg-zinc-700 text-zinc-300',
@@ -133,6 +134,7 @@ export default function Proposals() {
   const [form, setForm] = useState({ slug: '', title: '', client_name: '', client_phone: '', content: '', total_value: '', status: 'draft' })
   const [copiedSlug, setCopiedSlug] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
+  const [deliveryExpandedId, setDeliveryExpandedId] = useState(null)
 
   const baseUrl = import.meta.env.VITE_FRONTEND_URL || window.location.origin
 
@@ -358,6 +360,16 @@ export default function Proposals() {
                       Analytics
                     </button>
                     <button
+                      onClick={() => setDeliveryExpandedId(deliveryExpandedId === p.id ? null : p.id)}
+                      className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                        deliveryExpandedId === p.id
+                          ? 'bg-amber-500/20 text-amber-200'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      Entrega
+                    </button>
+                    <button
                       onClick={() => copyLink(p.slug)}
                       className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
                     >
@@ -385,6 +397,12 @@ export default function Proposals() {
               {expandedId === p.id && (
                 <div className="border-t border-zinc-800 bg-zinc-900/80 p-4">
                   <AnalyticsPanel proposalId={p.id} />
+                </div>
+              )}
+
+              {deliveryExpandedId === p.id && (
+                <div className="border-t border-zinc-800 bg-zinc-950/90 p-4">
+                  <DeliveryReportPanel proposal={p} />
                 </div>
               )}
             </div>

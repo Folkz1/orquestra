@@ -1,7 +1,13 @@
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
+export const API_BASE_URL = BASE_URL;
+
 function getToken() {
   return localStorage.getItem('orquestra_token') || '';
+}
+
+export function getAuthToken() {
+  return getToken();
 }
 
 async function request(path, options = {}) {
@@ -296,6 +302,27 @@ export function getProposalAnalytics(id) {
   return request(`/api/proposals/${id}/analytics`);
 }
 
+export function getDeliveryReport(proposalId) {
+  return request(`/api/proposals/${proposalId}/delivery-report`);
+}
+
+export function generateDeliveryReport(proposalId) {
+  return request(`/api/proposals/${proposalId}/delivery-report`, {
+    method: 'POST',
+  });
+}
+
+export function updateDeliveryReport(reportId, data) {
+  return request(`/api/delivery-reports/${reportId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function getDeliveryReports() {
+  return request('/api/delivery-reports');
+}
+
 // Client Success / AI Suggestions
 export function getContactSuggestions(contactId) {
   return request(`/api/contacts/${contactId}/suggestions`);
@@ -382,4 +409,29 @@ export function createCredentialLink(data) {
 
 export function getProjectCredentials(projectId) {
   return request(`/api/credentials/project/${projectId}/masked`);
+}
+
+// Client Portal
+export function getClientPortalLinks() {
+  return request('/api/client-portal/links');
+}
+
+export function createClientPortalLink(data) {
+  return request('/api/client-portal/links', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateClientPortalLink(id, data) {
+  return request(`/api/client-portal/links/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteClientPortalLink(id) {
+  return request(`/api/client-portal/links/${id}`, {
+    method: 'DELETE',
+  });
 }

@@ -105,6 +105,7 @@ class Contact(Base):
     messages = relationship(
         "Message", back_populates="contact", lazy="selectin", cascade="all, delete-orphan"
     )
+    delivery_reports = relationship("DeliveryReport", back_populates="contact", lazy="selectin")
 
     def __repr__(self):
         return f"<Contact {self.phone}>"
@@ -326,6 +327,13 @@ class Proposal(Base):
 
     comments = relationship("ProposalComment", back_populates="proposal", lazy="selectin", cascade="all, delete-orphan")
     contact = relationship("Contact", lazy="selectin")
+    delivery_report = relationship(
+        "DeliveryReport",
+        back_populates="proposal",
+        lazy="selectin",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<Proposal {self.slug}>"
@@ -473,6 +481,51 @@ class ProposalEvent(Base):
         return f"<ProposalEvent {self.event_type} {self.proposal_id}>"
 
 
+class DeliveryReport(Base):
+    __tablename__ = "delivery_reports"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    proposal_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("proposals.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    proposed_scope = Column(JSONB, server_default="[]", nullable=False)
+    delivered_scope = Column(JSONB, server_default="[]", nullable=False)
+    extras = Column(JSONB, server_default="[]", nullable=False)
+    financial_summary = Column(JSONB, server_default="{}", nullable=False)
+    comparison_analysis = Column(Text, nullable=True)
+    status = Column(String(20), server_default="draft", nullable=False)
+    generated_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    proposal = relationship("Proposal", back_populates="delivery_report", lazy="selectin")
+    contact = relationship("Contact", back_populates="delivery_reports", lazy="selectin")
+
+    def __repr__(self):
+        return f"<DeliveryReport {self.proposal_id} {self.status}>"
+
+
 class CredentialLink(Base):
     __tablename__ = "credential_links"
 
@@ -534,3 +587,38 @@ class ClientCredential(Base):
 
     def __repr__(self):
         return f"<ClientCredential {self.field_name}>"
+
+
+class ClientPortalLink(Base):
+    __tablename__ = "client_portal_links"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token = Column(String(64), unique=True, nullable=False)
+    client_name = Column(String(255), nullable=False)
+    visible_sections = Column(
+        JSONB,
+        server_default='["tasks","timeline","proposals","recordings"]',
+        nullable=False,
+    )
+    welcome_message = Column(Text, nullable=True)
+    is_active = Column(Boolean, server_default="true", nullable=False)
+    last_viewed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    view_count = Column(Integer, server_default="0", nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    project = relationship("Project", lazy="selectin")
+
+    def __repr__(self):
+        return f"<ClientPortalLink {self.client_name} {self.token[:8]}>"

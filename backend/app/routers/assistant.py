@@ -8,10 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import AssistantDraft, Contact
 from app.schemas import (
@@ -43,6 +46,48 @@ def _save_stale_state(state: dict) -> None:
         STALE_STATE_PATH.write_text(json.dumps(state, ensure_ascii=False))
     except Exception:
         logger.exception("[ASSISTANT] Failed to persist stale-watch state")
+
+
+@router.post("/chat/stream")
+async def proxy_stream_chat(request: Request):
+    """Proxy the Jarbas AI Agent stream through Orquestra to avoid mobile CORS issues."""
+    body = await request.json()
+    upstream_url = f"{settings.JARBAS_AI_AGENT_URL.rstrip('/')}/api/chat"
+
+    try:
+        client = httpx.AsyncClient(timeout=None)
+        request_stream = client.build_request("POST", upstream_url, json=body)
+        upstream = await client.send(request_stream, stream=True)
+    except Exception as exc:
+        logger.exception("[ASSISTANT] Streaming proxy failed to connect")
+        raise HTTPException(status_code=502, detail=f"Jarbas AI Agent indisponivel: {exc}") from exc
+
+    if upstream.status_code >= 400:
+        error_text = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        raise HTTPException(
+            status_code=upstream.status_code,
+            detail=error_text.decode("utf-8", errors="ignore") or "Jarbas AI Agent retornou erro",
+        )
+
+    async def iterate_stream():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                if chunk:
+                    yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        iterate_stream(),
+        media_type=upstream.headers.get("content-type", "text/plain; charset=utf-8"),
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/stale-watch")

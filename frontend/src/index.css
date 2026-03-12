@@ -1,28 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-base: #090b10;
+    --bg-elevated: #10141b;
+    --accent: #8bd450;
+    --accent-soft: rgba(139, 212, 80, 0.16);
+  }
+
   html {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    @apply bg-zinc-950 text-zinc-100 min-h-screen;
+    @apply min-h-screen text-zinc-100;
+    background:
+      radial-gradient(circle at top left, rgba(94, 166, 255, 0.16), transparent 30%),
+      radial-gradient(circle at top right, rgba(247, 185, 85, 0.1), transparent 20%),
+      linear-gradient(180deg, #0b0e13 0%, #090b10 100%);
   }
 
-  /* Scrollbar styling */
   ::-webkit-scrollbar {
     width: 6px;
   }
+
   ::-webkit-scrollbar-track {
     @apply bg-zinc-950;
   }
+
   ::-webkit-scrollbar-thumb {
-    @apply bg-zinc-700 rounded-full;
+    @apply rounded-full bg-zinc-700;
   }
+
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-zinc-600;
   }
@@ -30,40 +45,40 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary text-zinc-950 font-semibold px-4 py-2 rounded-lg
-           hover:bg-green-400 active:bg-green-600 transition-colors
-           disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply rounded-full px-4 py-2 font-semibold text-zinc-950 shadow-[0_10px_40px_rgba(139,212,80,0.22)]
+           transition-colors hover:bg-lime-300 active:bg-lime-500
+           disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--accent);
   }
 
   .btn-secondary {
-    @apply bg-zinc-800 text-zinc-100 px-4 py-2 rounded-lg
-           hover:bg-zinc-700 active:bg-zinc-600 transition-colors
-           border border-zinc-700;
+    @apply rounded-full border border-white/10 bg-white/5 px-4 py-2 text-zinc-100
+           transition-colors hover:border-white/20 hover:bg-white/10 active:bg-white/10;
   }
 
   .btn-danger {
-    @apply bg-red-600 text-white px-4 py-2 rounded-lg
-           hover:bg-red-500 active:bg-red-700 transition-colors;
+    @apply rounded-full bg-red-600 px-4 py-2 text-white
+           transition-colors hover:bg-red-500 active:bg-red-700;
   }
 
   .card {
-    @apply bg-zinc-900 border border-zinc-800 rounded-xl p-4;
+    @apply rounded-3xl border border-white/10 p-4;
+    background: linear-gradient(180deg, rgba(16, 20, 27, 0.92), rgba(9, 11, 16, 0.96));
   }
 
   .input {
-    @apply bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100
-           placeholder-zinc-500 focus:outline-none focus:border-primary focus:ring-1
-           focus:ring-primary transition-colors w-full;
+    @apply w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-zinc-100
+           placeholder-zinc-500 transition-colors focus:border-lime-300/50 focus:outline-none focus:ring-1
+           focus:ring-lime-300/30;
   }
 
   .select {
-    @apply bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100
-           focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary
-           transition-colors w-full appearance-none cursor-pointer;
+    @apply w-full cursor-pointer appearance-none rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-zinc-100
+           transition-colors focus:border-lime-300/50 focus:outline-none focus:ring-1 focus:ring-lime-300/30;
   }
 
   .badge {
-    @apply text-xs font-medium px-2 py-0.5 rounded-full;
+    @apply rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
   .badge-green {
@@ -88,7 +103,119 @@
 }
 
 @layer utilities {
-  /* Pulse animation for recording */
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .surface-panel {
+    @apply rounded-[32px] border border-white/10 bg-[color:var(--bg-elevated)] shadow-[0_24px_80px_rgba(0,0,0,0.28)];
+  }
+
+  .surface-gradient {
+    background:
+      linear-gradient(135deg, rgba(94, 166, 255, 0.16), transparent 45%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.28em] text-zinc-500;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .nav-item {
+    @apply flex items-start gap-3 rounded-[22px] border border-transparent px-3 py-3 text-zinc-400 transition-colors hover:border-white/10 hover:bg-white/5 hover:text-zinc-100;
+  }
+
+  .nav-item-active {
+    @apply border-white/10 bg-white/10 text-white;
+  }
+
+  .nav-sigil {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-[11px] font-medium tracking-[0.24em] text-zinc-300;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .hero-panel {
+    @apply grid gap-6 rounded-[36px] border border-white/10 p-6 shadow-[0_30px_90px_rgba(0,0,0,0.28)] lg:grid-cols-[1.4fr_0.9fr] lg:p-8;
+    background:
+      radial-gradient(circle at 10% 10%, rgba(139, 212, 80, 0.16), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(94, 166, 255, 0.18), transparent 24%),
+      linear-gradient(180deg, rgba(16, 20, 27, 0.96), rgba(9, 11, 16, 0.98));
+  }
+
+  .hero-copy {
+    @apply flex flex-col justify-center;
+  }
+
+  .hero-brief {
+    @apply rounded-[32px] border border-white/10 bg-white/5 p-1;
+  }
+
+  .metric-card {
+    @apply rounded-[28px] border border-white/10 p-5 shadow-[0_20px_50px_rgba(0,0,0,0.25)] transition-transform hover:-translate-y-0.5;
+    background: linear-gradient(180deg, rgba(16, 20, 27, 0.96), rgba(9, 11, 16, 0.98));
+  }
+
+  .metric-lime { box-shadow: inset 0 0 0 1px rgba(139, 212, 80, 0.08); }
+  .metric-blue { box-shadow: inset 0 0 0 1px rgba(94, 166, 255, 0.08); }
+  .metric-cyan { box-shadow: inset 0 0 0 1px rgba(103, 215, 208, 0.08); }
+  .metric-amber { box-shadow: inset 0 0 0 1px rgba(247, 185, 85, 0.08); }
+  .metric-rose { box-shadow: inset 0 0 0 1px rgba(240, 106, 143, 0.08); }
+
+  .metric-label {
+    @apply text-[11px] uppercase tracking-[0.28em] text-zinc-500;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .metric-value {
+    @apply mt-3 text-3xl font-bold text-white;
+  }
+
+  .metric-footnote {
+    @apply mt-4 text-sm text-zinc-500;
+  }
+
+  .metric-chip {
+    @apply mt-1 h-2.5 w-2.5 rounded-full;
+    background: var(--accent);
+    box-shadow: 0 0 20px rgba(139, 212, 80, 0.4);
+  }
+
+  .action-card {
+    @apply rounded-[28px] border border-white/10 bg-white/5 p-4 transition-colors hover:border-white/20 hover:bg-white/10;
+  }
+
+  .chat-shell {
+    @apply flex max-h-[58vh] min-h-[44vh] flex-col gap-3 overflow-y-auto rounded-[28px] border border-white/10 bg-black/20 p-3 sm:p-4;
+  }
+
+  .chat-bubble {
+    @apply max-w-[88%] rounded-[24px] px-4 py-3;
+  }
+
+  .chat-user {
+    @apply ml-auto border border-lime-400/20 bg-lime-400/10;
+  }
+
+  .chat-assistant {
+    @apply border border-white/10 bg-white/5;
+  }
+
+  .native-dock {
+    @apply fixed inset-x-3 bottom-3 z-30 flex items-center justify-between rounded-[28px] border border-white/10 bg-zinc-950/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur;
+  }
+
+  .native-dock-item {
+    @apply flex flex-1 flex-col items-center gap-1 rounded-[20px] px-3 py-2 text-xs text-zinc-500 transition-colors;
+  }
+
+  .native-dock-active {
+    @apply bg-white/10 text-white;
+  }
+
   @keyframes pulse-record {
     0%, 100% {
       box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);

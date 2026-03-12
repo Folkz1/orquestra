@@ -536,6 +536,42 @@ class ProposalAnalyticsSummary(BaseModel):
     events: list[ProposalEventResponse] = Field(default_factory=list)
 
 
+# ─── Delivery Report Schemas ────────────────────────────────────────────────
+
+
+class DeliveryReportUpdate(BaseModel):
+    proposed_scope: Optional[list[dict[str, Any]]] = None
+    delivered_scope: Optional[list[dict[str, Any]]] = None
+    extras: Optional[list[dict[str, Any]]] = None
+    financial_summary: Optional[dict[str, Any]] = None
+    comparison_analysis: Optional[str] = None
+    status: Optional[str] = Field(None, pattern=r"^(draft|final|sent_to_client)$")
+    send_to_client: bool = False
+
+
+class DeliveryReportResponse(BaseModel):
+    id: UUID
+    proposal_id: UUID
+    contact_id: Optional[UUID] = None
+    proposed_scope: list[dict[str, Any]] = Field(default_factory=list)
+    delivered_scope: list[dict[str, Any]] = Field(default_factory=list)
+    extras: list[dict[str, Any]] = Field(default_factory=list)
+    financial_summary: dict[str, Any] = Field(default_factory=dict)
+    comparison_analysis: Optional[str] = None
+    status: str
+    generated_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    proposal_title: Optional[str] = None
+    proposal_slug: Optional[str] = None
+    proposal_status: Optional[str] = None
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    contact_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ─── Assistant Schemas ───────────────────────────────────────────────────
 
 class AssistantDraftGenerateRequest(BaseModel):

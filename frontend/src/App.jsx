@@ -1,32 +1,31 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
+import ClientsWorkspace from './pages/ClientsWorkspace'
+import ExecutiveHome from './pages/ExecutiveHome'
+import JarbasChat from './pages/JarbasChat'
 import Login from './pages/Login'
-import Recorder from './pages/Recorder'
-import Dashboard from './pages/Dashboard'
-import Projects from './pages/Projects'
 import Briefs from './pages/Briefs'
-import Contacts from './pages/Contacts'
+import Dashboard from './pages/Dashboard'
 import Memory from './pages/Memory'
 import Recordings from './pages/Recordings'
+import Recorder from './pages/Recorder'
 import Settings from './pages/Settings'
 import Kanban from './pages/Kanban'
-import YouTubeBriefing from './pages/YouTubeBriefing'
-import YouTubeKanban from './pages/YouTubeKanban'
-import Proposals from './pages/Proposals'
 import ProposalView from './pages/ProposalView'
-import ClientSuccess from './pages/ClientSuccess'
-import YouTubeAnalytics from './pages/YouTubeAnalytics'
 import ScheduledMessages from './pages/ScheduledMessages'
-import Credentials from './pages/Credentials'
+import ClientPortal from './pages/ClientPortal'
+import ProjectsWorkspace from './pages/ProjectsWorkspace'
+import YouTubeBriefing from './pages/YouTubeBriefing'
+import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
 
-  // Public routes (no auth required)
   if (location.pathname.startsWith('/proposta/')) {
     return <ProposalView />
   }
+
   if (location.pathname === '/youtube-briefing') {
     return <YouTubeBriefing />
   }
@@ -34,21 +33,30 @@ function AppRoutes({ onLogout }) {
   return (
     <Layout onLogout={onLogout}>
       <Routes>
-        <Route path="/" element={<Recorder />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/projects" element={<Projects />} />
+        <Route path="/" element={<ExecutiveHome />} />
+        <Route path="/dashboard" element={<Navigate to="/mensagens" replace />} />
+        <Route path="/mensagens" element={<Dashboard />} />
+        <Route path="/gravador" element={<Recorder />} />
+        <Route path="/recorder" element={<Navigate to="/gravador" replace />} />
         <Route path="/briefs" element={<Briefs />} />
-        <Route path="/contacts" element={<Contacts />} />
+        <Route path="/contacts" element={<Navigate to="/clientes?tab=contatos" replace />} />
+        <Route path="/clientes" element={<ClientsWorkspace />} />
         <Route path="/memory" element={<Memory />} />
         <Route path="/recordings" element={<Recordings />} />
-        <Route path="/kanban" element={<Kanban />} />
-        <Route path="/youtube-kanban" element={<YouTubeKanban />} />
-        <Route path="/youtube-analytics" element={<YouTubeAnalytics />} />
-        <Route path="/proposals" element={<Proposals />} />
+        <Route path="/kanban" element={<Navigate to="/tarefas" replace />} />
+        <Route path="/tarefas" element={<Kanban />} />
+        <Route path="/youtube-kanban" element={<Navigate to="/youtube?tab=kanban" replace />} />
+        <Route path="/youtube-analytics" element={<Navigate to="/youtube?tab=analytics" replace />} />
+        <Route path="/youtube" element={<YouTubeWorkspacePage />} />
+        <Route path="/proposals" element={<Navigate to="/clientes?tab=propostas" replace />} />
         <Route path="/proposta/:slug" element={<ProposalView />} />
-        <Route path="/pos-venda" element={<ClientSuccess />} />
+        <Route path="/pos-venda" element={<Navigate to="/clientes?tab=pipeline" replace />} />
         <Route path="/mensagens-agendadas" element={<ScheduledMessages />} />
-        <Route path="/credenciais" element={<Credentials />} />
+        <Route path="/projects" element={<Navigate to="/projetos?tab=projetos" replace />} />
+        <Route path="/credenciais" element={<Navigate to="/projetos?tab=credenciais" replace />} />
+        <Route path="/projetos" element={<ProjectsWorkspace />} />
+        <Route path="/client-portal" element={<ClientPortal />} />
+        <Route path="/jarbas" element={<JarbasChat />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>
