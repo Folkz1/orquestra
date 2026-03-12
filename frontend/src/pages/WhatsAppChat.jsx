@@ -37,6 +37,19 @@ function mergeMessage(list, nextMessage) {
   return copy
 }
 
+function formatConversationTime(dateString) {
+  if (!dateString) return ''
+
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now - date
+  const diffHours = Math.floor(diffMs / 3600000)
+
+  if (diffHours < 1) return 'agora'
+  if (diffHours < 24) return `${diffHours}h`
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+}
+
 function getQuickReplies(context, suggestion) {
   const replies = [
     'Recebi aqui. Vou validar isso e te atualizo ainda hoje.',
@@ -70,6 +83,7 @@ export default function WhatsAppChat({ appMode = false }) {
   const [sending, setSending] = useState(false)
   const [suggestion, setSuggestion] = useState('')
   const [installPrompt, setInstallPrompt] = useState(null)
+  const [showSwitcher, setShowSwitcher] = useState(false)
   const selectedContactId = searchParams.get('contact') || ''
   const { permission, requestPermission, notify } = usePushNotifications()
   const installedApp = isStandalonePWA()
@@ -142,6 +156,12 @@ export default function WhatsAppChat({ appMode = false }) {
     return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
   }, [])
 
+  useEffect(() => {
+    if (appMode && selectedContactId) {
+      setShowSwitcher(false)
+    }
+  }, [appMode, selectedContactId])
+
   const socketStatus = useMessageSocket(selectedContactId, async (event) => {
     if (event.type === 'message.created') {
       const incomingConversation = {
@@ -171,7 +191,15 @@ export default function WhatsAppChat({ appMode = false }) {
           )
           setContext((current) =>
             current?.contact?.id === event.contact_id
-              ? { ...current, contact: { ...current.contact, unread_count: 0, last_message_preview: event.contact.last_message_preview, last_message_at: event.contact.last_message_at } }
+              ? {
+                  ...current,
+                  contact: {
+                    ...current.contact,
+                    unread_count: 0,
+                    last_message_preview: event.contact.last_message_preview,
+                    last_message_at: event.contact.last_message_at,
+                  },
+                }
               : current
           )
         }
@@ -221,7 +249,11 @@ export default function WhatsAppChat({ appMode = false }) {
         upsertConversation(current, {
           ...(activeConversation || {}),
           contact_id: selectedContactId,
-          contact_name: activeConversation?.contact_name || context?.contact?.name || context?.contact?.push_name || context?.contact?.phone,
+          contact_name:
+            activeConversation?.contact_name ||
+            context?.contact?.name ||
+            context?.contact?.push_name ||
+            context?.contact?.phone,
           contact_phone: activeConversation?.contact_phone || context?.contact?.phone,
           profile_pic_url: activeConversation?.profile_pic_url || context?.contact?.profile_pic_url,
           pipeline_stage: activeConversation?.pipeline_stage || context?.contact?.pipeline_stage,
@@ -266,9 +298,19 @@ export default function WhatsAppChat({ appMode = false }) {
 
   if (appMode) {
     return (
-      <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#080b10_0%,#0b1017_100%)]">
-        <header className="border-b border-white/8 bg-black/30 px-4 py-4 sm:px-6">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
+      <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#06080d]">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(94,166,255,0.16),transparent_26%),radial-gradient(circle_at_top_right,rgba(139,212,80,0.12),transparent_20%),linear-gradient(180deg,#06080d_0%,#0a0d14_100%)]" />
+
+        <header className="relative z-10 px-3 pt-3 sm:px-5 sm:pt-5">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 rounded-[28px] border border-white/10 bg-zinc-950/80 px-3 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setShowSwitcher(true)}
+              className="btn-secondary px-4 py-2.5 text-sm"
+            >
+              Conversas {unreadTotal > 0 ? `(${unreadTotal})` : ''}
+            </button>
+
             <div className="min-w-0 flex-1">
               <p className="eyebrow">Chat direto</p>
               <h1 className="mt-2 truncate text-2xl font-semibold text-white">
@@ -279,47 +321,44 @@ export default function WhatsAppChat({ appMode = false }) {
               </p>
             </div>
 
-            <label className="min-w-[220px] max-w-[320px] flex-1 sm:flex-none">
-              <span className="mb-2 block text-[11px] uppercase tracking-[0.24em] text-zinc-500">
-                Cliente
-              </span>
-              <select
-                value={selectedContactId}
-                onChange={(event) => selectConversation(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-lime-300/40"
+            {permission !== 'granted' && (
+              <button
+                type="button"
+                onClick={requestPermission}
+                className="btn-secondary px-4 py-2.5 text-sm"
               >
-                {!selectedContactId && <option value="">Selecione uma conversa</option>}
-                {conversations.map((conversation) => (
-                  <option key={conversation.contact_id} value={conversation.contact_id} className="bg-zinc-950">
-                    {conversation.contact_name} {conversation.unread_count > 0 ? `(${conversation.unread_count})` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
+                Ativar alertas
+              </button>
+            )}
 
-            <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-400">
-              {unreadTotal} nao lidas
-            </div>
             <div className={`rounded-full px-3 py-2 text-xs font-medium ${socketStatus === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
               {socketStatus === 'open' ? 'online' : 'reconectando'}
             </div>
           </div>
         </header>
 
-        <main className="flex-1 px-3 py-3 sm:px-4">
-          <div className="mx-auto flex h-[calc(100vh-7.5rem)] max-w-6xl flex-col">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-zinc-400">
-                  Visual limpo do app. So a thread ativa fica na tela.
-                </p>
-                <p className="mt-1 truncate text-xs uppercase tracking-[0.22em] text-zinc-500">
-                  {loadingList ? 'sincronizando inbox' : `${conversations.length} conversas disponiveis`}
-                </p>
+        <main className="relative z-10 flex-1 px-3 py-3 sm:px-5 sm:py-5">
+          <div className="mx-auto flex h-[calc(100vh-6.9rem)] max-w-6xl flex-col">
+            <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3">
+                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
+                  {loadingList ? 'sincronizando inbox' : `${conversations.length} conversas`}
+                </span>
+                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
+                  {unreadTotal} nao lidas
+                </span>
+                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
+                  Midias com preview e download
+                </span>
+                {context?.project_name && (
+                  <span className="truncate rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
+                    Projeto: {context.project_name}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <span className={`h-2.5 w-2.5 rounded-full ${socketStatus === 'open' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                Atualizacao em tempo real
+
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-zinc-400">
+                Atualizacao em tempo real e resposta na mesma tela
               </div>
             </div>
 
@@ -334,10 +373,122 @@ export default function WhatsAppChat({ appMode = false }) {
                 sending={sending}
                 quickReplies={quickReplies}
                 socketStatus={socketStatus}
+                variant="app"
+                showHeader={false}
               />
             </div>
           </div>
         </main>
+
+        {showSwitcher && (
+          <div className="fixed inset-0 z-20 bg-black/60 backdrop-blur-sm">
+            <button
+              type="button"
+              aria-label="Fechar lista de conversas"
+              onClick={() => setShowSwitcher(false)}
+              className="absolute inset-0"
+            />
+
+            <div className="absolute inset-y-3 left-3 flex w-[min(380px,calc(100vw-1.5rem))] flex-col rounded-[30px] border border-white/10 bg-zinc-950/95 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
+              <div className="border-b border-white/8 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="eyebrow">Trocar cliente</p>
+                    <h2 className="mt-2 text-xl font-semibold text-white">Conversas</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSwitcher(false)}
+                    className="btn-secondary px-3 py-2 text-xs"
+                  >
+                    Fechar
+                  </button>
+                </div>
+
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Buscar cliente, projeto ou trecho"
+                  className="input mt-4"
+                />
+
+                <label className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={unreadOnly}
+                    onChange={(event) => setUnreadOnly(event.target.checked)}
+                    className="rounded border-white/15 bg-white/5"
+                  />
+                  Mostrar apenas nao lidas
+                </label>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {loadingList && (
+                  <div className="space-y-3">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div key={index} className="animate-pulse rounded-[24px] border border-white/6 bg-white/[0.03] p-4">
+                        <div className="h-4 w-28 rounded bg-white/10" />
+                        <div className="mt-3 h-3 w-3/4 rounded bg-white/5" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!loadingList && conversations.length === 0 && (
+                  <div className="rounded-[24px] border border-dashed border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-zinc-500">
+                    Nenhuma conversa encontrada com os filtros atuais.
+                  </div>
+                )}
+
+                {!loadingList && conversations.map((conversation) => {
+                  const selected = conversation.contact_id === selectedContactId
+
+                  return (
+                    <button
+                      key={conversation.contact_id}
+                      type="button"
+                      onClick={() => selectConversation(conversation.contact_id)}
+                      className={`mb-3 w-full rounded-[24px] border px-4 py-4 text-left transition-colors ${selected ? 'border-lime-300/30 bg-lime-300/[0.08]' : 'border-white/8 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-sm font-semibold text-white">
+                          {(conversation.contact_name || '?').slice(0, 2).toUpperCase()}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-white">{conversation.contact_name}</p>
+                              <p className="truncate text-xs text-zinc-500">
+                                {conversation.project_name || conversation.contact_phone}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-col items-end gap-2">
+                              <span className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                                {formatConversationTime(conversation.last_message_at)}
+                              </span>
+                              {conversation.unread_count > 0 && (
+                                <span className="inline-flex min-w-6 justify-center rounded-full bg-lime-300 px-2 py-0.5 text-[11px] font-semibold text-zinc-950">
+                                  {conversation.unread_count}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <p className="mt-2 truncate text-sm text-zinc-400">
+                            {conversation.last_message_preview || 'Sem preview ainda.'}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
