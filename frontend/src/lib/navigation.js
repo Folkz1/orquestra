@@ -4,7 +4,7 @@ export const desktopNavSections = [
     label: 'Central',
     items: [
       { to: '/', label: 'Home', description: 'KPIs executivos e radar do dia' },
-      { to: '/gravador', label: 'Gravador', description: 'Captura rapida de audio e reunioes' },
+      { to: '/chat', label: 'Chat', description: 'WhatsApp realtime com contexto do cliente' },
       { to: '/briefs', label: 'Briefings', description: 'Resumo diario e contexto acionavel' },
     ],
   },
@@ -46,6 +46,7 @@ export const nativeMobileTabs = [
 
 const flatItems = [
   ...desktopNavSections.flatMap((section) => section.items),
+  { to: '/gravador', label: 'Gravador', description: 'Captura rapida de audio e reunioes' },
   ...nativeMobileTabs,
 ]
 
@@ -54,6 +55,7 @@ export function getNavMeta(pathname) {
   if (direct) return direct
 
   if (pathname.startsWith('/clientes')) return flatItems.find((item) => item.to === '/clientes')
+  if (pathname.startsWith('/chat') || pathname.startsWith('/mensagens')) return flatItems.find((item) => item.to === '/chat')
   if (pathname.startsWith('/projetos')) return flatItems.find((item) => item.to === '/projetos')
   if (pathname.startsWith('/youtube')) return flatItems.find((item) => item.to === '/youtube')
   if (pathname.startsWith('/tarefas')) return flatItems.find((item) => item.to === '/tarefas')

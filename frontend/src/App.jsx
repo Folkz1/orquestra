@@ -6,7 +6,6 @@ import ExecutiveHome from './pages/ExecutiveHome'
 import JarbasChat from './pages/JarbasChat'
 import Login from './pages/Login'
 import Briefs from './pages/Briefs'
-import Dashboard from './pages/Dashboard'
 import Memory from './pages/Memory'
 import Recordings from './pages/Recordings'
 import Recorder from './pages/Recorder'
@@ -16,6 +15,7 @@ import ProposalView from './pages/ProposalView'
 import ScheduledMessages from './pages/ScheduledMessages'
 import ClientPortal from './pages/ClientPortal'
 import ProjectsWorkspace from './pages/ProjectsWorkspace'
+import WhatsAppChat from './pages/WhatsAppChat'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 
@@ -34,8 +34,9 @@ function AppRoutes({ onLogout }) {
     <Layout onLogout={onLogout}>
       <Routes>
         <Route path="/" element={<ExecutiveHome />} />
-        <Route path="/dashboard" element={<Navigate to="/mensagens" replace />} />
-        <Route path="/mensagens" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Navigate to="/chat" replace />} />
+        <Route path="/mensagens" element={<Navigate to="/chat" replace />} />
+        <Route path="/chat" element={<WhatsAppChat />} />
         <Route path="/gravador" element={<Recorder />} />
         <Route path="/recorder" element={<Navigate to="/gravador" replace />} />
         <Route path="/briefs" element={<Briefs />} />

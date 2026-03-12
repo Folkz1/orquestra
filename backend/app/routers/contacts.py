@@ -116,6 +116,8 @@ async def list_contacts(
             created_at=contact.created_at,
             updated_at=contact.updated_at,
             message_count=message_count or 0,
+            unread_count=contact.unread_count or 0,
+            last_message_preview=contact.last_message_preview,
             last_message_at=last_message_at,
         )
         contacts_out.append(contact_data)
@@ -180,6 +182,8 @@ async def update_contact(
         created_at=contact.created_at,
         updated_at=contact.updated_at,
         message_count=message_count,
+        unread_count=contact.unread_count or 0,
+        last_message_preview=contact.last_message_preview,
         last_message_at=last_message_at,
     )
 
