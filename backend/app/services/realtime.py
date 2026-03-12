@@ -116,3 +116,34 @@ async def broadcast_message_event(
         },
         contact_id=contact.id,
     )
+
+
+async def broadcast_message_update(
+    message: Message,
+    contact: Contact,
+    project_name: str | None = None,
+) -> None:
+    await manager.broadcast(
+        {
+            "type": "message.updated",
+            "contact_id": str(contact.id),
+            "contact": {
+                "id": str(contact.id),
+                "name": contact.name or contact.push_name or contact.phone,
+                "phone": contact.phone,
+                "project_id": str(contact.project_id) if contact.project_id else None,
+                "project_name": project_name,
+                "profile_pic_url": contact.profile_pic_url,
+                "pipeline_stage": contact.pipeline_stage or "lead",
+                "unread_count": contact.unread_count or 0,
+                "last_message_preview": contact.last_message_preview,
+                "last_message_at": (
+                    contact.last_message_at.isoformat()
+                    if isinstance(contact.last_message_at, datetime)
+                    else None
+                ),
+            },
+            "message": serialize_message(message, contact, project_name),
+        },
+        contact_id=contact.id,
+    )

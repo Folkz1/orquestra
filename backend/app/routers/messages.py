@@ -7,9 +7,11 @@ import logging
 import math
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,6 +51,13 @@ def _build_message_response(row) -> MessageResponse:
 
 def _normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")
+
+
+def _message_media_filename(message: Message) -> str:
+    file_path = Path(message.media_local_path or "")
+    if file_path.name:
+        return file_path.name
+    return f"{message.message_type or 'media'}-{message.id}"
 
 
 @router.get("", response_model=PaginatedResponse[MessageResponse])
@@ -323,6 +332,31 @@ async def send_message(
     payload["contact_phone"] = contact.phone
     payload["project_name"] = project_name
     return MessageResponse(**payload)
+
+
+@router.get("/{message_id}/media")
+async def get_message_media(
+    message_id: UUID,
+    download: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    message = await db.get(Message, message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    if not message.media_local_path:
+        raise HTTPException(status_code=404, detail="Media not available")
+
+    file_path = Path(message.media_local_path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Media file missing")
+
+    return FileResponse(
+        path=file_path,
+        media_type=message.media_mimetype or "application/octet-stream",
+        filename=_message_media_filename(message),
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 
 @router.get("/conversation/{contact_id}/context", response_model=ChatContextResponse)
