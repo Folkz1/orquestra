@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -864,37 +864,49 @@ async def update_link(
         raise HTTPException(status_code=404, detail="Link nao encontrado")
 
     data = req.model_dump(exclude_unset=True)
+    values: dict[str, Any] = {}
+
     if "contact_id" in data:
-        link.contact = await _get_contact(req.contact_id, db) if req.contact_id else None
-        link.contact_id = req.contact_id
+        if req.contact_id:
+            await _get_contact(req.contact_id, db)
+        values["contact_id"] = req.contact_id
     if "client_name" in data and req.client_name:
-        link.client_name = req.client_name.strip()
+        values["client_name"] = req.client_name.strip()
     if "visible_sections" in data:
-        link.visible_sections = _normalize_sections(req.visible_sections)
+        values["visible_sections"] = _normalize_sections(req.visible_sections)
     if "welcome_message" in data:
-        link.welcome_message = req.welcome_message.strip() if req.welcome_message else None
+        values["welcome_message"] = req.welcome_message.strip() if req.welcome_message else None
     if "is_active" in data:
-        link.is_active = bool(req.is_active)
+        values["is_active"] = bool(req.is_active)
     if "feedback_type" in data:
-        link.feedback_type = _normalize_feedback_type(req.feedback_type)
+        values["feedback_type"] = _normalize_feedback_type(req.feedback_type)
     if "feedback_title" in data:
-        link.feedback_title = req.feedback_title.strip() if req.feedback_title else None
+        values["feedback_title"] = req.feedback_title.strip() if req.feedback_title else None
     if "feedback_message" in data:
-        link.feedback_message = req.feedback_message.strip() if req.feedback_message else None
+        values["feedback_message"] = req.feedback_message.strip() if req.feedback_message else None
     if "feedback_status" in data:
         feedback_status = _normalize_feedback_status(req.feedback_status)
-        link.feedback_status = feedback_status
-        if feedback_status == "requested" and not link.feedback_requested_at:
-            link.feedback_requested_at = datetime.now(timezone.utc)
+        values["feedback_status"] = feedback_status
+        if feedback_status == "requested":
+            values["feedback_requested_at"] = link.feedback_requested_at or datetime.now(timezone.utc)
         if feedback_status == "completed":
-            link.feedback_completed_at = datetime.now(timezone.utc)
+            values["feedback_completed_at"] = datetime.now(timezone.utc)
         if feedback_status == "idle":
-            link.feedback_completed_at = None
-            link.feedback_requested_at = None
-            link.feedback_sent_at = None
+            values["feedback_completed_at"] = None
+            values["feedback_requested_at"] = None
+            values["feedback_sent_at"] = None
+    if values:
+        values["updated_at"] = datetime.now(timezone.utc)
+        await db.execute(
+            sql_update(ClientPortalLink)
+            .where(ClientPortalLink.id == link_id)
+            .values(**values)
+        )
+        await db.flush()
 
-    await db.flush()
-    return _serialize_link(link, request)
+    refreshed = await _get_link(link_id, db)
+    assert refreshed is not None
+    return _serialize_link(refreshed, request)
 
 
 @router.post("/links/{link_id}/request-feedback")
@@ -912,25 +924,40 @@ async def request_feedback(
 
     feedback_type = _normalize_feedback_type(req.feedback_type)
     title, message = _feedback_defaults(feedback_type, link.project.name if link.project else "seu projeto")
-    link.feedback_type = feedback_type
-    link.feedback_status = "requested"
-    link.feedback_title = (req.title or title).strip()
-    link.feedback_message = (req.message or message).strip()
-    link.feedback_requested_at = datetime.now(timezone.utc)
-    link.feedback_completed_at = None
+    feedback_title = (req.title or title).strip()
+    feedback_message = (req.message or message).strip()
 
     portal_url = f"{_portal_base_url(request)}/api/client-portal/portal/{link.token}"
     notification_sent = False
     if req.send_whatsapp:
+        link.feedback_type = feedback_type
+        link.feedback_title = feedback_title
+        link.feedback_message = feedback_message
         notification_sent = await send_whatsapp_message(
             link.contact.phone,
             _build_feedback_notification(link, portal_url),
         )
-        if notification_sent:
-            link.feedback_sent_at = datetime.now(timezone.utc)
+    values: dict[str, Any] = {
+        "feedback_type": feedback_type,
+        "feedback_status": "requested",
+        "feedback_title": feedback_title,
+        "feedback_message": feedback_message,
+        "feedback_requested_at": datetime.now(timezone.utc),
+        "feedback_completed_at": None,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if notification_sent:
+        values["feedback_sent_at"] = datetime.now(timezone.utc)
 
+    await db.execute(
+        sql_update(ClientPortalLink)
+        .where(ClientPortalLink.id == link_id)
+        .values(**values)
+    )
     await db.flush()
-    payload = _serialize_link(link, request)
+    refreshed = await _get_link(link_id, db)
+    assert refreshed is not None
+    payload = _serialize_link(refreshed, request)
     payload["notification_sent"] = notification_sent
     return payload
 
