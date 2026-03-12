@@ -65,34 +65,34 @@ const ARCH_COMPONENTS = [
 ]
 
 // ── MEGA PROMPTS ──
-const MEGA_PROMPT_FREE = `Você é meu novo CTO virtual. Configure este projeto COMPLETO agora.
+const MEGA_PROMPT_FREE = `Você é meu novo CTO virtual. Configure este projeto agora.
 
 MEU NOME: [seu nome]
-MEU NEGÓCIO: [descreva seu negócio em 1 linha]
-NOME DO ASSISTENTE: [nome do seu CTO virtual, ex: Jarbas, Atlas, Nova]
+MEU NEGÓCIO: [descreva em 1 linha]
+NOME DO ASSISTENTE: [ex: Jarbas, Atlas, Nova]
 
-Faça TUDO abaixo de uma vez:
+PASSO 1 — Baixar templates reais:
+Execute: git clone https://github.com/Folkz1/playbook-cto-virtual.git /tmp/cto-setup
 
-1. CLAUDE.md na raiz com: identidade, regra de ouro (análise de impacto OBRIGATÓRIA), convenções (commits semânticos, nunca commitar secrets), Agent Team config
+PASSO 2 — Instalar no projeto:
+- Crie as pastas .claude/skills/ e .claude/hooks/ se não existirem
+- Copie /tmp/cto-setup/templates/CLAUDE.md para ./CLAUDE.md
+- Copie cada pasta de /tmp/cto-setup/templates/skills/* para ./.claude/skills/
+- Copie cada arquivo de /tmp/cto-setup/templates/hooks/* para ./.claude/hooks/
+- Copie /tmp/cto-setup/templates/settings.json para ./.claude/settings.json
+- Delete /tmp/cto-setup quando terminar
 
-2. BACKLOG.md — analise o projeto (git log, código, TODOs) e crie backlog REAL com 5+ tarefas priorizadas (ALTA/MÉDIA/BAIXA)
+PASSO 3 — Personalizar:
+No CLAUDE.md, substitua {{NOME_ASSISTENTE}}, {{SEU_NOME}} e {{SEU_NEGOCIO}} pelos meus dados acima.
 
-3. 4 SKILLS em .claude/skills/:
-   a) /backlog — gerencia tarefas
-   b) /impacto — análise de impacto pré-mudança
-   c) /ci — pipeline CI local (lint, types, testes, secrets scan)
-   d) /status — snapshot do projeto
+PASSO 4 — Backlog real:
+Analise o projeto inteiro (git log, código, TODOs no código, estrutura) e crie BACKLOG.md com 5+ tarefas REAIS priorizadas em ALTA/MÉDIA/BAIXA.
 
-4. 3 HOOKS em .claude/hooks/:
-   a) session-start.sh (SessionStart) — mostra data, branch, backlog
-   b) session-summary.sh (Stop) — salva resumo da sessão
-   c) detect-credentials.sh (PreToolUse:Edit,Write) — escaneia secrets
+PASSO 5 — Memória:
+Crie .claude/memory/MEMORY.md como índice de memórias do projeto.
 
-5. .claude/settings.json — configure os 3 hooks
-
-6. .claude/memory/MEMORY.md — índice de memórias do projeto
-
-Depois de criar tudo, rode /status e me mostre o resultado.`
+PASSO 6 — Confirmar:
+Rode /status e me mostre o resultado. Me diga quantos arquivos foram criados.`
 
 const MEGA_PROMPT_PRO = `Você é meu novo CTO virtual. Configure a Orquestra COMPLETA (versão PRO).
 
@@ -101,24 +101,67 @@ MEU NEGÓCIO: [descreva seu negócio]
 MEU WHATSAPP: [número com DDD, ex: 5511999999999]
 NOME DO ASSISTENTE: [nome do CTO virtual]
 
-Configure TUDO de uma vez:
+PASSO 1 — Baixar templates PRO:
+Execute: git clone https://github.com/Folkz1/playbook-cto-virtual.git /tmp/cto-setup
 
-1. CLAUDE.md COMPLETO — identidade, negócio, regra de ouro (análise de impacto), projetos ativos, Agent Team (Opus leader + Sonnet workers), CLIs, convenções
+PASSO 2 — Instalar templates FREE (base):
+- Crie as pastas .claude/skills/ e .claude/hooks/
+- Copie /tmp/cto-setup/templates/CLAUDE.md para ./CLAUDE.md
+- Copie /tmp/cto-setup/templates/skills/* para ./.claude/skills/
+- Copie /tmp/cto-setup/templates/hooks/* para ./.claude/hooks/
+- Copie /tmp/cto-setup/templates/settings.json para ./.claude/settings.json
 
-2. BACKLOG.md + .claude/memory/MEMORY.md — tarefas reais + memória indexada
+PASSO 3 — Instalar skills PRO (8 extras):
+Se existir /tmp/cto-setup/pro/templates/, copie tudo. Senão, crie as seguintes skills em .claude/skills/:
 
-3. 12 SKILLS em .claude/skills/:
-   FREE: /backlog, /impacto, /ci, /status
-   PRO: /whatsapp (Evolution API), /proposta (propostas B2B), /daily (briefing matinal), /orquestrar (workflow completo), /pesquisar (deep research), /youtube (tendências), /easypanel (deploy), /deploy (CI/CD)
+a) /whatsapp — integração Evolution API: send_message, get_messages, get_contacts. Usar variáveis EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE do .env
 
-4. 6 HOOKS em .claude/hooks/:
-   session-start.sh, session-summary.sh, detect-credentials.sh, sync-decisions.sh, failure-log.sh, precompact.sh
+b) /proposta — gerar propostas comerciais B2B com 6 seções: Contexto, Solução, Escopo, Investimento, Garantias, Próximos Passos. Salvar como HTML em propostas/
 
-5. orchestrator.mjs — pipeline multi-agente: Seed Gate → Worker → Reviewer (com getCleanEnv() para evitar nested session)
+c) /daily — briefing matinal: git status, backlog prioridades, mensagens WhatsApp pendentes (se configurado), agenda do dia
 
-6. .claude/settings.json — todos os hooks configurados
+d) /orquestrar — workflow completo: 1) rodar /impacto, 2) implementar mudança, 3) rodar /ci, 4) code review automático, 5) commit se tudo OK
 
-Depois de criar tudo: rode /status, me diga quantos arquivos criou, e explique em 3 linhas como usar no dia a dia.`
+e) /pesquisar — pesquisa deep usando múltiplas perspectivas (técnica, negócio, usuário) com fontes
+
+f) /youtube — análise de tendências do nicho, sugestões de títulos, roteiros, descrições SEO
+
+g) /easypanel — deploy via API tRPC: status, deploy, logs, env vars. Usar EASYPANEL_URL e EASYPANEL_API_KEY do .env
+
+h) /deploy — CI/CD completo: build, push, deploy, verificar health check
+
+PASSO 4 — Instalar hooks PRO (3 extras):
+Criar em .claude/hooks/:
+- sync-decisions.sh (PostToolUse:Edit) — registra decisões importantes em log
+- failure-log.sh (PostToolUse) — loga erros para análise
+- precompact.sh (PreCompact) — salva contexto antes do limite de tokens
+
+Atualizar .claude/settings.json com os 6 hooks configurados nos eventos corretos.
+
+PASSO 5 — Orchestrator multi-agente:
+Criar orchestrator.mjs na raiz com pipeline:
+- Seed Gate (Haiku): valida se a tarefa faz sentido
+- Worker (Sonnet): implementa as mudanças
+- Reviewer (Sonnet independente): code review do diff
+- CRÍTICO: usar getCleanEnv() removendo CLAUDE_* do env (evita erro "nested session")
+- Se reviewer reprova, volta pro worker com feedback
+- Cria branch agent/[tarefa] automaticamente
+
+PASSO 6 — Personalizar:
+- CLAUDE.md: substituir {{NOME_ASSISTENTE}}, {{SEU_NOME}}, {{SEU_NEGOCIO}}
+- Adicionar seção "Projetos Ativos" com tabela dos projetos reais
+- Adicionar seção "Agent Team": Leader Opus, Teammates Sonnet, max 3
+- Adicionar seção "CLIs Disponíveis": claude, git, gh, node, python
+
+PASSO 7 — Backlog + Memória:
+- Analise o projeto e crie BACKLOG.md com 5+ tarefas reais
+- Crie .claude/memory/MEMORY.md como índice
+
+PASSO 8 — Limpar e confirmar:
+- Delete /tmp/cto-setup
+- Rode /status e me mostre o resultado
+- Me diga quantos arquivos foram criados
+- Explique em 3 linhas como usar no dia a dia`
 
 
 // ── Showcase Landing ─────────────────────────
@@ -174,7 +217,12 @@ function ShowcaseLanding({ modules, onSelectModule, onInstall }) {
                 {copied === 'pro' ? 'Copiado! Cole no Claude Code' : 'Copiar Prompt PRO'}
               </button>
             </div>
-            <p className="text-zinc-600 text-sm">Cole no Claude Code dentro do seu projeto. Ele configura tudo sozinho.</p>
+            <p className="text-zinc-600 text-sm">Cole no Claude Code dentro do seu projeto. Ele baixa os templates e configura tudo sozinho.</p>
+            <a href="https://github.com/Folkz1/playbook-cto-virtual" target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 mt-4 text-zinc-500 hover:text-white text-sm transition-colors">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+              Ver templates no GitHub
+            </a>
           </div>
         </div>
       </div>
