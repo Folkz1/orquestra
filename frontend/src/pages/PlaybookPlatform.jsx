@@ -80,6 +80,7 @@ PASSO 2 — Instalar no projeto:
 - Copie cada pasta de /tmp/cto-setup/templates/skills/* para ./.claude/skills/
 - Copie cada arquivo de /tmp/cto-setup/templates/hooks/* para ./.claude/hooks/
 - Copie /tmp/cto-setup/templates/settings.json para ./.claude/settings.json
+- IMPORTANTE: Se Windows, converta hooks para LF: sed -i 's/\\r$//' .claude/hooks/*.sh
 - Delete /tmp/cto-setup quando terminar
 
 PASSO 3 — Personalizar:
@@ -101,6 +102,21 @@ MEU NEGÓCIO: [descreva seu negócio]
 MEU WHATSAPP: [número com DDD, ex: 5511999999999]
 NOME DO ASSISTENTE: [nome do CTO virtual]
 
+MÓDULOS QUE QUERO ATIVAR (apague os que não quer):
+- WhatsApp (precisa: Evolution API instalada)
+- Propostas comerciais
+- Orchestrator multi-agente
+- YouTube analytics
+- EasyPanel deploy (precisa: VPS com EasyPanel)
+- Daily briefing
+
+MINHAS CREDENCIAIS (preencha só os módulos que ativou):
+- Evolution API URL: [url ou "não tenho"]
+- Evolution API Key: [key ou "não tenho"]
+- Evolution Instância: [nome ou "não tenho"]
+- EasyPanel IP: [ip ou "não tenho"]
+- EasyPanel API Key: [key ou "não tenho"]
+
 PASSO 1 — Baixar templates:
 Execute: git clone https://github.com/Folkz1/playbook-cto-virtual.git /tmp/cto-setup
 
@@ -115,26 +131,29 @@ PASSO 3 — Instalar PRO (skills + hooks + orchestrator):
 - Copie /tmp/cto-setup/pro/skills/* para ./.claude/skills/ (sobrescreve e adiciona)
 - Copie /tmp/cto-setup/pro/hooks/* para ./.claude/hooks/
 - Copie /tmp/cto-setup/pro/orchestrator-template.mjs para ./orchestrator.mjs
-- Atualize .claude/settings.json adicionando os hooks PRO:
-  - sync-decisions.sh no evento PostToolUse (filtro: Edit)
-  - failure-log.sh no evento PostToolUse
-  - precompact.sh no evento PreCompact
-  - subagent-stop.sh no evento SubagentStop
+- Se Windows: execute sed -i 's/\\r$//' .claude/hooks/*.sh
+- Atualize .claude/settings.json com TODOS os hooks (FREE + PRO) nos eventos corretos
 
-PASSO 4 — Personalizar:
+PASSO 4 — Configurar credenciais:
+- Se eu informei credenciais da Evolution API: crie .env com EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
+- Se eu informei credenciais do EasyPanel: adicione EASYPANEL_IP, EASYPANEL_API_KEY no .env
+- Se eu disse "não tenho" em algum: IGNORE o módulo, não configure. Me diga que posso ativar depois.
+- NUNCA commitar o .env — adicione ao .gitignore
+
+PASSO 5 — Personalizar:
 - CLAUDE.md: substituir {{NOME_ASSISTENTE}}, {{SEU_NOME}}, {{SEU_NEGOCIO}}
-- Adicionar seção "Projetos Ativos" com tabela dos projetos reais do meu workspace
+- Adicionar seção "Projetos Ativos" com tabela dos projetos reais
 - Adicionar seção "Agent Team": Leader Opus, Teammates Sonnet, max 3
-- Adicionar seção "CLIs Disponíveis": claude, git, gh, node, python
+- Listar apenas os módulos que eu ativei
 
-PASSO 5 — Backlog + Memória:
-- Analise o projeto inteiro (git log, código, TODOs) e crie BACKLOG.md com 5+ tarefas reais
+PASSO 6 — Backlog + Memória:
+- Analise o projeto inteiro (git log, código, TODOs) e crie BACKLOG.md real
 - Crie .claude/memory/MEMORY.md como índice
 
-PASSO 6 — Limpar e confirmar:
+PASSO 7 — Limpar e confirmar:
 - Delete /tmp/cto-setup
 - Rode /status e me mostre o resultado
-- Me diga quantos arquivos foram criados (skills, hooks, orchestrator)
+- Liste os módulos ativados vs desativados
 - Explique em 3 linhas como usar no dia a dia`
 
 
