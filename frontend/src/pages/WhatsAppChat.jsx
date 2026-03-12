@@ -74,6 +74,11 @@ export default function WhatsAppChat({ appMode = false }) {
   const { permission, requestPermission, notify } = usePushNotifications()
   const installedApp = isStandalonePWA()
 
+  function selectConversation(contactId) {
+    if (!contactId) return
+    setSearchParams({ contact: contactId }, { replace: true })
+  }
+
   async function loadConversations() {
     setLoadingList(true)
     try {
@@ -84,7 +89,7 @@ export default function WhatsAppChat({ appMode = false }) {
       setConversations(data)
 
       if (!selectedContactId && data[0]?.contact_id) {
-        setSearchParams({ contact: data[0].contact_id })
+        selectConversation(data[0].contact_id)
       }
     } finally {
       setLoadingList(false)
@@ -263,47 +268,74 @@ export default function WhatsAppChat({ appMode = false }) {
     return (
       <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#080b10_0%,#0b1017_100%)]">
         <header className="border-b border-white/8 bg-black/30 px-4 py-4 sm:px-6">
-          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
-            <div>
-              <p className="eyebrow">Orquestra app</p>
-              <h1 className="mt-2 text-2xl font-semibold text-white">Chat em tempo real</h1>
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="eyebrow">Chat direto</p>
+              <h1 className="mt-2 truncate text-2xl font-semibold text-white">
+                {activeConversation?.contact_name || 'Abrindo conversa'}
+              </h1>
+              <p className="mt-1 truncate text-sm text-zinc-500">
+                {activeConversation?.project_name || activeConversation?.contact_phone || 'WhatsApp em tempo real'}
+              </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-400">
-                {unreadTotal} nao lidas
-              </div>
-              <div className={`rounded-full px-3 py-2 text-xs font-medium ${socketStatus === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
-                {socketStatus === 'open' ? 'online' : 'reconectando'}
-              </div>
+            <label className="min-w-[220px] max-w-[320px] flex-1 sm:flex-none">
+              <span className="mb-2 block text-[11px] uppercase tracking-[0.24em] text-zinc-500">
+                Cliente
+              </span>
+              <select
+                value={selectedContactId}
+                onChange={(event) => selectConversation(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-lime-300/40"
+              >
+                {!selectedContactId && <option value="">Selecione uma conversa</option>}
+                {conversations.map((conversation) => (
+                  <option key={conversation.contact_id} value={conversation.contact_id} className="bg-zinc-950">
+                    {conversation.contact_name} {conversation.unread_count > 0 ? `(${conversation.unread_count})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-400">
+              {unreadTotal} nao lidas
+            </div>
+            <div className={`rounded-full px-3 py-2 text-xs font-medium ${socketStatus === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+              {socketStatus === 'open' ? 'online' : 'reconectando'}
             </div>
           </div>
         </header>
 
         <main className="flex-1 px-3 py-3 sm:px-4">
-          <div className="mx-auto grid h-[calc(100vh-7.5rem)] max-w-[1600px] gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <ConversationList
-              conversations={conversations}
-              loading={loadingList}
-              search={search}
-              onSearchChange={setSearch}
-              unreadOnly={unreadOnly}
-              onUnreadToggle={setUnreadOnly}
-              selectedContactId={selectedContactId}
-              onSelect={(contactId) => setSearchParams({ contact: contactId })}
-            />
+          <div className="mx-auto flex h-[calc(100vh-7.5rem)] max-w-6xl flex-col">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-zinc-400">
+                  Visual limpo do app. So a thread ativa fica na tela.
+                </p>
+                <p className="mt-1 truncate text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  {loadingList ? 'sincronizando inbox' : `${conversations.length} conversas disponiveis`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <span className={`h-2.5 w-2.5 rounded-full ${socketStatus === 'open' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                Atualizacao em tempo real
+              </div>
+            </div>
 
-            <ChatThread
-              conversation={activeConversation}
-              messages={messages}
-              loading={loadingThread}
-              draft={draft}
-              onDraftChange={setDraft}
-              onSend={handleSend}
-              sending={sending}
-              quickReplies={quickReplies}
-              socketStatus={socketStatus}
-            />
+            <div className="min-h-0 flex-1">
+              <ChatThread
+                conversation={activeConversation}
+                messages={messages}
+                loading={loadingThread}
+                draft={draft}
+                onDraftChange={setDraft}
+                onSend={handleSend}
+                sending={sending}
+                quickReplies={quickReplies}
+                socketStatus={socketStatus}
+              />
+            </div>
           </div>
         </main>
       </div>
@@ -376,7 +408,7 @@ export default function WhatsAppChat({ appMode = false }) {
           unreadOnly={unreadOnly}
           onUnreadToggle={setUnreadOnly}
           selectedContactId={selectedContactId}
-          onSelect={(contactId) => setSearchParams({ contact: contactId })}
+          onSelect={selectConversation}
         />
 
         <ChatThread

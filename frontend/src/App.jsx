@@ -18,9 +18,13 @@ import ProjectsWorkspace from './pages/ProjectsWorkspace'
 import WhatsAppChat from './pages/WhatsAppChat'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
+import { isStandalonePWA } from './lib/native'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
+  const standaloneChat =
+    isStandalonePWA() &&
+    (location.pathname.startsWith('/chat') || location.pathname.startsWith('/mensagens'))
 
   if (location.pathname.startsWith('/proposta/')) {
     return <ProposalView />
@@ -31,6 +35,10 @@ function AppRoutes({ onLogout }) {
   }
 
   if (location.pathname.startsWith('/app/chat')) {
+    return <WhatsAppChat appMode />
+  }
+
+  if (standaloneChat) {
     return <WhatsAppChat appMode />
   }
 
