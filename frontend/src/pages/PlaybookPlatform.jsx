@@ -101,66 +101,40 @@ MEU NEGÓCIO: [descreva seu negócio]
 MEU WHATSAPP: [número com DDD, ex: 5511999999999]
 NOME DO ASSISTENTE: [nome do CTO virtual]
 
-PASSO 1 — Baixar templates PRO:
+PASSO 1 — Baixar templates:
 Execute: git clone https://github.com/Folkz1/playbook-cto-virtual.git /tmp/cto-setup
 
-PASSO 2 — Instalar templates FREE (base):
+PASSO 2 — Instalar base FREE:
 - Crie as pastas .claude/skills/ e .claude/hooks/
 - Copie /tmp/cto-setup/templates/CLAUDE.md para ./CLAUDE.md
 - Copie /tmp/cto-setup/templates/skills/* para ./.claude/skills/
 - Copie /tmp/cto-setup/templates/hooks/* para ./.claude/hooks/
 - Copie /tmp/cto-setup/templates/settings.json para ./.claude/settings.json
 
-PASSO 3 — Instalar skills PRO (8 extras):
-Se existir /tmp/cto-setup/pro/templates/, copie tudo. Senão, crie as seguintes skills em .claude/skills/:
+PASSO 3 — Instalar PRO (skills + hooks + orchestrator):
+- Copie /tmp/cto-setup/pro/skills/* para ./.claude/skills/ (sobrescreve e adiciona)
+- Copie /tmp/cto-setup/pro/hooks/* para ./.claude/hooks/
+- Copie /tmp/cto-setup/pro/orchestrator-template.mjs para ./orchestrator.mjs
+- Atualize .claude/settings.json adicionando os hooks PRO:
+  - sync-decisions.sh no evento PostToolUse (filtro: Edit)
+  - failure-log.sh no evento PostToolUse
+  - precompact.sh no evento PreCompact
+  - subagent-stop.sh no evento SubagentStop
 
-a) /whatsapp — integração Evolution API: send_message, get_messages, get_contacts. Usar variáveis EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE do .env
-
-b) /proposta — gerar propostas comerciais B2B com 6 seções: Contexto, Solução, Escopo, Investimento, Garantias, Próximos Passos. Salvar como HTML em propostas/
-
-c) /daily — briefing matinal: git status, backlog prioridades, mensagens WhatsApp pendentes (se configurado), agenda do dia
-
-d) /orquestrar — workflow completo: 1) rodar /impacto, 2) implementar mudança, 3) rodar /ci, 4) code review automático, 5) commit se tudo OK
-
-e) /pesquisar — pesquisa deep usando múltiplas perspectivas (técnica, negócio, usuário) com fontes
-
-f) /youtube — análise de tendências do nicho, sugestões de títulos, roteiros, descrições SEO
-
-g) /easypanel — deploy via API tRPC: status, deploy, logs, env vars. Usar EASYPANEL_URL e EASYPANEL_API_KEY do .env
-
-h) /deploy — CI/CD completo: build, push, deploy, verificar health check
-
-PASSO 4 — Instalar hooks PRO (3 extras):
-Criar em .claude/hooks/:
-- sync-decisions.sh (PostToolUse:Edit) — registra decisões importantes em log
-- failure-log.sh (PostToolUse) — loga erros para análise
-- precompact.sh (PreCompact) — salva contexto antes do limite de tokens
-
-Atualizar .claude/settings.json com os 6 hooks configurados nos eventos corretos.
-
-PASSO 5 — Orchestrator multi-agente:
-Criar orchestrator.mjs na raiz com pipeline:
-- Seed Gate (Haiku): valida se a tarefa faz sentido
-- Worker (Sonnet): implementa as mudanças
-- Reviewer (Sonnet independente): code review do diff
-- CRÍTICO: usar getCleanEnv() removendo CLAUDE_* do env (evita erro "nested session")
-- Se reviewer reprova, volta pro worker com feedback
-- Cria branch agent/[tarefa] automaticamente
-
-PASSO 6 — Personalizar:
+PASSO 4 — Personalizar:
 - CLAUDE.md: substituir {{NOME_ASSISTENTE}}, {{SEU_NOME}}, {{SEU_NEGOCIO}}
-- Adicionar seção "Projetos Ativos" com tabela dos projetos reais
+- Adicionar seção "Projetos Ativos" com tabela dos projetos reais do meu workspace
 - Adicionar seção "Agent Team": Leader Opus, Teammates Sonnet, max 3
 - Adicionar seção "CLIs Disponíveis": claude, git, gh, node, python
 
-PASSO 7 — Backlog + Memória:
-- Analise o projeto e crie BACKLOG.md com 5+ tarefas reais
+PASSO 5 — Backlog + Memória:
+- Analise o projeto inteiro (git log, código, TODOs) e crie BACKLOG.md com 5+ tarefas reais
 - Crie .claude/memory/MEMORY.md como índice
 
-PASSO 8 — Limpar e confirmar:
+PASSO 6 — Limpar e confirmar:
 - Delete /tmp/cto-setup
 - Rode /status e me mostre o resultado
-- Me diga quantos arquivos foram criados
+- Me diga quantos arquivos foram criados (skills, hooks, orchestrator)
 - Explique em 3 linhas como usar no dia a dia`
 
 
