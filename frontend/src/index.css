@@ -237,4 +237,26 @@
   .animate-fade-in {
     animation: fade-in 0.3s ease-out;
   }
+
+  /* Playbook prose styles */
+  .prose-playbook h1 { @apply text-2xl font-bold text-white mt-0 mb-4; }
+  .prose-playbook h2 { @apply text-xl font-bold text-white mt-8 mb-3 pb-2 border-b border-zinc-800; }
+  .prose-playbook h3 { @apply text-lg font-semibold text-zinc-200 mt-6 mb-2; }
+  .prose-playbook p { @apply my-2 text-zinc-300; }
+  .prose-playbook strong { @apply text-white font-semibold; }
+  .prose-playbook em { @apply text-zinc-400; }
+  .prose-playbook .code-block {
+    @apply bg-zinc-900 text-zinc-300 p-4 rounded-xl my-4 overflow-x-auto text-sm leading-relaxed;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .prose-playbook .inline-code {
+    @apply bg-zinc-800 text-emerald-400 px-1.5 py-0.5 rounded text-sm;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .prose-playbook table { @apply w-full border-collapse my-4; }
+  .prose-playbook th, .prose-playbook td { @apply border border-zinc-700 px-3 py-2 text-sm; }
+  .prose-playbook th { @apply bg-zinc-800/50 text-zinc-300 font-medium; }
+  .prose-playbook ul { @apply list-disc pl-6 my-3 space-y-1; }
+  .prose-playbook li { @apply text-zinc-300; }
+  .prose-playbook hr { @apply border-zinc-800 my-6; }
 }

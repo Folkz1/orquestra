@@ -18,6 +18,7 @@ import ProjectsWorkspace from './pages/ProjectsWorkspace'
 import WhatsAppChat from './pages/WhatsAppChat'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
+import PlaybookPlatform from './pages/PlaybookPlatform'
 import { isStandalonePWA } from './lib/native'
 
 function AppRoutes({ onLogout }) {
@@ -32,6 +33,10 @@ function AppRoutes({ onLogout }) {
 
   if (location.pathname === '/youtube-briefing') {
     return <YouTubeBriefing />
+  }
+
+  if (location.pathname.startsWith('/playbook')) {
+    return <PlaybookPlatform />
   }
 
   if (location.pathname.startsWith('/app/chat')) {
@@ -90,6 +95,7 @@ export default function App() {
         <Routes>
           <Route path="/youtube-briefing" element={<YouTubeBriefing />} />
           <Route path="/proposta/:slug" element={<ProposalView />} />
+          <Route path="/playbook/*" element={<PlaybookPlatform />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />
         </Routes>
       )}
