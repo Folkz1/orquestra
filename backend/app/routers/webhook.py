@@ -16,7 +16,7 @@ from app.models import AssistantDraft, Contact, Message, Project
 from app.services.media import download_media_from_evolution, save_media
 from app.services.memory import store_memory
 from app.services.chat_state import update_contact_chat_state
-from app.services.realtime import broadcast_message_event
+from app.services.realtime import broadcast_message_event, broadcast_message_update
 from app.services.assistant import (
     generate_reply_draft,
     generate_voice_script,
@@ -366,6 +366,19 @@ async def process_media(
                 message.processed = True
 
             await db.commit()
+            await db.refresh(message)
+
+            contact = None
+            if message.contact_id:
+                contact = await db.get(Contact, message.contact_id)
+
+            if contact is not None:
+                project_name = None
+                if message.project_id:
+                    project_name = await db.scalar(
+                        select(Project.name).where(Project.id == message.project_id)
+                    )
+                await broadcast_message_update(message, contact, project_name)
 
         except Exception as exc:
             logger.error("[WEBHOOK] Media processing failed for %s: %s", message_id, exc)

@@ -25,6 +25,17 @@ function upsertMessage(list, nextMessage) {
   return [...list, nextMessage]
 }
 
+function mergeMessage(list, nextMessage) {
+  const index = list.findIndex((item) => item.id === nextMessage.id)
+  if (index === -1) {
+    return upsertMessage(list, nextMessage)
+  }
+
+  const copy = [...list]
+  copy[index] = { ...copy[index], ...nextMessage }
+  return copy
+}
+
 function getQuickReplies(context, suggestion) {
   const replies = [
     'Recebi aqui. Vou validar isso e te atualizo ainda hoje.',
@@ -168,6 +179,10 @@ export default function WhatsAppChat() {
       }
     }
 
+    if (event.type === 'message.updated' && event.contact_id === selectedContactId) {
+      setMessages((current) => mergeMessage(current, event.message))
+    }
+
     if (event.type === 'conversation.read') {
       setConversations((current) =>
         current.map((item) =>
@@ -241,42 +256,32 @@ export default function WhatsAppChat() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="hero-panel">
-        <div className="hero-copy">
+    <div className="space-y-4">
+      <section className="flex items-center justify-between gap-4">
+        <div>
           <p className="eyebrow">WhatsApp PWA</p>
-          <h1 className="mt-3 text-4xl font-bold text-white sm:text-5xl">
-            Central de conversa com contexto, realtime e app instalavel.
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">
-            Diego responde clientes com proposta, tasks, entrega e sugestao IA na mesma superficie.
+          <h1 className="mt-2 text-3xl font-bold text-white">Chat unico estilo operador</h1>
+          <p className="mt-2 text-sm text-zinc-500">
+            Conversa central, contexto lateral e arquivos visiveis com download.
           </p>
         </div>
 
-        <div className="hero-brief p-5">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="metric-card metric-lime">
-              <p className="metric-label">Conversas</p>
-              <p className="metric-value">{conversations.length}</p>
-              <p className="metric-footnote">Inbox vivo por WebSocket</p>
-            </div>
-            <div className="metric-card metric-blue">
-              <p className="metric-label">Nao lidas</p>
-              <p className="metric-value">
-                {conversations.reduce((total, item) => total + (item.unread_count || 0), 0)}
-              </p>
-              <p className="metric-footnote">Fila priorizada para resposta</p>
-            </div>
-            <div className="metric-card metric-amber">
-              <p className="metric-label">Notificacoes</p>
-              <p className="metric-value">{permission === 'granted' ? 'ON' : 'OFF'}</p>
-              <p className="metric-footnote">PWA com permissao do navegador</p>
-            </div>
+        <div className="hidden items-center gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3 lg:flex">
+          <div>
+            <p className="metric-label">Nao lidas</p>
+            <p className="mt-1 text-lg font-semibold text-white">
+              {conversations.reduce((total, item) => total + (item.unread_count || 0), 0)}
+            </p>
+          </div>
+          <div className="h-10 w-px bg-white/10" />
+          <div>
+            <p className="metric-label">PWA</p>
+            <p className="mt-1 text-lg font-semibold text-white">{permission === 'granted' ? 'ON' : 'OFF'}</p>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.3fr_0.9fr]">
+      <section className="grid min-h-[calc(100vh-15rem)] gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <ConversationList
           conversations={conversations}
           loading={loadingList}
