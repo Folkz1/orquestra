@@ -18,8 +18,7 @@ function markdownToHtml(md) {
     .replace(/^\| (.+) \|$/gm, (match) => {
       const cells = match.split('|').filter(c => c.trim())
       if (cells.some(c => /^-+$/.test(c.trim()))) return ''
-      const tag = cells.length > 0 ? 'td' : 'td'
-      return '<tr>' + cells.map(c => `<${tag} class="border border-zinc-700 px-3 py-2">${c.trim()}</${tag}>`).join('') + '</tr>'
+      return '<tr>' + cells.map(c => `<td class="border border-zinc-700 px-3 py-2">${c.trim()}</td>`).join('') + '</tr>'
     })
     .replace(/(<tr>[\s\S]*?<\/tr>[\s]*)+/g, '<table class="w-full border-collapse my-4 text-sm">$&</table>')
     .replace(/^- (.+)$/gm, '<li class="ml-4 my-1">$1</li>')
@@ -28,106 +27,330 @@ function markdownToHtml(md) {
     .replace(/\n\n/g, '</p><p class="my-2">')
 }
 
+// ── Skills/Hooks/Features data for showcase ──
+const SKILLS_FREE = [
+  { cmd: '/backlog', desc: 'Gerencia tarefas com prioridades', icon: '📋' },
+  { cmd: '/impacto', desc: 'Análise de risco antes de mudar código', icon: '🔍' },
+  { cmd: '/ci', desc: 'Pipeline CI local (lint, types, testes)', icon: '🧪' },
+  { cmd: '/status', desc: 'Snapshot completo do projeto', icon: '📊' },
+]
 
-// ── Landing Page ─────────────────────────────────────
+const SKILLS_PRO = [
+  { cmd: '/whatsapp', desc: 'Ler, enviar e buscar mensagens', icon: '💬' },
+  { cmd: '/proposta', desc: 'Gerar propostas comerciais B2B', icon: '📄' },
+  { cmd: '/daily', desc: 'Briefing matinal completo', icon: '☀️' },
+  { cmd: '/orquestrar', desc: 'Workflow: impacto → implementa → review', icon: '🔄' },
+  { cmd: '/pesquisar', desc: 'Pesquisa deep multi-perspectiva', icon: '🔎' },
+  { cmd: '/youtube', desc: 'Tendências e produção de conteúdo', icon: '🎬' },
+  { cmd: '/easypanel', desc: 'Deploy automatizado', icon: '🚀' },
+  { cmd: '/deploy', desc: 'CI/CD completo', icon: '📦' },
+]
 
-function Landing({ modules, onStart, onSelectModule }) {
+const HOOKS = [
+  { name: 'Session Start', event: 'Ao abrir', desc: 'Carrega contexto: branch, backlog, último briefing' },
+  { name: 'Session Summary', event: 'Ao fechar', desc: 'Salva resumo da sessão automaticamente' },
+  { name: 'Detect Credentials', event: 'Antes de salvar', desc: 'Escaneia por API keys e secrets vazados' },
+  { name: 'Sync Decisions', event: 'Após editar', desc: 'Registra decisões importantes' },
+  { name: 'Failure Log', event: 'Após erro', desc: 'Loga erros para análise futura' },
+  { name: 'Pre-Compact', event: 'Antes de compactar', desc: 'Salva contexto antes do limite' },
+]
+
+const ARCH_COMPONENTS = [
+  { name: 'CLAUDE.md', desc: 'Cérebro — identidade, regras, convenções', cls: 'border-emerald-500/20 bg-emerald-500/5' },
+  { name: 'Skills', desc: '12 comandos que automatizam tudo', cls: 'border-blue-500/20 bg-blue-500/5' },
+  { name: 'Hooks', desc: '6 automações invisíveis por evento', cls: 'border-purple-500/20 bg-purple-500/5' },
+  { name: 'Memória', desc: 'Persistência entre sessões', cls: 'border-amber-500/20 bg-amber-500/5' },
+  { name: 'Orchestrator', desc: 'Pipeline multi-agente autônomo', cls: 'border-rose-500/20 bg-rose-500/5' },
+  { name: 'Backlog', desc: 'Tarefas priorizadas por receita', cls: 'border-cyan-500/20 bg-cyan-500/5' },
+]
+
+// ── MEGA PROMPTS ──
+const MEGA_PROMPT_FREE = `Você é meu novo CTO virtual. Configure este projeto COMPLETO agora.
+
+MEU NOME: [seu nome]
+MEU NEGÓCIO: [descreva seu negócio em 1 linha]
+NOME DO ASSISTENTE: [nome do seu CTO virtual, ex: Jarbas, Atlas, Nova]
+
+Faça TUDO abaixo de uma vez:
+
+1. CLAUDE.md na raiz com: identidade, regra de ouro (análise de impacto OBRIGATÓRIA), convenções (commits semânticos, nunca commitar secrets), Agent Team config
+
+2. BACKLOG.md — analise o projeto (git log, código, TODOs) e crie backlog REAL com 5+ tarefas priorizadas (ALTA/MÉDIA/BAIXA)
+
+3. 4 SKILLS em .claude/skills/:
+   a) /backlog — gerencia tarefas
+   b) /impacto — análise de impacto pré-mudança
+   c) /ci — pipeline CI local (lint, types, testes, secrets scan)
+   d) /status — snapshot do projeto
+
+4. 3 HOOKS em .claude/hooks/:
+   a) session-start.sh (SessionStart) — mostra data, branch, backlog
+   b) session-summary.sh (Stop) — salva resumo da sessão
+   c) detect-credentials.sh (PreToolUse:Edit,Write) — escaneia secrets
+
+5. .claude/settings.json — configure os 3 hooks
+
+6. .claude/memory/MEMORY.md — índice de memórias do projeto
+
+Depois de criar tudo, rode /status e me mostre o resultado.`
+
+const MEGA_PROMPT_PRO = `Você é meu novo CTO virtual. Configure a Orquestra COMPLETA (versão PRO).
+
+MEU NOME: [seu nome]
+MEU NEGÓCIO: [descreva seu negócio]
+MEU WHATSAPP: [número com DDD, ex: 5511999999999]
+NOME DO ASSISTENTE: [nome do CTO virtual]
+
+Configure TUDO de uma vez:
+
+1. CLAUDE.md COMPLETO — identidade, negócio, regra de ouro (análise de impacto), projetos ativos, Agent Team (Opus leader + Sonnet workers), CLIs, convenções
+
+2. BACKLOG.md + .claude/memory/MEMORY.md — tarefas reais + memória indexada
+
+3. 12 SKILLS em .claude/skills/:
+   FREE: /backlog, /impacto, /ci, /status
+   PRO: /whatsapp (Evolution API), /proposta (propostas B2B), /daily (briefing matinal), /orquestrar (workflow completo), /pesquisar (deep research), /youtube (tendências), /easypanel (deploy), /deploy (CI/CD)
+
+4. 6 HOOKS em .claude/hooks/:
+   session-start.sh, session-summary.sh, detect-credentials.sh, sync-decisions.sh, failure-log.sh, precompact.sh
+
+5. orchestrator.mjs — pipeline multi-agente: Seed Gate → Worker → Reviewer (com getCleanEnv() para evitar nested session)
+
+6. .claude/settings.json — todos os hooks configurados
+
+Depois de criar tudo: rode /status, me diga quantos arquivos criou, e explique em 3 linhas como usar no dia a dia.`
+
+
+// ── Showcase Landing ─────────────────────────
+function ShowcaseLanding({ modules, onSelectModule, onInstall }) {
+  const [copied, setCopied] = useState(null)
+  const [showPro, setShowPro] = useState(false)
   const freeModules = modules.filter(m => m.tier === 'free')
   const proModules = modules.filter(m => m.tier === 'pro')
+
+  const copyPrompt = (type) => {
+    const prompt = type === 'pro' ? MEGA_PROMPT_PRO : MEGA_PROMPT_FREE
+    navigator.clipboard.writeText(prompt)
+    setCopied(type)
+    setTimeout(() => setCopied(null), 3000)
+  }
 
   return (
     <div className="min-h-screen bg-[#090b10]">
       {/* Hero */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-900/20 via-transparent to-blue-900/20" />
-        <div className="max-w-4xl mx-auto px-6 pt-16 pb-12 relative">
+        <div className="absolute inset-0">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
+          <div className="absolute top-20 right-1/4 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl" />
+        </div>
+        <div className="max-w-5xl mx-auto px-6 pt-12 pb-8 relative">
           <div className="text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm mb-6">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Plataforma Educacional
+              Framework Open Source
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
-              Playbook <span className="text-emerald-400">CTO Virtual</span>
+            <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 leading-tight tracking-tight">
+              Orquestra<br />
+              <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">CTO Virtual</span>
             </h1>
-            <p className="text-lg text-zinc-400 max-w-2xl mx-auto mb-8">
-              Transforme o Claude Code no seu CTO virtual pessoal.
-              Passo a passo, do zero ao sistema completo.
+            <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mx-auto mb-8">
+              Um framework que transforma o Claude Code no seu CTO pessoal.
+              <br className="hidden md:block" />
+              <strong className="text-zinc-200">Um prompt. Tudo configurado. Comece a usar.</strong>
             </p>
-            <div className="flex gap-4 justify-center">
-              <button onClick={onStart} className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-xl transition-all hover:scale-105">
-                Começar Grátis
+
+            {/* Install buttons */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
+              <button
+                onClick={() => copyPrompt('free')}
+                className="group px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl transition-all hover:scale-105 hover:shadow-[0_0_40px_rgba(52,211,153,0.3)] text-lg"
+              >
+                {copied === 'free' ? 'Copiado! Cole no Claude Code' : 'Copiar Prompt FREE'}
               </button>
-              <a href="#modulos" className="px-6 py-3 border border-zinc-700 hover:border-zinc-500 text-zinc-300 rounded-xl transition-all">
-                Ver Módulos
-              </a>
+              <button
+                onClick={() => copyPrompt('pro')}
+                className="group px-8 py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold rounded-xl transition-all hover:scale-105 hover:shadow-[0_0_40px_rgba(245,158,11,0.3)] text-lg"
+              >
+                {copied === 'pro' ? 'Copiado! Cole no Claude Code' : 'Copiar Prompt PRO'}
+              </button>
             </div>
+            <p className="text-zinc-600 text-sm">Cole no Claude Code dentro do seu projeto. Ele configura tudo sozinho.</p>
           </div>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { n: modules.reduce((a, m) => a + m.step_count, 0), l: 'Aulas' },
-            { n: modules.reduce((a, m) => a + m.duration_min, 0), l: 'Minutos' },
-            { n: freeModules.length, l: 'Módulos Free' },
-            { n: proModules.length, l: 'Módulos Pro' },
-          ].map((s, i) => (
-            <div key={i} className="text-center p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
-              <div className="text-2xl font-bold text-white">{s.n}</div>
-              <div className="text-sm text-zinc-500">{s.l}</div>
+      {/* Architecture */}
+      <div className="max-w-5xl mx-auto px-6 py-12">
+        <h2 className="text-2xl font-bold text-white mb-2 text-center">O que é instalado</h2>
+        <p className="text-zinc-500 text-center mb-8">6 componentes que trabalham juntos</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {ARCH_COMPONENTS.map((c, i) => (
+            <div key={i} className={`p-4 rounded-xl border ${c.cls}`}>
+              <h3 className="text-white font-semibold text-sm">{c.name}</h3>
+              <p className="text-zinc-500 text-xs mt-1">{c.desc}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Modules */}
-      <div id="modulos" className="max-w-4xl mx-auto px-6 py-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Módulos</h2>
-        <p className="text-zinc-500 mb-8">Aprenda no seu ritmo. Cada módulo é independente.</p>
+      {/* How it works - 3 steps */}
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <h2 className="text-2xl font-bold text-white mb-8 text-center">Como funciona</h2>
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            { n: '1', title: 'Copie o prompt', desc: 'Escolha FREE (4 skills) ou PRO (12 skills + orchestrator). Clique no botão acima.' },
+            { n: '2', title: 'Cole no Claude Code', desc: 'Abra o Claude Code no seu projeto e cole. Preencha seu nome e negócio. Ele cria tudo.' },
+            { n: '3', title: 'Use os skills', desc: 'Digite /status, /backlog, /impacto. O CTO Virtual já conhece seu projeto.' },
+          ].map((s, i) => (
+            <div key={i} className="text-center p-6 rounded-xl bg-zinc-900/50 border border-zinc-800">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-lg flex items-center justify-center mx-auto mb-3">{s.n}</div>
+              <h3 className="text-white font-semibold mb-2">{s.title}</h3>
+              <p className="text-zinc-500 text-sm">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
-        {/* Free */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-xs font-medium">FREE</span>
-            <span className="text-zinc-500 text-sm">Acesso imediato</span>
+      {/* Skills showcase */}
+      <div className="max-w-5xl mx-auto px-6 py-12">
+        <h2 className="text-2xl font-bold text-white mb-2">Skills Disponíveis</h2>
+        <p className="text-zinc-500 mb-6">Comandos que você digita no Claude Code</p>
+
+        {/* FREE skills */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-xs font-bold">FREE</span>
+            <span className="text-zinc-500 text-sm">Incluído no prompt gratuito</span>
           </div>
-          <div className="grid gap-4">
-            {freeModules.map(m => (
-              <ModuleCard key={m.slug} module={m} onSelect={() => onSelectModule(m.slug)} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {SKILLS_FREE.map((s, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-emerald-500/30 transition-colors">
+                <span className="text-xl">{s.icon}</span>
+                <div>
+                  <code className="text-emerald-400 text-sm font-bold">{s.cmd}</code>
+                  <p className="text-zinc-500 text-xs">{s.desc}</p>
+                </div>
+              </div>
             ))}
           </div>
         </div>
 
-        {/* Pro */}
+        {/* PRO skills */}
         <div>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-medium">PRO</span>
-            <span className="text-zinc-500 text-sm">R$50/mês — Todos os módulos + comunidade</span>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-bold">PRO</span>
+            <span className="text-zinc-500 text-sm">Incluído no prompt PRO</span>
           </div>
-          <div className="grid gap-4">
-            {proModules.map(m => (
-              <ModuleCard key={m.slug} module={m} onSelect={() => onSelectModule(m.slug)} locked />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {SKILLS_PRO.map((s, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900/30 border border-zinc-800 hover:border-amber-500/30 transition-colors">
+                <span className="text-xl">{s.icon}</span>
+                <div>
+                  <code className="text-amber-400 text-sm font-bold">{s.cmd}</code>
+                  <p className="text-zinc-500 text-xs">{s.desc}</p>
+                </div>
+              </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* CTA */}
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <div className="rounded-2xl bg-gradient-to-r from-emerald-900/30 to-blue-900/30 border border-emerald-500/20 p-8 text-center">
-          <h3 className="text-2xl font-bold text-white mb-2">Pronto para começar?</h3>
-          <p className="text-zinc-400 mb-6">Cadastre-se em 10 segundos. Sem cartão.</p>
-          <button onClick={onStart} className="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-xl transition-all hover:scale-105">
-            Criar Conta Grátis
-          </button>
+      {/* Hooks */}
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <h2 className="text-2xl font-bold text-white mb-2">Hooks — Automação Invisível</h2>
+        <p className="text-zinc-500 mb-6">Rodam sozinhos, sem você fazer nada</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+          {HOOKS.map((h, i) => (
+            <div key={i} className="p-3 rounded-xl bg-zinc-900/30 border border-zinc-800">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-purple-400 text-xs font-mono bg-purple-500/10 px-1.5 py-0.5 rounded">{h.event}</span>
+              </div>
+              <h4 className="text-white text-sm font-medium">{h.name}</h4>
+              <p className="text-zinc-600 text-xs mt-0.5">{h.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Orchestrator Pipeline */}
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <h2 className="text-2xl font-bold text-white mb-2">Pipeline Multi-Agente</h2>
+        <p className="text-zinc-500 mb-6">Incluído no PRO — automatiza implementação com code review</p>
+        <div className="flex flex-col md:flex-row items-center gap-3 md:gap-0 justify-center">
+          {[
+            { name: 'Seed Gate', model: 'Haiku', desc: 'Valida a tarefa', cls: 'border-zinc-500/30 bg-zinc-500/10' },
+            { name: 'Worker', model: 'Sonnet', desc: 'Implementa', cls: 'border-blue-500/30 bg-blue-500/10' },
+            { name: 'Reviewer', model: 'Sonnet', desc: 'Code review', cls: 'border-purple-500/30 bg-purple-500/10' },
+            { name: 'Aprovado', model: '', desc: 'Commit automático', cls: 'border-emerald-500/30 bg-emerald-500/10' },
+          ].map((stage, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className={`p-4 rounded-xl border ${stage.cls} text-center min-w-[120px]`}>
+                <div className="text-white font-semibold text-sm">{stage.name}</div>
+                {stage.model && <div className="text-zinc-500 text-xs">{stage.model}</div>}
+                <div className="text-zinc-400 text-xs mt-1">{stage.desc}</div>
+              </div>
+              {i < 3 && <span className="text-zinc-600 text-lg hidden md:block">→</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Modules - Learn more */}
+      <div id="modulos" className="max-w-5xl mx-auto px-6 py-12">
+        <h2 className="text-2xl font-bold text-white mb-2">Documentação por Módulo</h2>
+        <p className="text-zinc-500 mb-6">Aprenda como cada parte funciona em detalhe</p>
+
+        <div className="grid gap-3">
+          {modules.map(m => (
+            <button
+              key={m.slug}
+              onClick={() => onSelectModule(m.slug)}
+              className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border transition-all hover:scale-[1.005] ${
+                m.tier === 'pro'
+                  ? 'bg-zinc-900/30 border-zinc-800 hover:border-amber-500/30'
+                  : 'bg-zinc-900/50 border-zinc-800 hover:border-emerald-500/30'
+              }`}
+            >
+              <div className="text-2xl">{m.icon}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-white font-medium text-sm">{m.title}</h3>
+                  {m.tier === 'pro' && <span className="text-[10px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">PRO</span>}
+                </div>
+                <p className="text-zinc-600 text-xs mt-0.5">{m.description}</p>
+              </div>
+              <div className="text-zinc-500 text-xs whitespace-nowrap">{m.step_count} aulas</div>
+              <span className="text-zinc-700">→</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Install CTA */}
+      <div className="max-w-5xl mx-auto px-6 py-12">
+        <div className="rounded-2xl bg-gradient-to-r from-emerald-900/30 via-blue-900/20 to-purple-900/30 border border-emerald-500/20 p-8 text-center">
+          <h3 className="text-2xl font-bold text-white mb-2">Instale agora no seu projeto</h3>
+          <p className="text-zinc-400 mb-6">Um prompt. 5 minutos. CTO Virtual configurado.</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => copyPrompt('free')}
+              className="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl transition-all hover:scale-105"
+            >
+              {copied === 'free' ? 'Copiado!' : 'FREE — 4 Skills + 3 Hooks'}
+            </button>
+            <button
+              onClick={() => copyPrompt('pro')}
+              className="px-8 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold rounded-xl transition-all hover:scale-105"
+            >
+              {copied === 'pro' ? 'Copiado!' : 'PRO — 12 Skills + Orchestrator'}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Footer */}
       <footer className="border-t border-zinc-800 py-8 text-center text-zinc-600 text-sm">
-        <p>Playbook CTO Virtual — Por Diego | <span className="text-emerald-500">GuyFolkz</span></p>
+        <p>Orquestra CTO Virtual — Por Diego | <span className="text-emerald-500">GuyFolkz</span></p>
         <p className="mt-1">Automação & IA para Negócios</p>
       </footer>
     </div>
@@ -135,120 +358,65 @@ function Landing({ modules, onStart, onSelectModule }) {
 }
 
 
-function ModuleCard({ module, onSelect, locked }) {
+// ── Module View ─────────────────────────────
+function ModuleView({ module, onSelectStep, onBack, phone }) {
+  const completedCount = module.steps.filter(s => s.is_completed).length
+
   return (
-    <button
-      onClick={onSelect}
-      className={`w-full text-left p-5 rounded-xl border transition-all hover:scale-[1.01] ${
-        locked
-          ? 'bg-zinc-900/30 border-zinc-800 hover:border-zinc-700'
-          : 'bg-zinc-900/50 border-zinc-800 hover:border-emerald-500/30 hover:bg-emerald-500/5'
-      }`}
-    >
-      <div className="flex items-start gap-4">
-        <div className="text-3xl">{module.icon}</div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-white font-semibold">{module.title}</h3>
-            {locked && <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">PRO</span>}
-          </div>
-          <p className="text-zinc-500 text-sm mt-1">{module.description}</p>
-          <div className="flex gap-4 mt-3 text-xs text-zinc-600">
-            <span>{module.step_count} aulas</span>
-            <span>{module.duration_min} min</span>
+    <div className="min-h-screen bg-[#090b10]">
+      <div className="max-w-3xl mx-auto px-6 py-8">
+        <button onClick={onBack} className="text-zinc-500 hover:text-white text-sm mb-6 flex items-center gap-1">
+          ← Voltar
+        </button>
+        <div className="flex items-start gap-4 mb-8">
+          <div className="text-4xl">{module.icon}</div>
+          <div>
+            <h1 className="text-2xl font-bold text-white">{module.title}</h1>
+            <p className="text-zinc-500 mt-1">{module.description}</p>
+            {phone && (
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden max-w-xs">
+                  <div className="h-full bg-emerald-500 rounded-full transition-all"
+                    style={{ width: `${module.steps.length ? (completedCount / module.steps.length) * 100 : 0}%` }} />
+                </div>
+                <span className="text-xs text-zinc-600">{completedCount}/{module.steps.length}</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="text-zinc-600 text-xl">{locked ? '🔒' : '→'}</div>
-      </div>
-    </button>
-  )
-}
-
-
-// ── Enrollment Modal ─────────────────────────────────
-
-function EnrollModal({ onClose, onEnroll }) {
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!name || !phone) return
-    setLoading(true)
-    try {
-      const res = await fetch(`${API}/api/playbook/enroll`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, name, email: email || null })
-      })
-      const data = await res.json()
-      localStorage.setItem('playbook_phone', phone)
-      localStorage.setItem('playbook_name', name)
-      onEnroll(data)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-md w-full">
-        <h2 className="text-xl font-bold text-white mb-2">Criar conta grátis</h2>
-        <p className="text-zinc-500 text-sm mb-6">Acesse os módulos FREE e acompanhe seu progresso.</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm text-zinc-400">Nome *</label>
-            <input
-              value={name} onChange={e => setName(e.target.value)}
-              className="w-full mt-1 px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:border-emerald-500 focus:outline-none"
-              placeholder="Seu nome"
-              required
-            />
-          </div>
-          <div>
-            <label className="text-sm text-zinc-400">WhatsApp *</label>
-            <input
-              value={phone} onChange={e => setPhone(e.target.value)}
-              className="w-full mt-1 px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:border-emerald-500 focus:outline-none"
-              placeholder="5511999999999"
-              required
-            />
-          </div>
-          <div>
-            <label className="text-sm text-zinc-400">Email (opcional)</label>
-            <input
-              value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full mt-1 px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:border-emerald-500 focus:outline-none"
-              placeholder="seu@email.com"
-              type="email"
-            />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-zinc-700 text-zinc-400 rounded-lg hover:bg-zinc-800">
-              Cancelar
+        <div className="space-y-3">
+          {module.steps.map((step, i) => (
+            <button key={step.id} onClick={() => onSelectStep(i)}
+              className="w-full text-left flex items-center gap-4 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step.is_completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-500'
+              }`}>
+                {step.is_completed ? '✓' : i + 1}
+              </div>
+              <div className="flex-1">
+                <div className="text-white text-sm font-medium">{step.title}</div>
+                <div className="flex gap-3 mt-1 text-xs text-zinc-600">
+                  <span>{step.step_type === 'theory' ? '📖 Teoria' : '🛠️ Prática'}</span>
+                  {step.duration_min && <span>{step.duration_min} min</span>}
+                </div>
+              </div>
+              {step.code_snippet && <span className="text-emerald-500/50 text-xs">tem prompt</span>}
+              <span className="text-zinc-700">→</span>
             </button>
-            <button type="submit" disabled={loading} className="flex-1 py-2.5 bg-emerald-500 text-black font-semibold rounded-lg hover:bg-emerald-400 disabled:opacity-50">
-              {loading ? 'Criando...' : 'Começar'}
-            </button>
-          </div>
-        </form>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
 
-// ── Step View (Aula) ─────────────────────────────────
-
+// ── Step View ─────────────────────────────────
 function StepView({ module, step, stepIndex, totalSteps, onNext, onPrev, onComplete, onBack, phone }) {
-  const isCompleted = step.is_completed
+  const [promptCopied, setPromptCopied] = useState(false)
 
   const handleComplete = async () => {
-    if (!phone || isCompleted) return
+    if (!phone || step.is_completed) return
     try {
       await fetch(`${API}/api/playbook/progress`, {
         method: 'POST',
@@ -256,9 +424,13 @@ function StepView({ module, step, stepIndex, totalSteps, onNext, onPrev, onCompl
         body: JSON.stringify({ phone, step_id: step.id })
       })
       onComplete(step.id)
-    } catch (err) {
-      console.error(err)
-    }
+    } catch (err) { console.error(err) }
+  }
+
+  const copySnippet = () => {
+    navigator.clipboard.writeText(step.code_snippet)
+    setPromptCopied(true)
+    setTimeout(() => setPromptCopied(false), 3000)
   }
 
   return (
@@ -266,9 +438,7 @@ function StepView({ module, step, stepIndex, totalSteps, onNext, onPrev, onCompl
       {/* Top bar */}
       <div className="sticky top-0 z-40 bg-[#090b10]/90 backdrop-blur border-b border-zinc-800">
         <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between">
-          <button onClick={onBack} className="text-zinc-500 hover:text-white text-sm flex items-center gap-1">
-            ← {module.title}
-          </button>
+          <button onClick={onBack} className="text-zinc-500 hover:text-white text-sm">← {module.title}</button>
           <div className="flex items-center gap-2">
             <span className="text-zinc-600 text-sm">{stepIndex + 1}/{totalSteps}</span>
             <div className="flex gap-1">
@@ -282,76 +452,58 @@ function StepView({ module, step, stepIndex, totalSteps, onNext, onPrev, onCompl
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-3xl mx-auto px-6 py-8">
-        {/* Step type badge */}
+        {/* Badge */}
         <div className="flex items-center gap-3 mb-4">
           <span className={`text-xs px-2 py-0.5 rounded-full ${
-            step.step_type === 'theory' ? 'bg-blue-500/20 text-blue-400' :
-            step.step_type === 'practice' ? 'bg-emerald-500/20 text-emerald-400' :
-            step.step_type === 'code' ? 'bg-purple-500/20 text-purple-400' :
-            'bg-amber-500/20 text-amber-400'
+            step.step_type === 'theory' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'
           }`}>
-            {step.step_type === 'theory' ? '📖 Teoria' :
-             step.step_type === 'practice' ? '🛠️ Prática' :
-             step.step_type === 'code' ? '💻 Código' : '❓ Quiz'}
+            {step.step_type === 'theory' ? '📖 Teoria' : '🛠️ Prática'}
           </span>
           {step.duration_min && <span className="text-zinc-600 text-xs">{step.duration_min} min</span>}
         </div>
 
-        {/* Markdown content */}
-        <div
-          className="prose-playbook text-zinc-300 leading-relaxed"
-          dangerouslySetInnerHTML={{ __html: markdownToHtml(step.content) }}
-        />
+        {/* Content */}
+        <div className="prose-playbook text-zinc-300 leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: markdownToHtml(step.content) }} />
 
-        {/* Code snippet (if practice step) */}
+        {/* Prompt to copy */}
         {step.code_snippet && (
-          <div className="mt-8 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-            <h4 className="text-emerald-400 font-semibold mb-2">Prompt para colar no Claude Code:</h4>
-            <div className="bg-zinc-900 rounded-lg p-4 text-sm text-zinc-300 font-mono whitespace-pre-wrap">
-              {step.code_snippet}
+          <div className="mt-8 rounded-xl border-2 border-emerald-500/30 bg-emerald-500/5 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-emerald-400 font-bold">Prompt para colar no Claude Code:</h4>
+              <button onClick={copySnippet}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  promptCopied
+                    ? 'bg-emerald-500 text-black'
+                    : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                }`}>
+                {promptCopied ? 'Copiado!' : 'Copiar'}
+              </button>
             </div>
-            <button
-              onClick={() => navigator.clipboard.writeText(step.code_snippet)}
-              className="mt-3 text-sm text-emerald-400 hover:text-emerald-300"
-            >
-              Copiar prompt
-            </button>
+            <pre className="bg-zinc-950 rounded-lg p-4 text-sm text-zinc-300 font-mono whitespace-pre-wrap overflow-x-auto max-h-96 overflow-y-auto">
+              {step.code_snippet}
+            </pre>
           </div>
         )}
 
         {/* Navigation */}
         <div className="flex items-center justify-between mt-12 pt-6 border-t border-zinc-800">
-          <button
-            onClick={onPrev}
-            disabled={stepIndex === 0}
-            className="px-4 py-2 text-sm text-zinc-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          >
+          <button onClick={onPrev} disabled={stepIndex === 0}
+            className="px-4 py-2 text-sm text-zinc-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed">
             ← Anterior
           </button>
-
           <div className="flex gap-3">
-            {!isCompleted && phone && (
-              <button
-                onClick={handleComplete}
-                className="px-5 py-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg hover:bg-emerald-500/30 text-sm"
-              >
-                Marcar como concluída
+            {!step.is_completed && phone && (
+              <button onClick={handleComplete}
+                className="px-5 py-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg hover:bg-emerald-500/30 text-sm">
+                Marcar concluída
               </button>
             )}
-            {isCompleted && (
-              <span className="px-5 py-2 text-emerald-400 text-sm flex items-center gap-1">
-                Concluída
-              </span>
-            )}
+            {step.is_completed && <span className="text-emerald-400 text-sm">✓ Concluída</span>}
           </div>
-
-          <button
-            onClick={onNext}
-            disabled={stepIndex === totalSteps - 1}
-            className="px-4 py-2 text-sm bg-emerald-500 text-black rounded-lg font-medium hover:bg-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
+          <button onClick={onNext} disabled={stepIndex === totalSteps - 1}
+            className="px-4 py-2 text-sm bg-emerald-500 text-black rounded-lg font-medium hover:bg-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed">
             Próxima →
           </button>
         </div>
@@ -361,181 +513,63 @@ function StepView({ module, step, stepIndex, totalSteps, onNext, onPrev, onCompl
 }
 
 
-// ── Module View (lista de aulas) ─────────────────────
-
-function ModuleView({ module, onSelectStep, onBack, phone }) {
-  const completedCount = module.steps.filter(s => s.is_completed).length
-
-  return (
-    <div className="min-h-screen bg-[#090b10]">
-      <div className="max-w-3xl mx-auto px-6 py-8">
-        <button onClick={onBack} className="text-zinc-500 hover:text-white text-sm mb-6 flex items-center gap-1">
-          ← Voltar aos módulos
-        </button>
-
-        <div className="flex items-start gap-4 mb-8">
-          <div className="text-4xl">{module.icon}</div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">{module.title}</h1>
-            <p className="text-zinc-500 mt-1">{module.description}</p>
-            {phone && (
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden max-w-xs">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full transition-all"
-                    style={{ width: `${module.steps.length ? (completedCount / module.steps.length) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-xs text-zinc-600">{completedCount}/{module.steps.length}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {module.steps.map((step, i) => (
-            <button
-              key={step.id}
-              onClick={() => onSelectStep(i)}
-              className="w-full text-left flex items-center gap-4 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all"
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                step.is_completed
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : 'bg-zinc-800 text-zinc-500'
-              }`}>
-                {step.is_completed ? '✓' : i + 1}
-              </div>
-              <div className="flex-1">
-                <div className="text-white text-sm font-medium">{step.title}</div>
-                <div className="flex gap-3 mt-1 text-xs text-zinc-600">
-                  <span>{step.step_type === 'theory' ? '📖 Teoria' : step.step_type === 'practice' ? '🛠️ Prática' : step.step_type === 'code' ? '💻 Código' : '❓ Quiz'}</span>
-                  {step.duration_min && <span>{step.duration_min} min</span>}
-                </div>
-              </div>
-              <span className="text-zinc-700">→</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-// ── Main Component ───────────────────────────────────
-
+// ── Main Component ───────────────────────────
 export default function PlaybookPlatform() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [modules, setModules] = useState([])
   const [currentModule, setCurrentModule] = useState(null)
   const [currentStepIndex, setCurrentStepIndex] = useState(-1)
-  const [showEnroll, setShowEnroll] = useState(false)
-  const [phone, setPhone] = useState(() => localStorage.getItem('playbook_phone') || '')
+  const [phone] = useState(() => localStorage.getItem('playbook_phone') || '')
   const [loading, setLoading] = useState(true)
 
   const activeSlug = searchParams.get('m')
   const activeStep = parseInt(searchParams.get('s') || '-1')
 
-  // Load modules
   useEffect(() => {
     fetch(`${API}/api/playbook/modules`)
-      .then(r => r.json())
-      .then(setModules)
-      .catch(() => {})
+      .then(r => r.json()).then(setModules).catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  // Load module detail when slug changes
   useEffect(() => {
     if (!activeSlug) { setCurrentModule(null); return }
     fetch(`${API}/api/playbook/modules/${activeSlug}${phone ? `?phone=${phone}` : ''}`)
-      .then(r => r.json())
-      .then(data => {
+      .then(r => r.json()).then(data => {
         setCurrentModule(data)
         if (activeStep >= 0) setCurrentStepIndex(activeStep)
-      })
-      .catch(() => {})
+      }).catch(() => {})
   }, [activeSlug, phone])
 
   const navigateToModule = useCallback((slug) => {
-    setSearchParams({ m: slug })
-    setCurrentStepIndex(-1)
+    setSearchParams({ m: slug }); setCurrentStepIndex(-1)
   }, [setSearchParams])
 
   const navigateToStep = useCallback((index) => {
-    setCurrentStepIndex(index)
-    setSearchParams({ m: activeSlug, s: String(index) })
+    setCurrentStepIndex(index); setSearchParams({ m: activeSlug, s: String(index) })
   }, [activeSlug, setSearchParams])
 
   const navigateHome = useCallback(() => {
-    setSearchParams({})
-    setCurrentModule(null)
-    setCurrentStepIndex(-1)
+    setSearchParams({}); setCurrentModule(null); setCurrentStepIndex(-1)
   }, [setSearchParams])
 
   const handleComplete = (stepId) => {
     if (!currentModule) return
-    setCurrentModule(prev => ({
-      ...prev,
-      steps: prev.steps.map(s => s.id === stepId ? { ...s, is_completed: true } : s)
-    }))
+    setCurrentModule(prev => ({ ...prev, steps: prev.steps.map(s => s.id === stepId ? { ...s, is_completed: true } : s) }))
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#090b10] flex items-center justify-center">
-        <div className="text-zinc-500">Carregando...</div>
-      </div>
-    )
-  }
+  if (loading) return <div className="min-h-screen bg-[#090b10] flex items-center justify-center"><div className="text-zinc-500">Carregando...</div></div>
 
-  // Step view
   if (currentModule && currentStepIndex >= 0 && currentModule.steps[currentStepIndex]) {
-    return (
-      <StepView
-        module={currentModule}
-        step={currentModule.steps[currentStepIndex]}
-        stepIndex={currentStepIndex}
-        totalSteps={currentModule.steps.length}
-        onNext={() => navigateToStep(currentStepIndex + 1)}
-        onPrev={() => navigateToStep(currentStepIndex - 1)}
-        onComplete={handleComplete}
-        onBack={() => { setCurrentStepIndex(-1); setSearchParams({ m: activeSlug }) }}
-        phone={phone}
-      />
-    )
+    return <StepView module={currentModule} step={currentModule.steps[currentStepIndex]}
+      stepIndex={currentStepIndex} totalSteps={currentModule.steps.length}
+      onNext={() => navigateToStep(currentStepIndex + 1)} onPrev={() => navigateToStep(currentStepIndex - 1)}
+      onComplete={handleComplete} onBack={() => { setCurrentStepIndex(-1); setSearchParams({ m: activeSlug }) }}
+      phone={phone} />
   }
 
-  // Module view
   if (currentModule) {
-    return (
-      <ModuleView
-        module={currentModule}
-        onSelectStep={navigateToStep}
-        onBack={navigateHome}
-        phone={phone}
-      />
-    )
+    return <ModuleView module={currentModule} onSelectStep={navigateToStep} onBack={navigateHome} phone={phone} />
   }
 
-  // Landing
-  return (
-    <>
-      <Landing
-        modules={modules}
-        onStart={() => phone ? null : setShowEnroll(true)}
-        onSelectModule={navigateToModule}
-      />
-      {showEnroll && (
-        <EnrollModal
-          onClose={() => setShowEnroll(false)}
-          onEnroll={(data) => {
-            setPhone(data.id ? localStorage.getItem('playbook_phone') : '')
-            setShowEnroll(false)
-          }}
-        />
-      )}
-    </>
-  )
+  return <ShowcaseLanding modules={modules} onSelectModule={navigateToModule} />
 }
