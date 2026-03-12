@@ -34,9 +34,36 @@ from app.services.transcriber import describe_image, extract_document_text, tran
 # Jarbas AI Agent endpoint (Vercel AI SDK)
 JARBAS_AI_AGENT_URL = settings.JARBAS_AI_AGENT_URL
 
+# Forward webhooks to external services
+WEBHOOK_FORWARDS = [
+    {
+        "name": "LicitaAI",
+        "url": "https://licitai.mbest.site/api/webhook/whatsapp-leads",
+        "enabled": True,
+    },
+]
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _forward_webhook_to_externals(payload: dict):
+    """Forward Evolution webhook payload to external services in background."""
+    import httpx
+
+    for fwd in WEBHOOK_FORWARDS:
+        if not fwd.get("enabled"):
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(fwd["url"], json=payload)
+                logger.info(
+                    "[WEBHOOK-FWD] %s -> %s (status=%s)",
+                    fwd["name"], fwd["url"], resp.status_code,
+                )
+        except Exception as exc:
+            logger.warning("[WEBHOOK-FWD] %s failed: %s", fwd["name"], exc)
 
 
 # Map Evolution message types to our simplified types
@@ -354,6 +381,9 @@ async def evolution_webhook(
     Only processes 'messages.upsert' events.
     """
     payload = await request.json()
+
+    # Forward to external services (non-blocking background task)
+    background_tasks.add_task(_forward_webhook_to_externals, payload)
 
     # Evolution sends event type in the payload
     event = payload.get("event")
