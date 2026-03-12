@@ -98,6 +98,7 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
   const [teleprompter, setTeleprompter] = useState(false)
   const [teleSpeed, setTeleSpeed] = useState(2) // pixels per frame tick
   const [telePaused, setTelePaused] = useState(true)
+  const [editingRoteiro, setEditingRoteiro] = useState(video.roteiro || {})
   const videoFileRef = useRef()
   const teleRef = useRef()
   const teleScrollRef = useRef(null)
@@ -348,6 +349,56 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
             </div>
           </Section>
         )}
+
+        {/* ═══ 3.5 EDITAR ROTEIRO ═══ */}
+        <Section title="Editar Roteiro" subtitle="Preencha os 3 atos do video (ou deixe em branco para IA gerar)" accent="indigo" num="3.5">
+          <div className="space-y-3">
+            {['Problema', 'Execução', 'CTA'].map((label, i) => (
+              <div key={label}>
+                <label className="text-xs font-semibold text-zinc-300 mb-1 block">
+                  {i + 1}. {label}
+                  {label === 'Problema' && <span className="text-zinc-600 ml-1">(0:00 - 0:30)</span>}
+                  {label === 'Execução' && <span className="text-zinc-600 ml-1">(0:30 - 15:00+)</span>}
+                  {label === 'CTA' && <span className="text-zinc-600 ml-1">(Final)</span>}
+                </label>
+                <textarea
+                  value={editingRoteiro?.[label] || editingRoteiro?.[`${i+1}-${label}`] || ''}
+                  placeholder={`Descreva o que acontece nesta parte...`}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none resize-none"
+                  rows="3"
+                  onChange={(e) => {
+                    const updated = { ...editingRoteiro || {} }
+                    updated[label] = e.target.value
+                    setEditingRoteiro(updated)
+                  }}
+                />
+              </div>
+            ))}
+            <button
+              onClick={async () => {
+                const form = new FormData()
+                form.append('roteiro', JSON.stringify(editingRoteiro || {}))
+                try {
+                  const res = await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, {
+                    method: 'PATCH',
+                    body: form
+                  })
+                  const data = await res.json()
+                  if (data.ok) {
+                    onStatusChange(index, data.video)
+                    alert('Roteiro salvo com sucesso!')
+                  }
+                } catch (e) {
+                  console.error(e)
+                  alert('Erro ao salvar roteiro')
+                }
+              }}
+              className="mt-2 w-full px-3 py-2 bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 rounded-lg text-sm font-semibold transition-colors"
+            >
+              💾 Salvar Roteiro
+            </button>
+          </div>
+        </Section>
 
         {/* ═══ 4. ROTEIRO - ESTRUTURA DO VIDEO ═══ */}
         {video.roteiro && Object.keys(video.roteiro).length > 0 && (

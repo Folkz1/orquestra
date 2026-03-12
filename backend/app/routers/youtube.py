@@ -281,10 +281,11 @@ async def update_video(
     status: Optional[str] = Form(None),
     thumbnail_prompts_ptbr: Optional[str] = Form(None),
     youtube_video_id: Optional[str] = Form(None),
+    roteiro: Optional[str] = Form(None),
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a video in the latest briefing (choose title, upload thumbnail, set status)."""
+    """Update a video in the latest briefing (choose title, upload thumbnail, set status, update roteiro)."""
     stmt = (
         select(MemoryEmbedding)
         .where(MemoryEmbedding.source_type == "youtube_briefing")
@@ -321,6 +322,13 @@ async def update_video(
         except (ValueError, TypeError):
             pass
 
+    if roteiro is not None:
+        import json as _json
+        try:
+            video["roteiro"] = _json.loads(roteiro)
+        except (ValueError, TypeError):
+            pass
+
     # Handle thumbnail upload - store as base64 in JSONB (persists across deploys)
     if thumbnail:
         import base64
@@ -348,7 +356,7 @@ async def update_video(
     flag_modified(mem, "metadata_")
     await db.flush()
 
-    logger.info("[YOUTUBE] Updated video %d: title=%s, status=%s", video_index, chosen_title, status)
+    logger.info("[YOUTUBE] Updated video %d: title=%s, status=%s, roteiro=%s", video_index, chosen_title, status, "set" if roteiro else "unchanged")
     return {"ok": True, "video": video}
 
 
