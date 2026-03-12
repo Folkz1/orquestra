@@ -129,6 +129,9 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/api/proposals/public/")
         or path.startswith("/api/credentials/portal/")
         or path.startswith("/api/client-portal/portal/")
+        or path.startswith("/api/playbook/modules")
+        or path.startswith("/api/playbook/enroll")
+        or path.startswith("/api/playbook/progress")
     ):
         return await call_next(request)
 
