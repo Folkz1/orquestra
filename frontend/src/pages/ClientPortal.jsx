@@ -69,6 +69,22 @@ function getFeedbackLabel(type) {
   return FEEDBACK_TYPES.find((item) => item.key === type)?.label || 'Feedback'
 }
 
+function hoursSince(dateStr) {
+  if (!dateStr) return null
+  const diff = Date.now() - new Date(dateStr).getTime()
+  return Math.max(0, Math.floor(diff / 3600000))
+}
+
+function daysSince(dateStr) {
+  if (!dateStr) return null
+  const diff = Date.now() - new Date(dateStr).getTime()
+  return Math.max(0, Math.floor(diff / 86400000))
+}
+
+function formatPercent(value) {
+  return `${Math.round(value || 0)}%`
+}
+
 function MetricCard({ label, value, note, tone = 'zinc' }) {
   const tones = {
     zinc: 'border-zinc-800 bg-zinc-900/80',
@@ -112,6 +128,28 @@ function FeedbackBadge({ status, type }) {
         : 'Sem checkpoint'
 
   return <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${tone}`}>{label}</span>
+}
+
+function AnalyticsBar({ label, value, total, tone = 'sky' }) {
+  const width = total > 0 ? `${Math.max(8, Math.round((value / total) * 100))}%` : '0%'
+  const tones = {
+    sky: 'from-sky-400/80 to-cyan-300/80',
+    emerald: 'from-emerald-400/80 to-teal-300/80',
+    amber: 'from-amber-300/80 to-orange-300/80',
+    rose: 'from-rose-400/80 to-red-300/80',
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-zinc-300">{label}</span>
+        <span className="text-zinc-500">{value}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+        <div className={`h-full rounded-full bg-gradient-to-r ${tones[tone] || tones.sky}`} style={{ width }} />
+      </div>
+    </div>
+  )
 }
 
 export default function ClientPortal() {
@@ -304,6 +342,75 @@ export default function ClientPortal() {
     return { total: links.length, active, pending, totalViews }
   }, [links])
 
+  const analytics = useMemo(() => {
+    const total = links.length
+    const active = links.filter((link) => link.is_active)
+    const viewed = links.filter((link) => (link.view_count || 0) > 0)
+    const neverViewed = links.filter((link) => (link.view_count || 0) === 0)
+    const expired = links.filter((link) => link.expires_at && new Date(link.expires_at) < new Date())
+    const pending = links.filter((link) => link.feedback_status === 'requested')
+    const completed = links.filter((link) => link.feedback_status === 'completed')
+    const withPhone = links.filter((link) => Boolean(link.contact_phone))
+    const sent = links.filter((link) => Boolean(link.feedback_sent_at))
+    const stale = links.filter((link) => {
+      const lastSeenHours = hoursSince(link.last_viewed_at)
+      return link.is_active && lastSeenHours !== null && lastSeenHours >= 72
+    })
+    const blind = links.filter((link) => link.is_active && !link.last_viewed_at && daysSince(link.created_at) >= 3)
+    const nearExpiry = links.filter((link) => {
+      if (!link.expires_at) return false
+      const diff = new Date(link.expires_at).getTime() - Date.now()
+      return diff > 0 && diff <= 7 * 86400000
+    })
+    const avgViews = total ? (links.reduce((sum, link) => sum + (link.view_count || 0), 0) / total) : 0
+    const activationRate = total ? (active.length / total) * 100 : 0
+    const engagementRate = total ? (viewed.length / total) * 100 : 0
+    const feedbackCloseRate = pending.length + completed.length > 0
+      ? (completed.length / (pending.length + completed.length)) * 100
+      : 0
+    const notificationCoverage = total ? (withPhone.length / total) * 100 : 0
+    const topViewed = [...links]
+      .filter((link) => (link.view_count || 0) > 0)
+      .sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
+      .slice(0, 5)
+    const attention = [...links]
+      .filter((link) => link.feedback_status === 'requested' || blind.includes(link) || stale.includes(link) || !link.contact_phone)
+      .sort((a, b) => {
+        const aScore = (a.feedback_status === 'requested' ? 3 : 0) + (!a.contact_phone ? 2 : 0) + ((a.view_count || 0) === 0 ? 1 : 0)
+        const bScore = (b.feedback_status === 'requested' ? 3 : 0) + (!b.contact_phone ? 2 : 0) + ((b.view_count || 0) === 0 ? 1 : 0)
+        return bScore - aScore
+      })
+      .slice(0, 5)
+    const sectionCoverage = SECTION_OPTIONS.map((section) => ({
+      key: section.key,
+      label: section.label,
+      value: links.filter((link) => (link.visible_sections || []).includes(section.key)).length,
+    }))
+
+    return {
+      total,
+      active: active.length,
+      viewed: viewed.length,
+      neverViewed: neverViewed.length,
+      expired: expired.length,
+      pending: pending.length,
+      completed: completed.length,
+      sent: sent.length,
+      withPhone: withPhone.length,
+      stale: stale.length,
+      blind: blind.length,
+      nearExpiry: nearExpiry.length,
+      avgViews,
+      activationRate,
+      engagementRate,
+      feedbackCloseRate,
+      notificationCoverage,
+      topViewed,
+      attention,
+      sectionCoverage,
+    }
+  }, [links])
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -344,6 +451,131 @@ export default function ClientPortal() {
           <MetricCard label="Ativos" value={stats.active} note="Portais atualmente acessiveis" tone="emerald" />
           <MetricCard label="Pendentes" value={stats.pending} note="Clientes aguardando feedback ou teste" tone="amber" />
           <MetricCard label="Views" value={stats.totalViews} note="Visualizacoes somadas dos links" tone="sky" />
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.15fr,0.85fr]">
+        <div className="rounded-[24px] border border-zinc-800 bg-zinc-950/80 p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Analytics</p>
+              <h2 className="mt-2 text-xl font-semibold text-zinc-50">Funnel e saude operacional</h2>
+            </div>
+            <div className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">
+              media {analytics.avgViews.toFixed(1)} views por portal
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-4">
+            <MetricCard label="Engajamento" value={formatPercent(analytics.engagementRate)} note={`${analytics.viewed} de ${analytics.total || 0} ja abriram`} tone="sky" />
+            <MetricCard label="Cobertura WA" value={formatPercent(analytics.notificationCoverage)} note={`${analytics.withPhone} links com telefone`} tone="emerald" />
+            <MetricCard label="Fechamento" value={formatPercent(analytics.feedbackCloseRate)} note={`${analytics.completed} checkpoints concluidos`} tone="amber" />
+            <MetricCard label="Ativacao" value={formatPercent(analytics.activationRate)} note={`${analytics.active} links ativos`} />
+          </div>
+
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
+              <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Funnel</p>
+              <div className="mt-4 space-y-4">
+                <AnalyticsBar label="Portais criados" value={analytics.total} total={analytics.total || 1} />
+                <AnalyticsBar label="Portais ativos" value={analytics.active} total={analytics.total || 1} tone="emerald" />
+                <AnalyticsBar label="Portais visualizados" value={analytics.viewed} total={analytics.total || 1} />
+                <AnalyticsBar label="Checkpoints enviados" value={analytics.sent} total={analytics.total || 1} tone="amber" />
+                <AnalyticsBar label="Checkpoints concluidos" value={analytics.completed} total={analytics.total || 1} tone="rose" />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
+              <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Saude</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+                  <p className="text-xs text-zinc-500">Nunca abriram</p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-50">{analytics.neverViewed}</p>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+                  <p className="text-xs text-zinc-500">Frios 72h+</p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-50">{analytics.stale}</p>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+                  <p className="text-xs text-zinc-500">Cegos 3d+</p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-50">{analytics.blind}</p>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+                  <p className="text-xs text-zinc-500">Expiram em 7d</p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-50">{analytics.nearExpiry}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-950/80 p-5">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Ranking</p>
+            <h2 className="mt-2 text-xl font-semibold text-zinc-50">Portais mais vistos</h2>
+            <div className="mt-4 space-y-3">
+              {analytics.topViewed.length === 0 ? (
+                <p className="rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 py-4 text-sm text-zinc-500">Ainda nao ha links com visualizacao registrada.</p>
+              ) : (
+                analytics.topViewed.map((link, index) => (
+                  <div key={link.id} className="rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-100">{index + 1}. {link.client_name}</p>
+                        <p className="mt-1 text-xs text-zinc-500">{link.project_name || 'Sem projeto'} · ultimo acesso {link.last_viewed_at ? `${timeAgo(link.last_viewed_at)} atras` : 'nunca'}</p>
+                      </div>
+                      <div className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1 text-xs text-sky-100">
+                        {link.view_count || 0} views
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-950/80 p-5">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Atencao</p>
+            <h2 className="mt-2 text-xl font-semibold text-zinc-50">Portais que pedem acao</h2>
+            <div className="mt-4 space-y-3">
+              {analytics.attention.length === 0 ? (
+                <p className="rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 py-4 text-sm text-zinc-500">Nenhum portal com sinal forte de risco no momento.</p>
+              ) : (
+                analytics.attention.map((link) => (
+                  <div key={link.id} className="rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-100">{link.client_name}</p>
+                        <p className="mt-1 text-xs text-zinc-500">{link.project_name || 'Sem projeto'}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {link.feedback_status === 'requested' && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-200">feedback pendente</span>}
+                          {!link.contact_phone && <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11px] text-red-200">sem telefone</span>}
+                          {(link.view_count || 0) === 0 && <span className="rounded-full border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[11px] text-zinc-300">sem views</span>}
+                          {hoursSince(link.last_viewed_at) >= 72 && <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-200">frio 72h+</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setExpanded((current) => current === link.id ? null : link.id)}
+                        className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-300"
+                      >
+                        Abrir
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-950/80 p-5">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Cobertura</p>
+            <h2 className="mt-2 text-xl font-semibold text-zinc-50">Secoes liberadas</h2>
+            <div className="mt-4 space-y-4">
+              {analytics.sectionCoverage.map((item) => (
+                <AnalyticsBar key={item.key} label={item.label} value={item.value} total={analytics.total || 1} tone="emerald" />
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
