@@ -94,32 +94,28 @@ async def list_modules(
     db: AsyncSession = Depends(get_db),
 ):
     """List all published modules with step counts."""
-    try:
-        query = """
-            SELECT m.id, m.slug, m.title, m.description, m.tier, m.icon, m.order_num,
-                   COUNT(s.id) AS step_count,
-                   COALESCE(SUM(s.duration_min), 0) AS duration_min
-            FROM playbook_modules m
-            LEFT JOIN playbook_steps s ON s.module_id = m.id AND s.is_published = true
-            WHERE m.is_published = true
-        """
-        params = {}
-        if tier:
-            query += " AND m.tier = :tier"
-            params["tier"] = tier
-        query += " GROUP BY m.id ORDER BY m.order_num"
+    query = """
+        SELECT m.id, m.slug, m.title, m.description, m.tier, m.icon, m.order_num,
+               COUNT(s.id) AS step_count,
+               COALESCE(SUM(s.duration_min), 0) AS duration_min
+        FROM playbook_modules m
+        LEFT JOIN playbook_steps s ON s.module_id = m.id AND s.is_published = true
+        WHERE m.is_published = true
+    """
+    params = {}
+    if tier:
+        query += " AND m.tier = :tier"
+        params["tier"] = tier
+    query += " GROUP BY m.id ORDER BY m.order_num"
 
-        result = await db.execute(text(query), params)
-        rows = result.mappings().all()
-        return [ModuleOut(
-            id=str(r["id"]), slug=r["slug"], title=r["title"],
-            description=r["description"], tier=r["tier"], icon=r["icon"],
-            order_num=r["order_num"], step_count=int(r["step_count"]),
-            duration_min=int(r["duration_min"])
-        ) for r in rows]
-    except Exception as e:
-        import traceback
-        return {"error": str(e), "traceback": traceback.format_exc()}
+    result = await db.execute(text(query), params)
+    rows = result.mappings().all()
+    return [ModuleOut(
+        id=str(r["id"]), slug=r["slug"], title=r["title"],
+        description=r["description"], tier=r["tier"], icon=r["icon"],
+        order_num=r["order_num"], step_count=int(r["step_count"]),
+        duration_min=int(r["duration_min"])
+    ) for r in rows]
 
 
 @router.get("/modules/{slug}")
