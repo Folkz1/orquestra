@@ -235,7 +235,7 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-zinc-950/98 overflow-y-auto">
+    <div className="fixed inset-0 z-[9999] bg-zinc-950/98 overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Top bar */}
         <div className="flex items-center justify-between mb-6 sticky top-0 bg-zinc-950/95 backdrop-blur-sm py-3 -mx-4 px-4 z-10 border-b border-zinc-800/50">
