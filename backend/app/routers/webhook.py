@@ -15,6 +15,8 @@ from app.database import async_session, get_db
 from app.models import AssistantDraft, Contact, Message, Project
 from app.services.media import download_media_from_evolution, save_media
 from app.services.memory import store_memory
+from app.services.chat_state import update_contact_chat_state
+from app.services.realtime import broadcast_message_event
 from app.services.assistant import (
     generate_reply_draft,
     generate_voice_script,
@@ -645,6 +647,7 @@ async def evolution_webhook(
         timestamp=ts,
     )
     db.add(msg)
+    update_contact_chat_state(contact, msg, ts)
     await db.flush()
     await db.refresh(msg)
 
@@ -677,5 +680,10 @@ async def evolution_webhook(
             content,
             contact_display,
         )
+
+    project_name = None
+    if project_id:
+        project_name = await db.scalar(select(Project.name).where(Project.id == project_id))
+    await broadcast_message_event(msg, contact, project_name)
 
     return {"status": "ok"}

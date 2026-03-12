@@ -323,13 +323,16 @@ def _portal_html(client_name: str, project_name: str, fields: list, token: str, 
         ftype = f.get("type", "password")
         input_type = "password" if ftype == "password" else "text"
         placeholder = f.get("placeholder", "")
+        toggle_button = ""
+        if ftype == "password":
+            toggle_button = "<button type='button' class='toggle-btn' onclick='toggleVisibility(this)'>👁</button>"
         fields_html += f"""
         <div class="field">
             <label for="{f['name']}">{f['label']}</label>
             <div class="input-wrap">
                 <input type="{input_type}" id="{f['name']}" name="{f['name']}"
                        placeholder="{placeholder}" autocomplete="off" spellcheck="false">
-                {"<button type='button' class='toggle-btn' onclick=\"toggleVisibility(this)\">👁</button>" if ftype == "password" else ""}
+                {toggle_button}
             </div>
         </div>"""
 

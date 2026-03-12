@@ -83,6 +83,9 @@ class Contact(Base):
     company = Column(String(255), nullable=True)
     email = Column(String(255), nullable=True)
     engagement_score = Column(Integer, server_default="0", nullable=False)
+    unread_count = Column(Integer, server_default="0", nullable=False)
+    last_message_preview = Column(Text, nullable=True)
+    last_message_at = Column(TIMESTAMP(timezone=True), nullable=True)
     last_contacted_at = Column(TIMESTAMP(timezone=True), nullable=True)
     next_action = Column(Text, nullable=True)
     next_action_date = Column(Date, nullable=True)
@@ -160,6 +163,35 @@ class Message(Base):
 
     def __repr__(self):
         return f"<Message {self.direction} {self.message_type}>"
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    last_seen_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self):
+        return f"<PushSubscription {self.id}>"
 
 
 class Recording(Base):

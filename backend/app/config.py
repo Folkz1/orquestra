@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     EVOLUTION_API_KEY: str = ""
     EVOLUTION_INSTANCE: str = ""
     EVOLUTION_INSTANCES: str = ""  # JSON map: {"instance_name": "apikey", ...}
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:diego@guyfolkz.com"
 
     # Assistant (owner-controlled WhatsApp copilot)
     OWNER_WHATSAPP: str = ""  # e.g. 5551999998888

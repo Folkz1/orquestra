@@ -81,6 +81,8 @@ class ContactResponse(ContactBase):
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+    unread_count: int = 0
+    last_message_preview: Optional[str] = None
     last_message_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -188,6 +190,84 @@ class ProjectOptionResponse(BaseModel):
     name: str
     status: str = "active"
     color: str = "#3b82f6"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConversationListItem(BaseModel):
+    contact_id: UUID
+    contact_name: str
+    contact_phone: str
+    profile_pic_url: Optional[str] = None
+    project_id: Optional[UUID] = None
+    project_name: Optional[str] = None
+    pipeline_stage: str = "lead"
+    unread_count: int = 0
+    message_count: int = 0
+    last_message_preview: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+
+
+class MessageSendRequest(BaseModel):
+    contact_id: Optional[UUID] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
+class MarkConversationReadResponse(BaseModel):
+    contact_id: UUID
+    unread_count: int = 0
+
+
+class ProposalMini(BaseModel):
+    id: UUID
+    title: str
+    status: str
+    total_value: Optional[str] = None
+    updated_at: datetime
+
+
+class TaskMini(BaseModel):
+    id: UUID
+    title: str
+    status: str
+    priority: str
+    updated_at: datetime
+
+
+class DeliveryReportMini(BaseModel):
+    id: UUID
+    proposal_id: UUID
+    status: str
+    generated_at: datetime
+    comparison_analysis: Optional[str] = None
+
+
+class ChatContextResponse(BaseModel):
+    contact: ContactResponse
+    project_name: Optional[str] = None
+    proposals: list[ProposalMini] = Field(default_factory=list)
+    tasks: list[TaskMini] = Field(default_factory=list)
+    delivery_reports: list[DeliveryReportMini] = Field(default_factory=list)
+
+
+class ReplySuggestionResponse(BaseModel):
+    suggestion: str
+
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+    user_agent: Optional[str] = None
+
+
+class PushSubscriptionResponse(BaseModel):
+    id: UUID
+    endpoint: str
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

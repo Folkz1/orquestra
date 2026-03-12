@@ -1,20 +1,21 @@
 {
   "name": "Orquestra",
   "short_name": "Orquestra",
-  "description": "Central de gravacoes e mensagens",
-  "start_url": "/",
+  "description": "Chat WhatsApp PWA da Orquestra com contexto inteligente",
+  "start_url": "/chat",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
+  "background_color": "#090b10",
   "theme_color": "#22c55e",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230a0a0a'/><text x='50' y='55' text-anchor='middle' dominant-baseline='middle' font-size='60'>🎵</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23090b10'/><circle cx='50' cy='50' r='34' fill='%2322c55e'/><path d='M34 31h32a7 7 0 0 1 7 7v20a7 7 0 0 1-7 7H52l-12 10 3-10H34a7 7 0 0 1-7-7V38a7 7 0 0 1 7-7Z' fill='%23090b10'/></svg>",
       "sizes": "192x192",
       "type": "image/svg+xml"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230a0a0a'/><text x='50' y='55' text-anchor='middle' dominant-baseline='middle' font-size='60'>🎵</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23090b10'/><circle cx='50' cy='50' r='34' fill='%2322c55e'/><path d='M34 31h32a7 7 0 0 1 7 7v20a7 7 0 0 1-7 7H52l-12 10 3-10H34a7 7 0 0 1-7-7V38a7 7 0 0 1 7-7Z' fill='%23090b10'/></svg>",
       "sizes": "512x512",
       "type": "image/svg+xml"
     }

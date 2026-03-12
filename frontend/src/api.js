@@ -114,6 +114,53 @@ export function getConversation(contactId) {
   return request(`/api/messages/conversation/${contactId}`);
 }
 
+export function getConversations(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, String(value));
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/messages/conversations${qs ? '?' + qs : ''}`);
+}
+
+export function getConversationContext(contactId) {
+  return request(`/api/messages/conversation/${contactId}/context`);
+}
+
+export function markConversationRead(contactId) {
+  return request(`/api/messages/read/${contactId}`, {
+    method: 'POST',
+  });
+}
+
+export function sendChatMessage(data) {
+  return request('/api/messages/send', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function getReplySuggestion(contactId) {
+  return request(`/api/messages/conversation/${contactId}/reply-suggestion`, {
+    method: 'POST',
+  });
+}
+
+export function createPushSubscription(data) {
+  return request('/api/realtime/push-subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deletePushSubscription(endpoint) {
+  return request(`/api/realtime/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}`, {
+    method: 'DELETE',
+  });
+}
+
 // Recordings
 export function uploadRecording(file, title, projectId) {
   const formData = new FormData();

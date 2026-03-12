@@ -1,10 +1,6 @@
-const CACHE_NAME = 'orquestra-v2';
-const APP_SHELL = [
-  '/',
-  '/index.html',
-];
+const CACHE_NAME = 'orquestra-v3';
+const APP_SHELL = ['/', '/chat', '/index.html'];
 
-// Install: cache app shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
@@ -12,7 +8,6 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate: clean old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) =>
@@ -26,32 +21,57 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first for app shell, network-first for API
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-http(s) requests (chrome-extension://, etc)
   if (!url.protocol.startsWith('http')) return;
 
-  // API requests: network only
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // App shell: network first, fallback to cache
   event.respondWith(
-    fetch(event.request).then((response) => {
-      if (response.ok) {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-      }
-      return response;
-    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then((cached) => cached || caches.match('/index.html'))
+      )
   );
 });
 
-// IndexedDB for offline audio queue
+self.addEventListener('push', (event) => {
+  const payload = event.data?.json() || {};
+  event.waitUntil(
+    self.registration.showNotification(payload.title || 'Orquestra', {
+      body: payload.body || 'Nova atualizacao no chat',
+      data: payload.data || { url: '/chat' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/chat';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const existing = clientList.find((client) => 'focus' in client);
+      if (existing) {
+        existing.navigate(targetUrl);
+        return existing.focus();
+      }
+      return clients.openWindow(targetUrl);
+    })
+  );
+});
+
 const DB_NAME = 'orquestra-offline';
 const DB_VERSION = 1;
 const STORE_NAME = 'pending-uploads';
@@ -70,8 +90,15 @@ function openDB() {
   });
 }
 
-// Listen for messages from the app to queue offline recordings
 self.addEventListener('message', async (event) => {
+  if (event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, body, data } = event.data;
+    await self.registration.showNotification(title || 'Orquestra', {
+      body: body || 'Nova mensagem',
+      data: data || { url: '/chat' },
+    });
+  }
+
   if (event.data.type === 'QUEUE_RECORDING') {
     try {
       const db = await openDB();
