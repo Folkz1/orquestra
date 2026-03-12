@@ -550,7 +550,7 @@ export default function WhatsAppChat({ appMode = false }) {
         </div>
       </section>
 
-      <section className="grid min-h-[calc(100vh-15rem)] gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+      <section className="grid h-[calc(100vh-15rem)] gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px] overflow-hidden">
         <ConversationList
           conversations={conversations}
           loading={loadingList}
