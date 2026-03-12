@@ -602,6 +602,11 @@ class ClientPortalLink(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     token = Column(String(64), unique=True, nullable=False)
     client_name = Column(String(255), nullable=False)
     visible_sections = Column(
@@ -610,6 +615,13 @@ class ClientPortalLink(Base):
         nullable=False,
     )
     welcome_message = Column(Text, nullable=True)
+    feedback_status = Column(String(20), server_default="idle", nullable=False)
+    feedback_type = Column(String(20), server_default="feedback", nullable=False)
+    feedback_title = Column(String(255), nullable=True)
+    feedback_message = Column(Text, nullable=True)
+    feedback_requested_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    feedback_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    feedback_completed_at = Column(TIMESTAMP(timezone=True), nullable=True)
     is_active = Column(Boolean, server_default="true", nullable=False)
     last_viewed_at = Column(TIMESTAMP(timezone=True), nullable=True)
     view_count = Column(Integer, server_default="0", nullable=False)
@@ -617,8 +629,15 @@ class ClientPortalLink(Base):
     created_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     project = relationship("Project", lazy="selectin")
+    contact = relationship("Contact", lazy="selectin")
 
     def __repr__(self):
         return f"<ClientPortalLink {self.client_name} {self.token[:8]}>"

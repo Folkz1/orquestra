@@ -434,9 +434,23 @@ export function createClientPortalLink(data) {
   });
 }
 
+export function bulkCreateActiveClientPortalLinks(data = {}) {
+  return request('/api/client-portal/links/bulk-active', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 export function updateClientPortalLink(id, data) {
   return request(`/api/client-portal/links/${id}`, {
     method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export function requestClientPortalFeedback(id, data) {
+  return request(`/api/client-portal/links/${id}/request-feedback`, {
+    method: 'POST',
     body: JSON.stringify(data),
   });
 }
