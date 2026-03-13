@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { getYouTubeWorkspace, publishYouTubeVideo, scheduleYouTubeVideo, uploadYouTubeVideo } from '../api'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -205,8 +206,8 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
 
   // Teleprompter fullscreen mode
   if (teleprompter) {
-    return (
-      <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
         {/* Controls */}
         <div className="flex items-center justify-between px-6 py-3 bg-zinc-900/80 border-b border-zinc-800">
           <button onClick={() => { setTeleprompter(false); setTelePaused(true) }}
@@ -242,12 +243,13 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
         </div>
         {/* Center line indicator */}
         <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 bg-red-500/30 pointer-events-none" />
-      </div>
+      </div>,
+      document.body
     )
   }
 
-  return (
-    <div className="fixed inset-0 z-[9999] bg-zinc-950/98 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-zinc-950 overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Top bar */}
         <div className="flex items-center justify-between mb-6 sticky top-0 bg-zinc-950/95 backdrop-blur-sm py-3 -mx-4 px-4 z-10 border-b border-zinc-800/50">
@@ -736,7 +738,8 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
 
         <div className="h-12" />
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
