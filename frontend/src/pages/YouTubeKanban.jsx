@@ -98,7 +98,18 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
   const [teleprompter, setTeleprompter] = useState(false)
   const [teleSpeed, setTeleSpeed] = useState(2) // pixels per frame tick
   const [telePaused, setTelePaused] = useState(true)
-  const [editingRoteiro, setEditingRoteiro] = useState(video.roteiro || {})
+  const [editingRoteiro, setEditingRoteiro] = useState(() => {
+    const rot = video.roteiro || {}
+    // Normalize keys: map ASCII variants to Portuguese labels
+    const normalized = {}
+    for (const [k, v] of Object.entries(rot)) {
+      if (/problema/i.test(k) || k === '1') normalized['Problema'] = v
+      else if (/execu/i.test(k) || k === '2') normalized['Execução'] = v
+      else if (/cta/i.test(k) || k === '3') normalized['CTA'] = v
+      else normalized[k] = v
+    }
+    return normalized
+  })
   const videoFileRef = useRef()
   const teleRef = useRef()
   const teleScrollRef = useRef(null)
@@ -169,8 +180,9 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
     return () => window.removeEventListener('keydown', handleKey)
   }, [teleprompter])
 
-  // Build teleprompter text
+  // Build teleprompter text (uses editingRoteiro for live edits)
   function buildTeleprompterText() {
+    const rot = editingRoteiro && Object.keys(editingRoteiro).length > 0 ? editingRoteiro : video.roteiro
     const parts = []
     const title = video.chosen_title || video.title
     parts.push(title.toUpperCase())
@@ -181,9 +193,9 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
       video.pontos_chave.forEach((p, i) => parts.push(`${i + 1}. ${p}`))
       parts.push('')
     }
-    if (video.roteiro && Object.keys(video.roteiro).length > 0) {
+    if (rot && Object.keys(rot).length > 0) {
       parts.push('── ROTEIRO ──')
-      Object.entries(video.roteiro).forEach(([key, val]) => { parts.push(`[${key.toUpperCase()}]`); parts.push(val); parts.push('') })
+      Object.entries(rot).forEach(([key, val]) => { if (val) { parts.push(`[${key.toUpperCase()}]`); parts.push(val); parts.push('') } })
     }
     if (video.dinamica) { parts.push('── DINAMICA ──'); parts.push(video.dinamica); parts.push('') }
     parts.push('── CTA FINAL ──')
@@ -362,7 +374,7 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
                   {label === 'CTA' && <span className="text-zinc-600 ml-1">(Final)</span>}
                 </label>
                 <textarea
-                  value={editingRoteiro?.[label] || editingRoteiro?.[`${i+1}-${label}`] || ''}
+                  value={editingRoteiro?.[label] || editingRoteiro?.[`${i+1}-${label}`] || editingRoteiro?.[label.normalize('NFD').replace(/[\u0300-\u036f]/g, '')] || ''}
                   placeholder={`Descreva o que acontece nesta parte...`}
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none resize-none"
                   rows="3"
@@ -401,10 +413,10 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
         </Section>
 
         {/* ═══ 4. ROTEIRO - ESTRUTURA DO VIDEO ═══ */}
-        {video.roteiro && Object.keys(video.roteiro).length > 0 && (
+        {((editingRoteiro && Object.keys(editingRoteiro).length > 0) || (video.roteiro && Object.keys(video.roteiro).length > 0)) && (
           <Section title="Roteiro - Estrutura Completa" subtitle="Os 3 atos do video com tempos sugeridos" accent="blue" num="4">
             <div className="space-y-3">
-              {Object.entries(video.roteiro).map(([key, val]) => {
+              {Object.entries(editingRoteiro && Object.keys(editingRoteiro).length > 0 ? editingRoteiro : video.roteiro).filter(([, val]) => val).map(([key, val]) => {
                 const isProblema = key.toLowerCase().includes('problema') || key.startsWith('1')
                 const isExecucao = key.toLowerCase().includes('execu') || key.startsWith('2')
                 const isCTA = key.toLowerCase().includes('cta') || key.startsWith('3')
@@ -739,10 +751,12 @@ function Section({ title, subtitle, accent = 'zinc', num, children }) {
   const border = {
     amber: 'border-amber-500/20', green: 'border-green-500/20', blue: 'border-blue-500/20',
     purple: 'border-purple-500/20', cyan: 'border-cyan-500/20', red: 'border-red-500/20', zinc: 'border-zinc-800',
+    indigo: 'border-indigo-500/20',
   }
   const titleColor = {
     amber: 'text-amber-400', green: 'text-green-400', blue: 'text-blue-400',
     purple: 'text-purple-400', cyan: 'text-cyan-400', red: 'text-red-400', zinc: 'text-zinc-400',
+    indigo: 'text-indigo-400',
   }
   return (
     <div className={`bg-zinc-900/60 rounded-xl border ${border[accent]} p-4 mb-4`}>
