@@ -225,12 +225,12 @@ async def search_conversation(
 @router.get("/conversation/{contact_id}", response_model=list[MessageResponse])
 async def get_conversation(
     contact_id: UUID,
-    limit: int = Query(0, ge=0, le=100000),
+    limit: int = Query(80, ge=1, le=100000),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all messages in a conversation, ordered chronologically (oldest first).
+    """Get messages in a conversation, ordered chronologically (oldest first).
 
-    If limit=0 (default), returns ALL messages. Set limit>0 to get only the last N messages.
+    Returns last 80 messages by default for fast loading. Set limit higher if needed.
     """
     stmt = (
         select(Message)
@@ -245,16 +245,14 @@ async def get_conversation(
         )
     )
 
-    # If limit is set, fetch only the latest N messages (for performance on very long conversations)
-    if limit > 0:
-        latest_stmt = (
-            select(Message)
-            .where(Message.contact_id == contact_id)
-            .order_by(Message.timestamp.desc())
-            .limit(limit)
-            .subquery()
-        )
-        stmt = stmt.where(Message.id.in_(select(latest_stmt.c.id)))
+    latest_stmt = (
+        select(Message)
+        .where(Message.contact_id == contact_id)
+        .order_by(Message.timestamp.desc())
+        .limit(limit)
+        .subquery()
+    )
+    stmt = stmt.where(Message.id.in_(select(latest_stmt.c.id)))
 
     # Always order by timestamp ascending (oldest first) - chronological order
     stmt = stmt.order_by(Message.timestamp.asc())
