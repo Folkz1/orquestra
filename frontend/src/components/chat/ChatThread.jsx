@@ -61,8 +61,13 @@ export default function ChatThread({
     const el = scrollRef.current
     if (!el) return
     if (force || wasAtBottomRef.current) {
+      // Double rAF ensures layout is fully computed before scrolling
       requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
+        requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+          }
+        })
       })
     }
   }, [])
@@ -108,7 +113,7 @@ export default function ChatThread({
   }
 
   return (
-    <section className={`flex min-h-0 flex-1 flex-col overflow-hidden border ${shellClass}`}>
+    <section className={`flex min-h-0 flex-1 flex-col overflow-hidden border ${shellClass} h-full`}>
       {showHeader && (
         <div className="flex items-center justify-between gap-4 border-b border-white/8 px-5 py-3">
           <div className="min-w-0">

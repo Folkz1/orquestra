@@ -39,7 +39,8 @@ function AppRoutes({ onLogout }) {
     return <PlaybookPlatform />
   }
 
-  if (location.pathname.startsWith('/app/chat')) {
+  // Chat is ALWAYS fullscreen (no sidebar) — dedicated messaging experience
+  if (location.pathname.startsWith('/chat') || location.pathname.startsWith('/app/chat') || location.pathname.startsWith('/mensagens')) {
     return <WhatsAppChat appMode />
   }
 

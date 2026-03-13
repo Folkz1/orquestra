@@ -298,86 +298,51 @@ export default function WhatsAppChat({ appMode = false }) {
 
   if (appMode) {
     return (
-      <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#06080d]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(94,166,255,0.16),transparent_26%),radial-gradient(circle_at_top_right,rgba(139,212,80,0.12),transparent_20%),linear-gradient(180deg,#06080d_0%,#0a0d14_100%)]" />
+      <div className="relative flex h-screen flex-col overflow-hidden bg-[#06080d]">
+        <header className="relative z-10 flex items-center gap-3 border-b border-white/8 bg-zinc-950/90 px-4 py-2 backdrop-blur">
+          <a
+            href="/"
+            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            Orquestra
+          </a>
 
-        <header className="relative z-10 px-3 pt-3 sm:px-5 sm:pt-5">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 rounded-[28px] border border-white/10 bg-zinc-950/80 px-3 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur">
-            <button
-              type="button"
-              onClick={() => setShowSwitcher(true)}
-              className="btn-secondary px-4 py-2.5 text-sm"
-            >
-              Conversas {unreadTotal > 0 ? `(${unreadTotal})` : ''}
-            </button>
+          <button
+            type="button"
+            onClick={() => setShowSwitcher(true)}
+            className="btn-secondary px-3 py-1.5 text-xs"
+          >
+            Conversas {unreadTotal > 0 ? `(${unreadTotal})` : ''}
+          </button>
 
-            <div className="min-w-0 flex-1">
-              <p className="eyebrow">Chat direto</p>
-              <h1 className="mt-2 truncate text-2xl font-semibold text-white">
-                {activeConversation?.contact_name || 'Abrindo conversa'}
-              </h1>
-              <p className="mt-1 truncate text-sm text-zinc-500">
-                {activeConversation?.project_name || activeConversation?.contact_phone || 'WhatsApp em tempo real'}
-              </p>
-            </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold text-white">
+              {activeConversation?.contact_name || 'Selecione uma conversa'}
+            </h1>
+            <p className="truncate text-xs text-zinc-500">
+              {activeConversation?.project_name || activeConversation?.contact_phone || ''}
+            </p>
+          </div>
 
-            {permission !== 'granted' && (
-              <button
-                type="button"
-                onClick={requestPermission}
-                className="btn-secondary px-4 py-2.5 text-sm"
-              >
-                Ativar alertas
-              </button>
-            )}
-
-            <div className={`rounded-full px-3 py-2 text-xs font-medium ${socketStatus === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
-              {socketStatus === 'open' ? 'online' : 'reconectando'}
-            </div>
+          <div className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${socketStatus === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+            {socketStatus === 'open' ? 'online' : 'reconectando'}
           </div>
         </header>
 
-        <main className="relative z-10 flex-1 px-3 py-3 sm:px-5 sm:py-5">
-          <div className="mx-auto flex h-[calc(100vh-6.9rem)] max-w-6xl flex-col">
-            <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-              <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3">
-                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
-                  {loadingList ? 'sincronizando inbox' : `${conversations.length} conversas`}
-                </span>
-                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
-                  {unreadTotal} nao lidas
-                </span>
-                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
-                  Midias com preview e download
-                </span>
-                {context?.project_name && (
-                  <span className="truncate rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-300">
-                    Projeto: {context.project_name}
-                  </span>
-                )}
-              </div>
-
-              <div className="rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-zinc-400">
-                Atualizacao em tempo real e resposta na mesma tela
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1">
-              <ChatThread
-                conversation={activeConversation}
-                messages={messages}
-                loading={loadingThread}
-                draft={draft}
-                onDraftChange={setDraft}
-                onSend={handleSend}
-                sending={sending}
-                quickReplies={quickReplies}
-                socketStatus={socketStatus}
-                variant="app"
-                showHeader={false}
-              />
-            </div>
-          </div>
+        <main className="relative z-10 min-h-0 flex-1 flex flex-col">
+          <ChatThread
+            conversation={activeConversation}
+            messages={messages}
+            loading={loadingThread}
+            draft={draft}
+            onDraftChange={setDraft}
+            onSend={handleSend}
+            sending={sending}
+            quickReplies={quickReplies}
+            socketStatus={socketStatus}
+            variant="app"
+            showHeader={false}
+          />
         </main>
 
         {showSwitcher && (
