@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getRecordings, getRecording, getProjects } from '../api'
 
 function formatDuration(seconds) {
@@ -285,6 +286,7 @@ function RecordingCard({ recording, onClick }) {
 }
 
 export default function Recordings() {
+  const navigate = useNavigate()
   const [recordings, setRecordings] = useState([])
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -347,12 +349,21 @@ export default function Recordings() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">Gravações</h1>
-        <div className="flex items-center gap-3 text-xs text-zinc-500">
-          <span>{recordings.length} gravações</span>
-          <span className="text-zinc-700">·</span>
-          <span className="text-green-400">{processedCount} processadas</span>
-          <span className="text-zinc-700">·</span>
-          <span>{formatDuration(totalDuration)} total</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 text-xs text-zinc-500">
+            <span>{recordings.length} gravações</span>
+            <span className="text-zinc-700">·</span>
+            <span className="text-green-400">{processedCount} processadas</span>
+            <span className="text-zinc-700">·</span>
+            <span>{formatDuration(totalDuration)} total</span>
+          </div>
+          <button
+            onClick={() => navigate('/gravador')}
+            className="btn-primary text-sm px-4 py-1.5 flex items-center gap-1.5"
+          >
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            Gravar
+          </button>
         </div>
       </div>
 
