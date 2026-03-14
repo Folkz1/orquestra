@@ -998,13 +998,17 @@ export default function YouTubeKanban() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_URL}/api/youtube/briefings/latest`)
+      fetch(`${API_URL}/api/youtube/briefings?full=true&limit=10`)
         .then(res => res.json())
-        .catch(() => ({ briefing: null })),
+        .catch(() => []),
       getYouTubeWorkspace().catch(() => null),
     ])
-      .then(([data, workspaceData]) => {
-        setBriefings(data?.briefing ? [data.briefing] : [])
+      .then(([allBriefings, workspaceData]) => {
+        // Combine all briefings into one list
+        const combined = Array.isArray(allBriefings)
+          ? allBriefings.map(b => b.briefing).filter(Boolean)
+          : []
+        setBriefings(combined)
         if (workspaceData?.status === 'ok') {
           setWorkspace(workspaceData.data || null)
         }

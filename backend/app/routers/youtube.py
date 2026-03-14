@@ -248,9 +248,10 @@ async def get_latest_briefing(db: AsyncSession = Depends(get_db)):
 @router.get("/briefings")
 async def list_briefings(
     limit: int = Query(10, le=50),
+    full: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all YouTube briefings."""
+    """List all YouTube briefings. Use ?full=true for complete video data."""
     stmt = (
         select(MemoryEmbedding)
         .where(MemoryEmbedding.source_type == "youtube_briefing")
@@ -259,6 +260,15 @@ async def list_briefings(
     )
     result = await db.execute(stmt)
     rows = result.scalars().all()
+    if full:
+        return [
+            {
+                "id": str(r.id),
+                "briefing": (r.metadata_ or {}).get("briefing", {}),
+                "created_at": str(r.created_at),
+            }
+            for r in rows
+        ]
     return [
         {
             "id": str(r.id),
