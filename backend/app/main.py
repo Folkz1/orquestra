@@ -132,6 +132,8 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/api/playbook/modules")
         or path.startswith("/api/playbook/enroll")
         or path.startswith("/api/playbook/progress")
+        or path.startswith("/api/social/oauth/")
+        or path == "/api/social/platforms"
     ):
         return await call_next(request)
 
@@ -191,7 +193,7 @@ async def debug_db():
 
 # -- Include Routers --
 
-from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals, scheduled_messages, proactive, credentials, client_portal, delivery_reports, ws, playbook  # noqa: E402
+from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals, scheduled_messages, proactive, credentials, client_portal, delivery_reports, ws, playbook, social_publish  # noqa: E402
 
 app.include_router(webhook.router, prefix="/api/webhook", tags=["Webhook"])
 app.include_router(contacts.router, prefix="/api/contacts", tags=["Contacts"])
@@ -213,3 +215,4 @@ app.include_router(credentials.router, prefix="/api/credentials", tags=["Credent
 app.include_router(client_portal.router, prefix="/api/client-portal", tags=["Client Portal"])
 app.include_router(ws.router, prefix="/api/realtime", tags=["Realtime"])
 app.include_router(playbook.router, prefix="/api/playbook", tags=["Playbook"])
+app.include_router(social_publish.router, prefix="/api/social", tags=["Social Publishing"])

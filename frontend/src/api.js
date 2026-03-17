@@ -507,3 +507,37 @@ export function deleteClientPortalLink(id) {
     method: 'DELETE',
   });
 }
+
+// ─── Social Publishing ─────────────────────────────────────────────
+
+export function getSocialPlatforms() {
+  return fetch(`${BASE_URL}/api/social/platforms`).then(r => r.json());
+}
+
+export function getSocialAccounts(projectName = 'GuyFolkz') {
+  return request(`/api/social/accounts?project_name=${encodeURIComponent(projectName)}`);
+}
+
+export function disconnectSocialAccount(platform, projectName = 'GuyFolkz') {
+  return request(`/api/social/accounts/${platform}?project_name=${encodeURIComponent(projectName)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function startSocialOAuth(platform, projectName = 'GuyFolkz') {
+  return request(`/api/social/oauth/${platform}/authorize?project_name=${encodeURIComponent(projectName)}`);
+}
+
+export function publishToSocial(data) {
+  return request('/api/social/publish', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function publishUploadToSocial(formData) {
+  return request('/api/social/publish/upload', {
+    method: 'POST',
+    body: formData,
+  });
+}

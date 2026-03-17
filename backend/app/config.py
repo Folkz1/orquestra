@@ -59,6 +59,16 @@ class Settings(BaseSettings):
         "https://www.googleapis.com/auth/yt-analytics.readonly"
     )
 
+    # Instagram (Meta Graph API)
+    INSTAGRAM_APP_ID: str = ""
+    INSTAGRAM_APP_SECRET: str = ""
+    INSTAGRAM_OAUTH_REDIRECT_URI: str = ""
+
+    # TikTok (Content Posting API)
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+    TIKTOK_OAUTH_REDIRECT_URI: str = ""
+
     # Daily briefing
     BRIEFING_HOUR: int = 7
 

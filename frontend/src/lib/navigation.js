@@ -24,6 +24,7 @@ export const desktopNavSections = [
       { to: '/recordings', label: 'Gravacoes', description: 'Historico de reunioes e transcricoes' },
       { to: '/memory', label: 'Memoria', description: 'Busca semantica e contexto acumulado' },
       { to: '/youtube', label: 'YouTube', description: 'Pipeline editorial e analytics' },
+      { to: '/social', label: 'Social', description: 'Publicar em Instagram, TikTok e YouTube' },
     ],
   },
   {
@@ -58,6 +59,7 @@ export function getNavMeta(pathname) {
   if (pathname.startsWith('/chat') || pathname.startsWith('/mensagens')) return flatItems.find((item) => item.to === '/chat')
   if (pathname.startsWith('/projetos')) return flatItems.find((item) => item.to === '/projetos')
   if (pathname.startsWith('/youtube')) return flatItems.find((item) => item.to === '/youtube')
+  if (pathname.startsWith('/social')) return flatItems.find((item) => item.to === '/social')
   if (pathname.startsWith('/tarefas')) return flatItems.find((item) => item.to === '/tarefas')
   if (pathname.startsWith('/gravador')) return flatItems.find((item) => item.to === '/gravador')
   if (pathname.startsWith('/jarbas')) return flatItems.find((item) => item.to === '/jarbas')

@@ -19,6 +19,7 @@ import WhatsAppChat from './pages/WhatsAppChat'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 import PlaybookPlatform from './pages/PlaybookPlatform'
+import SocialPublish from './pages/SocialPublish'
 import { isStandalonePWA } from './lib/native'
 
 function AppRoutes({ onLogout }) {
@@ -76,6 +77,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/credenciais" element={<Navigate to="/projetos?tab=credenciais" replace />} />
         <Route path="/projetos" element={<ProjectsWorkspace />} />
         <Route path="/client-portal" element={<ClientPortal />} />
+        <Route path="/social" element={<SocialPublish />} />
         <Route path="/jarbas" element={<JarbasChat />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
