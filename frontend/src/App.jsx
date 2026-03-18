@@ -21,6 +21,7 @@ import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 import PlaybookPlatform from './pages/PlaybookPlatform'
 import SocialPublish from './pages/SocialPublish'
 import Subscriptions from './pages/Subscriptions'
+import ClientePage from './pages/ClientePage'
 import { isStandalonePWA } from './lib/native'
 
 function AppRoutes({ onLogout }) {
@@ -31,6 +32,10 @@ function AppRoutes({ onLogout }) {
 
   if (location.pathname.startsWith('/proposta/')) {
     return <ProposalView />
+  }
+
+  if (location.pathname.startsWith('/cliente/')) {
+    return <ClientePage />
   }
 
   if (location.pathname === '/youtube-briefing') {
@@ -100,6 +105,7 @@ export default function App() {
         <Routes>
           <Route path="/youtube-briefing" element={<YouTubeBriefing />} />
           <Route path="/proposta/:slug" element={<ProposalView />} />
+          <Route path="/cliente/:slug" element={<ClientePage />} />
           <Route path="/playbook/*" element={<PlaybookPlatform />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />
         </Routes>
