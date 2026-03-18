@@ -541,3 +541,34 @@ export function publishUploadToSocial(formData) {
     body: formData,
   });
 }
+
+// ─── Subscriptions ─────────────────────────────────────────────────────────
+
+export function getSubscriptionsDashboard() {
+  return request('/api/subscriptions/summary/dashboard');
+}
+
+export function listSubscriptions(status) {
+  const q = status ? `?status=${status}` : '';
+  return request(`/api/subscriptions${q}`);
+}
+
+export function createSubscription(data) {
+  return request('/api/subscriptions', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateSubscription(id, data) {
+  return request(`/api/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export function deleteSubscription(id) {
+  return request(`/api/subscriptions/${id}`, { method: 'DELETE' });
+}
+
+export function registerSubscriptionPayment(subId, data) {
+  return request(`/api/subscriptions/${subId}/payments`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function triggerSubscriptionAlerts() {
+  return request('/api/subscriptions/alerts/check', { method: 'POST' });
+}

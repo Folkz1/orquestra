@@ -20,6 +20,7 @@ import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 import PlaybookPlatform from './pages/PlaybookPlatform'
 import SocialPublish from './pages/SocialPublish'
+import Subscriptions from './pages/Subscriptions'
 import { isStandalonePWA } from './lib/native'
 
 function AppRoutes({ onLogout }) {
@@ -78,6 +79,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/projetos" element={<ProjectsWorkspace />} />
         <Route path="/client-portal" element={<ClientPortal />} />
         <Route path="/social" element={<SocialPublish />} />
+        <Route path="/assinaturas" element={<Subscriptions />} />
         <Route path="/jarbas" element={<JarbasChat />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
