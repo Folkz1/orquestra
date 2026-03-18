@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
-from app.models import Message, Project, Recording
+from app.models import Contact, Message, Project, Recording
 from app.schemas import (
     ProjectCreate,
     ProjectCredentialsUpdate,
@@ -187,12 +187,36 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    old_status = project.status
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(project, field, value)
 
     await db.flush()
     await db.refresh(project)
+
+    # Propagate status to linked contacts
+    new_status = project.status
+    if "status" in update_data and new_status != old_status:
+        contacts_result = await db.execute(
+            select(Contact).where(Contact.project_id == project_id)
+        )
+        contacts = contacts_result.scalars().all()
+        if contacts:
+            for contact in contacts:
+                if new_status in ("deployed", "delivered"):
+                    contact.pipeline_stage = "client"
+                    contact.next_action = f"Projeto {project.name} entregue"
+                elif new_status == "paused":
+                    contact.next_action = f"Projeto {project.name} pausado - verificar"
+                elif new_status == "cancelled":
+                    contact.pipeline_stage = "churned"
+                    contact.next_action = f"Projeto {project.name} cancelado"
+            await db.flush()
+            logger.info(
+                "[PROJECTS] Propagated status '%s' to %d contact(s) for project %s",
+                new_status, len(contacts), project_id,
+            )
 
     logger.info(
         "[PROJECTS] Updated project %s: %s", project_id, list(update_data.keys())
