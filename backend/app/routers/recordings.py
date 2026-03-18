@@ -26,7 +26,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import async_session, get_db
 from app.models import Project, Recording
-from app.schemas import PaginatedResponse, RecordingResponse
+from app.schemas import PaginatedResponse, RecordingLightResponse, RecordingResponse
 from app.services.llm import generate_meeting_summary
 from app.services.memory import store_memory
 from app.services.transcriber import transcribe_audio
@@ -36,12 +36,47 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+TRANSCRIPTION_PREVIEW_LENGTH = 500
+
+
 def _recording_to_response(recording: Recording) -> RecordingResponse:
     """Convert Recording ORM to response, resolving project_name."""
     resp = RecordingResponse.model_validate(recording)
     if recording.project_id and hasattr(recording, "project") and recording.project:
         resp.project_name = recording.project.name
     return resp
+
+
+def _recording_to_light_response(recording: Recording) -> RecordingLightResponse:
+    """Convert Recording ORM to lightweight response (truncated transcription)."""
+    transcription = recording.transcription or ""
+    preview = transcription[:TRANSCRIPTION_PREVIEW_LENGTH] if transcription else None
+    if transcription and len(transcription) > TRANSCRIPTION_PREVIEW_LENGTH:
+        preview += "..."
+
+    data = {
+        "id": recording.id,
+        "title": recording.title,
+        "source": recording.source,
+        "file_path": recording.file_path,
+        "file_size_bytes": recording.file_size_bytes,
+        "duration_seconds": recording.duration_seconds,
+        "project_id": recording.project_id,
+        "transcription_preview": preview,
+        "transcription_length": len(transcription),
+        "summary": recording.summary,
+        "action_items": recording.action_items or [],
+        "decisions": recording.decisions or [],
+        "key_topics": recording.key_topics or [],
+        "processed": recording.processed,
+        "project_name": None,
+        "recorded_at": recording.recorded_at,
+        "created_at": recording.created_at,
+    }
+    if recording.project_id and hasattr(recording, "project") and recording.project:
+        data["project_name"] = recording.project.name
+
+    return RecordingLightResponse(**data)
 
 
 async def process_recording(recording_id: str):
@@ -218,7 +253,7 @@ async def upload_recording(
     return RecordingResponse.model_validate(recording)
 
 
-@router.get("", response_model=PaginatedResponse[RecordingResponse])
+@router.get("", response_model=PaginatedResponse[RecordingLightResponse])
 async def list_recordings(
     project_id: str | None = Query(None, description="Filter by project ID"),
     date_from: datetime | None = Query(None, description="Start date filter"),
@@ -230,7 +265,7 @@ async def list_recordings(
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List recordings with filters and pagination."""
+    """List recordings with filters and pagination. Returns lightweight responses with truncated transcription."""
     stmt = select(Recording).options(selectinload(Recording.project))
     count_stmt = select(func.count(Recording.id))
 
@@ -277,7 +312,7 @@ async def list_recordings(
     total_pages = math.ceil(total / per_page) if total > 0 else 0
 
     return PaginatedResponse(
-        items=[_recording_to_response(rec) for rec in recordings],
+        items=[_recording_to_light_response(rec) for rec in recordings],
         total=total,
         page=page,
         page_size=per_page,
@@ -327,26 +362,44 @@ async def update_recording(
     return _recording_to_response(recording)
 
 
-@router.post("/{recording_id}/inject", response_model=RecordingResponse)
+@router.post("/{recording_id}/inject", response_model=RecordingLightResponse)
 async def inject_transcription(
     recording_id: uuid.UUID,
     body: dict,
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin: inject transcription, summary, action_items directly (bypasses transcription pipeline)."""
+    """Admin: inject transcription, summary, action_items directly (bypasses transcription pipeline).
+
+    Returns a lightweight response with truncated transcription to avoid
+    OOM/timeout on large payloads (52k+ chars).
+    """
     stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
     result = await db.execute(stmt)
     recording = result.scalar_one_or_none()
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
 
-    for key in ("transcription", "summary", "action_items", "decisions", "key_topics", "processed", "duration_seconds", "title"):
+    allowed_keys = ("transcription", "summary", "action_items", "decisions", "key_topics", "processed", "duration_seconds", "title")
+    for key in allowed_keys:
         if key in body:
             setattr(recording, key, body[key])
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.error(
+            "[RECORDINGS] Failed to commit inject for %s: %s", recording_id, exc
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save transcription data: {str(exc)[:200]}",
+        )
+
+    # Refresh only lightweight attributes - skip loading full transcription text back
     await db.refresh(recording, attribute_names=["project"])
-    return _recording_to_response(recording)
+
+    return _recording_to_light_response(recording)
 
 
 @router.post("/{recording_id}/reprocess", response_model=RecordingResponse)

@@ -260,7 +260,7 @@ export const listRecordings = tool({
       duration_seconds: r.duration_seconds,
       summary: r.summary,
       action_items: r.action_items,
-      transcription: (r.transcription || '').slice(0, 1000),
+      transcription: (r.transcription || r.transcription_preview || '').slice(0, 1000),
       created_at: r.created_at,
     }));
   },

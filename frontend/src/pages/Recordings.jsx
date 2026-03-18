@@ -247,9 +247,9 @@ function RecordingCard({ recording, onClick }) {
             <p className="text-xs text-zinc-400 mt-1.5 line-clamp-2 leading-relaxed">
               {recording.summary.substring(0, 200)}
             </p>
-          ) : recording.transcription ? (
+          ) : (recording.transcription || recording.transcription_preview) ? (
             <p className="text-xs text-zinc-600 mt-1.5 line-clamp-1 italic">
-              {recording.transcription.substring(0, 120)}...
+              {(recording.transcription || recording.transcription_preview).substring(0, 120)}...
             </p>
           ) : null}
 
@@ -325,7 +325,7 @@ export default function Recordings() {
     return (
       (r.title && r.title.toLowerCase().includes(s)) ||
       (r.summary && r.summary.toLowerCase().includes(s)) ||
-      (r.transcription && r.transcription.toLowerCase().includes(s)) ||
+      ((r.transcription || r.transcription_preview) && (r.transcription || r.transcription_preview).toLowerCase().includes(s)) ||
       (r.key_topics && r.key_topics.some(t => t.toLowerCase().includes(s)))
     )
   })

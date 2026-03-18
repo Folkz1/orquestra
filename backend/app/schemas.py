@@ -151,6 +151,27 @@ class RecordingResponse(RecordingBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RecordingLightResponse(RecordingBase):
+    """Lightweight response that truncates transcription to avoid OOM on large payloads."""
+    id: UUID
+    transcription_preview: Optional[str] = Field(
+        None, description="First 500 chars of the transcription"
+    )
+    transcription_length: int = Field(
+        0, description="Total character count of the full transcription"
+    )
+    summary: Optional[str] = None
+    action_items: list[dict[str, Any]] = Field(default_factory=list)
+    decisions: list[dict[str, Any]] = Field(default_factory=list)
+    key_topics: list[str] = Field(default_factory=list)
+    processed: bool = False
+    project_name: Optional[str] = None
+    recorded_at: datetime
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ─── Project Schemas ──────────────────────────────────────────────────────
 
 
