@@ -336,13 +336,13 @@ async def get_recording(
     return _recording_to_response(recording)
 
 
-@router.patch("/{recording_id}", response_model=RecordingResponse)
+@router.patch("/{recording_id}", response_model=RecordingLightResponse)
 async def update_recording(
     recording_id: uuid.UUID,
     body: dict,
     db: AsyncSession = Depends(get_db),
 ):
-    """Update recording fields (project_id, title, etc.)."""
+    """Update recording fields (project_id, title, transcription, etc.)."""
     stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
     result = await db.execute(stmt)
     recording = result.scalar_one_or_none()
@@ -357,9 +357,14 @@ async def update_recording(
                 value = uuid.UUID(value)
             setattr(recording, key, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update: {str(exc)[:200]}")
+
     await db.refresh(recording, attribute_names=["project"])
-    return _recording_to_response(recording)
+    return _recording_to_light_response(recording)
 
 
 @router.post("/{recording_id}/inject", response_model=RecordingLightResponse)

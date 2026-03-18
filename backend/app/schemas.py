@@ -140,9 +140,9 @@ class RecordingResponse(RecordingBase):
     id: UUID
     transcription: Optional[str] = None
     summary: Optional[str] = None
-    action_items: list[dict[str, Any]] = Field(default_factory=list)
-    decisions: list[dict[str, Any]] = Field(default_factory=list)
-    key_topics: list[str] = Field(default_factory=list)
+    action_items: list[Any] = Field(default_factory=list)
+    decisions: list[Any] = Field(default_factory=list)
+    key_topics: list[Any] = Field(default_factory=list)
     processed: bool = False
     project_name: Optional[str] = None
     recorded_at: datetime
@@ -161,9 +161,9 @@ class RecordingLightResponse(RecordingBase):
         0, description="Total character count of the full transcription"
     )
     summary: Optional[str] = None
-    action_items: list[dict[str, Any]] = Field(default_factory=list)
-    decisions: list[dict[str, Any]] = Field(default_factory=list)
-    key_topics: list[str] = Field(default_factory=list)
+    action_items: list[Any] = Field(default_factory=list)
+    decisions: list[Any] = Field(default_factory=list)
+    key_topics: list[Any] = Field(default_factory=list)
     processed: bool = False
     project_name: Optional[str] = None
     recorded_at: datetime
