@@ -327,6 +327,28 @@ async def update_recording(
     return _recording_to_response(recording)
 
 
+@router.post("/{recording_id}/inject", response_model=RecordingResponse)
+async def inject_transcription(
+    recording_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: inject transcription, summary, action_items directly (bypasses transcription pipeline)."""
+    stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
+    result = await db.execute(stmt)
+    recording = result.scalar_one_or_none()
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    for key in ("transcription", "summary", "action_items", "decisions", "key_topics", "processed", "duration_seconds", "title"):
+        if key in body:
+            setattr(recording, key, body[key])
+
+    await db.commit()
+    await db.refresh(recording, attribute_names=["project"])
+    return _recording_to_response(recording)
+
+
 @router.post("/{recording_id}/reprocess", response_model=RecordingResponse)
 async def reprocess_recording(
     recording_id: uuid.UUID,
