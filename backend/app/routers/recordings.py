@@ -315,7 +315,7 @@ async def update_recording(
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
 
-    allowed = {"project_id", "title"}
+    allowed = {"project_id", "title", "transcription", "summary", "action_items", "decisions", "key_topics", "processed", "duration_seconds"}
     for key, value in body.items():
         if key in allowed:
             if key == "project_id" and value:
