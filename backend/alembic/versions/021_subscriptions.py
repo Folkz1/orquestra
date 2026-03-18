@@ -31,8 +31,10 @@ def upgrade() -> None:
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    )
+    """)
 
+    op.execute("""
     CREATE TABLE IF NOT EXISTS subscription_payments (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
@@ -46,18 +48,16 @@ def upgrade() -> None:
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(subscription_id, reference_month)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
-    CREATE INDEX IF NOT EXISTS idx_subscriptions_contact ON subscriptions(contact_id);
-    CREATE INDEX IF NOT EXISTS idx_sub_payments_sub ON subscription_payments(subscription_id);
-    CREATE INDEX IF NOT EXISTS idx_sub_payments_month ON subscription_payments(reference_month);
-    CREATE INDEX IF NOT EXISTS idx_sub_payments_status ON subscription_payments(status);
+    )
     """)
+
+    op.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_contact ON subscriptions(contact_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_sub_payments_sub ON subscription_payments(subscription_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_sub_payments_month ON subscription_payments(reference_month)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_sub_payments_status ON subscription_payments(status)")
 
 
 def downgrade() -> None:
-    op.execute("""
-    DROP TABLE IF EXISTS subscription_payments;
-    DROP TABLE IF EXISTS subscriptions;
-    """)
+    op.execute("DROP TABLE IF EXISTS subscription_payments")
+    op.execute("DROP TABLE IF EXISTS subscriptions")
