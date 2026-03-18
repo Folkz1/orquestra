@@ -14,6 +14,7 @@ from app.services.orchestrator import generate_daily_brief, send_telegram_brief
 from app.tasks.proactive_bot import scheduled_proactive_analysis, run_client_digests
 from app.tasks.scheduled_sender import process_scheduled_messages
 from app.tasks.youtube_daily import daily_youtube_analysis
+from app.tasks.subscription_alerts import run_subscription_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +116,21 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Subscription alerts - todo dia 15 às 12:00 UTC (9h BRT)
+    scheduler.add_job(
+        run_subscription_alerts,
+        "cron",
+        day=15,
+        hour=12,
+        minute=0,
+        id="subscription_alerts",
+        replace_existing=True,
+        timezone="UTC",
+    )
+
     scheduler.start()
     logger.info(
-        "[DAILY_BRIEF] Scheduler started. Brief %02d:00, YouTube 08:00, Digests 09:00, Proactive 10:00+17:00 UTC, Msgs every 1min",
+        "[DAILY_BRIEF] Scheduler started. Brief %02d:00, YouTube 08:00, Digests 09:00, Proactive 10:00+17:00 UTC, Msgs every 1min, Subscription alerts dia 15 12:00 UTC",
         settings.BRIEFING_HOUR,
     )
 

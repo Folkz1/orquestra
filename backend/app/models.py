@@ -671,5 +671,82 @@ class ClientPortalLink(Base):
     project = relationship("Project", lazy="selectin")
     contact = relationship("Contact", lazy="selectin")
 
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    contact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    client_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String(10), server_default="BRL", nullable=False)
+    billing_day = Column(Integer, server_default="1", nullable=False)
+    status = Column(String(20), server_default="active", nullable=False)
+    evolution_instance = Column(String(100), server_default="guyfolkiz", nullable=True)
+    alert_phone = Column(String(30), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    contact = relationship("Contact", lazy="selectin")
+    project = relationship("Project", lazy="selectin")
+    payments = relationship(
+        "SubscriptionPayment", back_populates="subscription",
+        lazy="selectin", cascade="all, delete-orphan"
+    )
+
+
+class SubscriptionPayment(Base):
+    __tablename__ = "subscription_payments"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    subscription_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("subscriptions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reference_month = Column(String(7), nullable=False)  # YYYY-MM
+    amount_cents = Column(Integer, nullable=False)
+    status = Column(String(20), server_default="pending", nullable=False)
+    paid_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    payment_method = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    subscription = relationship("Subscription", back_populates="payments")
+
     def __repr__(self):
         return f"<ClientPortalLink {self.client_name} {self.token[:8]}>"

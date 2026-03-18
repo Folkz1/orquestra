@@ -683,3 +683,82 @@ class AssistantDraftResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ─── Subscription Schemas ─────────────────────────────────────────────────
+
+class SubscriptionCreate(BaseModel):
+    client_name: str
+    description: Optional[str] = None
+    amount_cents: int = Field(..., description="Valor em centavos (ex: 40000 = R$400)")
+    currency: str = "BRL"
+    billing_day: int = Field(1, ge=1, le=28)
+    contact_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
+    evolution_instance: str = "guyfolkiz"
+    alert_phone: Optional[str] = None
+    notes: Optional[str] = None
+    status: str = "active"
+
+
+class SubscriptionUpdate(BaseModel):
+    client_name: Optional[str] = None
+    description: Optional[str] = None
+    amount_cents: Optional[int] = None
+    billing_day: Optional[int] = Field(None, ge=1, le=28)
+    contact_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
+    evolution_instance: Optional[str] = None
+    alert_phone: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+
+
+class SubscriptionPaymentResponse(BaseModel):
+    id: UUID
+    subscription_id: UUID
+    reference_month: str
+    amount_cents: int
+    status: str
+    paid_at: Optional[datetime] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubscriptionResponse(BaseModel):
+    id: UUID
+    client_name: str
+    description: Optional[str] = None
+    amount_cents: int
+    currency: str
+    billing_day: int
+    status: str
+    evolution_instance: Optional[str] = None
+    alert_phone: Optional[str] = None
+    notes: Optional[str] = None
+    contact_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
+    contact_name: Optional[str] = None
+    project_name: Optional[str] = None
+    payments: list[SubscriptionPaymentResponse] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegisterPaymentRequest(BaseModel):
+    reference_month: str = Field(..., description="Mês de referência YYYY-MM")
+    amount_cents: Optional[int] = None
+    payment_method: Optional[str] = Field(None, description="pix, transferencia, boleto, etc")
+    notes: Optional[str] = None
+
+
+class SubscriptionAlertResult(BaseModel):
+    checked: int
+    alerts_sent: int
+    pending_subscriptions: list[str]

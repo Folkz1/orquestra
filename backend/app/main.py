@@ -193,7 +193,7 @@ async def debug_db():
 
 # -- Include Routers --
 
-from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals, scheduled_messages, proactive, credentials, client_portal, delivery_reports, ws, playbook, social_publish  # noqa: E402
+from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals, scheduled_messages, proactive, credentials, client_portal, delivery_reports, ws, playbook, social_publish, subscriptions  # noqa: E402
 
 app.include_router(webhook.router, prefix="/api/webhook", tags=["Webhook"])
 app.include_router(contacts.router, prefix="/api/contacts", tags=["Contacts"])
@@ -216,3 +216,4 @@ app.include_router(client_portal.router, prefix="/api/client-portal", tags=["Cli
 app.include_router(ws.router, prefix="/api/realtime", tags=["Realtime"])
 app.include_router(playbook.router, prefix="/api/playbook", tags=["Playbook"])
 app.include_router(social_publish.router, prefix="/api/social", tags=["Social Publishing"])
+app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
