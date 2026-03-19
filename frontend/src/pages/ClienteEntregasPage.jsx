@@ -196,7 +196,9 @@ function formatDate(iso) {
 // MAIN PAGE
 // ═══════════════════════════════════════
 export default function ClienteEntregasPage() {
-  const { slug } = useParams()
+  const params = useParams()
+  // Fallback: extract slug from pathname when rendered outside Router context
+  const slug = params?.slug || window.location.pathname.match(/\/cliente\/([^/]+)\/entregas/)?.[1]
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
