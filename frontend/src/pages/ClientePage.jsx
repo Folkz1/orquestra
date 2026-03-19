@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 
 const API = import.meta.env.VITE_API_URL || 'https://orquestra-backend.jz9bd8.easypanel.host'
 
@@ -122,6 +122,22 @@ export default function ClientePage() {
             </Card>
           ))}
         </div>
+
+        {/* Link para dashboard de entregas */}
+        <Link to={`/cliente/${slug}/entregas`} style={{
+          display: 'block', padding: '14px 20px', marginBottom: 32, borderRadius: 10,
+          background: 'linear-gradient(135deg, #1e1b4b, #312e81)', border: '1px solid #3730a3',
+          textDecoration: 'none', color: '#e2e8f0',
+          transition: 'transform 0.15s, box-shadow 0.15s',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>Dashboard de Entregas e Resultados</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Progresso, comparativos, timeline e financeiro</div>
+            </div>
+            <span style={{ fontSize: 20, color: '#a5b4fc' }}>&rarr;</span>
+          </div>
+        </Link>
 
         {/* Modelo de parceria (assinaturas) */}
         {subscriptions.length > 0 && (
