@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     MODEL_CHAT_CHEAP: str = "openai/gpt-4o-mini"
     MODEL_CHAT_SMART: str = "openai/gpt-4o-mini"
     MODEL_TRANSCRIPTION: str = "google/gemini-2.5-flash"
-    MODEL_DELIVERY_REPORT: str = "anthropic/claude-sonnet-4"
-    MODEL_DELIVERY_WHATSAPP: str = "anthropic/claude-3.5-haiku"
+    MODEL_DELIVERY_REPORT: str = "x-ai/grok-4.1-fast"
+    MODEL_DELIVERY_WHATSAPP: str = "x-ai/grok-4.1-fast"
 
     # Groq (optional, for audio transcription)
     GROQ_API_KEY: str = ""

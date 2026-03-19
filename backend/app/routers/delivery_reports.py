@@ -113,11 +113,27 @@ async def create_or_regenerate_delivery_report(
         report = await generate_delivery_report(db, proposal, report=report)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("[DELIVERY_REPORT] Generation failed for proposal %s", proposal_id)
-        raise HTTPException(status_code=502, detail=f"Falha ao gerar delivery report: {exc}") from exc
+        logger.exception("[DELIVERY_REPORT] LLM generation failed for proposal %s, creating basic report", proposal_id)
+        # Fallback: criar report basico sem LLM
+        from app.models import DeliveryReport as DR
+        from app.services.delivery_reports import _resolve_contact
+        from datetime import datetime, timezone
+        contact = await _resolve_contact(db, proposal)
+        if not contact:
+            raise HTTPException(status_code=400, detail="Contato nao encontrado") from exc
+        report = report or DR(proposal_id=proposal.id, contact_id=contact.id)
+        report.contact_id = contact.id
+        report.proposed_scope = report.proposed_scope or []
+        report.delivered_scope = report.delivered_scope or []
+        report.extras = report.extras or []
+        report.financial_summary = report.financial_summary or {"proposed": 0, "paid": 0, "pending": 0, "total": 0}
+        report.comparison_analysis = f"Relatorio basico (LLM indisponivel: {str(exc)[:80]})"
+        report.status = "draft"
+        report.generated_at = datetime.now(timezone.utc)
+        if not report.id:
+            db.add(report)
+        await db.flush()
 
     await db.commit()
     report = await _get_report_by_proposal(db, proposal_id)
