@@ -206,6 +206,36 @@ export default function ClienteEntregasPage() {
       .finally(() => setLoading(false))
   }, [slug])
 
+  const client = data?.client || {}
+  const project = data?.project || null
+  const kpis = data?.kpis || {
+    completion_pct: 0,
+    total_delivered: 0,
+    total_proposed: 0,
+    total_extras: 0,
+    tasks_completed: 0,
+    tasks_in_progress: 0,
+    tasks_pending: 0,
+    total_value_proposed: 0,
+    total_value_paid: 0,
+    total_value_pending: 0,
+  }
+  const deliveries = data?.deliveries || []
+  const timeline = data?.timeline || []
+  const next_steps = data?.next_steps || []
+  const subscriptions = data?.subscriptions || []
+
+  const completionPct = useCountUp(kpis.completion_pct, 1400)
+  const deliveredCount = useCountUp(kpis.total_delivered, 1000)
+  const extrasCount = useCountUp(kpis.total_extras, 1000)
+  const tasksCompletedCount = useCountUp(kpis.tasks_completed, 1000)
+
+  const totalTasks = kpis.tasks_completed + kpis.tasks_in_progress + kpis.tasks_pending
+  const tasksPct = totalTasks > 0 ? Math.round(kpis.tasks_completed / totalTasks * 100) : 0
+
+  const completedTimeline = timeline.filter(t => ['done', 'completed'].includes(t.status))
+  const activeTimeline = timeline.filter(t => !['done', 'completed'].includes(t.status))
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', system-ui" }}>
       <div style={{ textAlign: 'center', color: C.textMuted }}>
@@ -229,19 +259,6 @@ export default function ClienteEntregasPage() {
       </Link>
     </div>
   )
-
-  const { client, project, kpis, deliveries, timeline, next_steps, subscriptions } = data
-
-  const completionPct = useCountUp(kpis.completion_pct, 1400)
-  const deliveredCount = useCountUp(kpis.total_delivered, 1000)
-  const extrasCount = useCountUp(kpis.total_extras, 1000)
-  const tasksCompletedCount = useCountUp(kpis.tasks_completed, 1000)
-
-  const totalTasks = kpis.tasks_completed + kpis.tasks_in_progress + kpis.tasks_pending
-  const tasksPct = totalTasks > 0 ? Math.round(kpis.tasks_completed / totalTasks * 100) : 0
-
-  const completedTimeline = timeline.filter(t => ['done', 'completed'].includes(t.status))
-  const activeTimeline = timeline.filter(t => !['done', 'completed'].includes(t.status))
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Sans', system-ui" }}>
@@ -335,7 +352,7 @@ export default function ClienteEntregasPage() {
               </div>
               <div style={{ marginTop: 14, fontSize: 13, color: C.textMuted, fontWeight: 500 }}>Progresso geral</div>
               <div style={{ fontSize: 12, color: C.textDim, marginTop: 4 }}>
-                {kpis.total_delivered} de {kpis.total_proposed} itens
+                {deliveredCount} de {kpis.total_proposed} itens
               </div>
             </GlassCard>
           </Stagger>
