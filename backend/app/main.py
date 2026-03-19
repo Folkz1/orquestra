@@ -134,6 +134,7 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/api/playbook/progress")
         or path.startswith("/api/social/oauth/")
         or path == "/api/social/platforms"
+        or path.startswith("/api/cliente/")
     ):
         return await call_next(request)
 
