@@ -150,10 +150,14 @@ const STATUS_MAP = {
   done: { label: 'Entregue', color: C.green, bg: C.greenDim + '33' },
   completed: { label: 'Entregue', color: C.green, bg: C.greenDim + '33' },
   review: { label: 'Em revisao', color: C.accent, bg: C.accent + '22' },
+  validated: { label: 'Validado', color: C.cyan, bg: C.cyan + '22' },
   in_progress: { label: 'Em andamento', color: C.amber, bg: C.amberDim + '33' },
   todo: { label: 'Planejado', color: C.textMuted, bg: C.textDim + '22' },
   blocked: { label: 'Bloqueado', color: C.red, bg: C.red + '22' },
   planned: { label: 'Planejado', color: C.cyan, bg: C.cyan + '22' },
+  draft: { label: 'Em atualizacao', color: C.textMuted, bg: C.textDim + '22' },
+  final: { label: 'Fechado', color: C.accent, bg: C.accent + '22' },
+  sent_to_client: { label: 'Enviado', color: C.green, bg: C.greenDim + '33' },
 }
 
 function StatusBadge({ status }) {
@@ -443,9 +447,9 @@ export default function ClienteEntregasPage() {
               <Stagger key={di} delay={0.4 + di * 0.1} style={{ marginBottom: 20 }}>
                 <GlassCard>
                   {d.proposal_title && (
-                    <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 15, fontWeight: 600 }}>{d.proposal_title}</span>
-                      <StatusBadge status={d.status === 'sent_to_client' ? 'done' : d.status === 'final' ? 'review' : 'todo'} />
+                      <StatusBadge status={d.status || 'draft'} />
                     </div>
                   )}
 
@@ -466,47 +470,53 @@ export default function ClienteEntregasPage() {
                       ))}
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, color: C.green, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
-                        Entregue ({d.delivered_scope.length})
+                      <div style={{ fontSize: 11, color: C.accentGlow, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
+                        Andamento atual ({d.delivered_scope.length})
                       </div>
                       {d.delivered_scope.map((item, i) => {
+                        const itemStatus = item.status || 'completed'
                         const cat = item.category || 'core'
                         const catColor = cat === 'extra' ? C.amber : cat === 'upgrade' ? C.cyan : C.green
+                        const statusColor = itemStatus === 'in_progress' ? C.amber : itemStatus === 'validated' ? C.cyan : catColor
                         return (
                           <div key={i} style={{
                             padding: '8px 12px', marginBottom: 6, borderRadius: 10,
-                            background: catColor + '0a', border: `1px solid ${catColor}22`,
+                            background: statusColor + '0a', border: `1px solid ${statusColor}22`,
                             fontSize: 13, color: C.text,
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
                           }}>
-                            <span>{item.item || item.description || item}</span>
-                            {cat !== 'core' && (
-                              <span style={{
-                                fontSize: 10, fontWeight: 600, padding: '1px 8px', borderRadius: 10,
-                                background: catColor + '22', color: catColor,
-                              }}>{cat.toUpperCase()}</span>
-                            )}
+                            <span style={{ flex: 1 }}>{item.item || item.description || item}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              <StatusBadge status={itemStatus} />
+                              {cat !== 'core' && (
+                                <span style={{
+                                  fontSize: 10, fontWeight: 600, padding: '1px 8px', borderRadius: 10,
+                                  background: catColor + '22', color: catColor,
+                                }}>{cat.toUpperCase()}</span>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
                     </div>
                   </div>
 
-                  {/* Extras */}
+                  {/* Planned expansions */}
                   {d.extras.length > 0 && (
                     <div style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: 11, color: C.amber, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
-                        Extras entregues (+{d.extras.length})
+                        Expansoes mapeadas ({d.extras.length})
                       </div>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {d.extras.map((e, i) => (
                           <div key={i} style={{
                             padding: '6px 14px', borderRadius: 10,
                             background: C.amber + '0c', border: `1px solid ${C.amber}22`,
-                            fontSize: 13, color: C.amber,
+                            fontSize: 13, color: C.amber, display: 'flex', alignItems: 'center', gap: 8,
                           }}>
-                            {e.item || e.description || e}
+                            <span>{e.item || e.description || e}</span>
                             {e.value && <span style={{ color: C.textMuted, marginLeft: 8, fontSize: 12 }}>{e.value}</span>}
+                            <StatusBadge status={e.accepted ? 'planned' : 'todo'} />
                           </div>
                         ))}
                       </div>
@@ -525,7 +535,7 @@ export default function ClienteEntregasPage() {
                         { label: 'Total', value: d.financial_summary.total, color: C.white },
                         { label: 'Pago', value: d.financial_summary.paid, color: C.green },
                         { label: 'Pendente', value: d.financial_summary.pending, color: C.amber },
-                      ].filter(f => f.value).map(f => (
+                      ].filter(f => f.value !== undefined && f.value !== null && f.value !== '').map(f => (
                         <div key={f.label}>
                           <div style={{ fontSize: 10, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{f.label}</div>
                           <div style={{ fontSize: 14, fontWeight: 600, color: f.color, fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>

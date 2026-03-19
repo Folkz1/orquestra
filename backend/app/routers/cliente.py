@@ -21,6 +21,10 @@ from app.models import Contact, DeliveryReport, Project, ProjectTask, Proposal, 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+COMPLETED_DELIVERY_STATUSES = {"completed", "done", "delivered"}
+ACTIVE_DELIVERY_STATUSES = {"in_progress"}
+PENDING_DELIVERY_STATUSES = {"validated", "review", "planned", "todo", "blocked"}
+
 
 def _slugify(text: str) -> str:
     """Normaliza texto para slug: lowercase, sem acentos, somente alphanum e hífen."""
@@ -31,6 +35,63 @@ def _slugify(text: str) -> str:
 
 def _iso(dt) -> str | None:
     return dt.isoformat() if dt else None
+
+
+def _normalize_delivery_status(status: str | None) -> str:
+    value = (status or "").strip().lower()
+    aliases = {
+        "done": "completed",
+        "delivered": "completed",
+        "validado": "validated",
+    }
+    return aliases.get(value, value or "completed")
+
+
+def _is_completed_delivery_status(status: str | None) -> bool:
+    return _normalize_delivery_status(status) in COMPLETED_DELIVERY_STATUSES
+
+
+def _build_delivery_timeline(deliveries: list[DeliveryReport]) -> list[dict[str, Any]]:
+    timeline: list[dict[str, Any]] = []
+    for report in deliveries:
+        item_date = _iso(report.updated_at or report.generated_at or report.created_at)
+        for item in report.delivered_scope or []:
+            if not isinstance(item, dict):
+                continue
+            status = _normalize_delivery_status(item.get("status"))
+            category = (item.get("category") or "core").lower()
+            timeline.append({
+                "title": item.get("item") or item.get("description") or "Entrega",
+                "description": item.get("description"),
+                "status": status,
+                "priority": "high" if category == "core" else "medium",
+                "created_at": item_date,
+                "completed_at": item_date if _is_completed_delivery_status(status) else None,
+            })
+    return timeline
+
+
+def _append_next_step(
+    steps: list[dict[str, Any]],
+    seen_titles: set[str],
+    title: str | None,
+    description: str | None,
+    priority: str,
+    status: str,
+) -> None:
+    normalized_title = (title or "").strip()
+    if not normalized_title:
+        return
+    dedupe_key = normalized_title.lower()
+    if dedupe_key in seen_titles:
+        return
+    seen_titles.add(dedupe_key)
+    steps.append({
+        "title": normalized_title,
+        "description": description,
+        "priority": priority,
+        "status": status,
+    })
 
 
 async def _find_contact(slug: str, db: AsyncSession) -> Contact | None:
@@ -239,10 +300,22 @@ async def get_cliente_entregas(slug: str, db: AsyncSession = Depends(get_db)) ->
     )
     subscriptions = subs_result.scalars().all()
 
-    # Calcular KPIs agregados
+    # Calcular KPIs agregados com base no status real do delivery report
     total_proposed = sum(len(d.proposed_scope or []) for d in deliveries)
-    total_delivered = sum(len(d.delivered_scope or []) for d in deliveries)
-    total_extras = sum(len(d.extras or []) for d in deliveries)
+    total_delivered = 0
+    total_extras = 0
+    for d in deliveries:
+        for item in d.delivered_scope or []:
+            if not isinstance(item, dict):
+                continue
+            status = _normalize_delivery_status(item.get("status"))
+            in_proposal = item.get("in_proposal")
+            if in_proposal is None:
+                in_proposal = (item.get("category") or "core").lower() == "core"
+            if in_proposal and _is_completed_delivery_status(status):
+                total_delivered += 1
+            elif not in_proposal and _is_completed_delivery_status(status):
+                total_extras += 1
     completion_pct = round((total_delivered / total_proposed * 100) if total_proposed > 0 else 0)
 
     # Financeiro agregado
@@ -261,10 +334,6 @@ async def get_cliente_entregas(slug: str, db: AsyncSession = Depends(get_db)) ->
             if p.status in ("accepted", "signed") and p.total_value:
                 total_value_proposed += _parse_money(p.total_value)
 
-    completed_tasks = [t for t in tasks if t.status in ("done", "completed")]
-    in_progress_tasks = [t for t in tasks if t.status == "in_progress"]
-    pending_tasks = [t for t in tasks if t.status in ("todo", "blocked", "review")]
-
     # Deliveries formatadas
     deliveries_data = []
     proposal_map = {p.id: p for p in proposals}
@@ -282,26 +351,68 @@ async def get_cliente_entregas(slug: str, db: AsyncSession = Depends(get_db)) ->
             "generated_at": _iso(d.generated_at),
         })
 
-    # Timeline
-    timeline = [
-        {
-            "title": t.title,
-            "description": t.description,
-            "status": t.status,
-            "priority": t.priority,
-            "created_at": _iso(t.created_at),
-            "completed_at": _iso(t.completed_at),
-        }
-        for t in tasks
-    ]
+    # Timeline e contadores de tarefas: usar delivery report quando existir,
+    # porque as tasks do projeto podem refletir outro fluxo operacional.
+    if deliveries:
+        timeline = _build_delivery_timeline(deliveries)
+        completed_tasks = [t for t in timeline if t["status"] in COMPLETED_DELIVERY_STATUSES]
+        in_progress_tasks = [t for t in timeline if t["status"] in ACTIVE_DELIVERY_STATUSES]
+        pending_tasks = [t for t in timeline if t["status"] in PENDING_DELIVERY_STATUSES]
+    else:
+        timeline = [
+            {
+                "title": t.title,
+                "description": t.description,
+                "status": t.status,
+                "priority": t.priority,
+                "created_at": _iso(t.created_at),
+                "completed_at": _iso(t.completed_at),
+            }
+            for t in tasks
+        ]
+        completed_tasks = [t for t in tasks if t.status in ("done", "completed")]
+        in_progress_tasks = [t for t in tasks if t.status == "in_progress"]
+        pending_tasks = [t for t in tasks if t.status in ("todo", "blocked", "review")]
 
-    # Próximos passos: tasks pendentes + next_action do contato
-    next_steps = [
-        {"title": t.title, "description": t.description, "priority": t.priority, "status": t.status}
-        for t in tasks
-        if t.status in ("todo", "in_progress", "review", "blocked")
-    ]
-    if contact.next_action:
+    # Próximos passos: itens não concluídos do delivery report e expansões mapeadas
+    next_steps: list[dict[str, Any]] = []
+    next_step_titles: set[str] = set()
+    if deliveries:
+        for d in deliveries:
+            for item in d.delivered_scope or []:
+                if not isinstance(item, dict):
+                    continue
+                status = _normalize_delivery_status(item.get("status"))
+                if status in COMPLETED_DELIVERY_STATUSES:
+                    continue
+                _append_next_step(
+                    next_steps,
+                    next_step_titles,
+                    item.get("item"),
+                    item.get("description"),
+                    "high" if item.get("in_proposal", True) else "medium",
+                    status,
+                )
+            for extra in d.extras or []:
+                if not isinstance(extra, dict):
+                    continue
+                _append_next_step(
+                    next_steps,
+                    next_step_titles,
+                    extra.get("item"),
+                    extra.get("description"),
+                    "medium" if extra.get("accepted") else "low",
+                    "planned" if extra.get("accepted") else "todo",
+                )
+    else:
+        next_steps = [
+            {"title": t.title, "description": t.description, "priority": t.priority, "status": t.status}
+            for t in tasks
+            if t.status in ("todo", "in_progress", "review", "blocked")
+        ]
+        next_step_titles = {(step["title"] or "").strip().lower() for step in next_steps}
+
+    if contact.next_action and (contact.next_action or "").strip().lower() not in next_step_titles:
         next_steps.insert(0, {
             "title": contact.next_action,
             "description": None,
