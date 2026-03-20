@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,9 +22,17 @@ router = APIRouter()
 # ── Schemas ──────────────────────────────────────────────
 
 class SubscribeRequest(BaseModel):
-    email: EmailStr
+    email: str
     name: str | None = None
     source: str = "website"
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v):
+        import re
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Email inválido")
+        return v.lower().strip()
 
 
 class EditionCreate(BaseModel):
