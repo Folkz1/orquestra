@@ -52,6 +52,11 @@ function AppRoutes({ onLogout }) {
     return <PlaybookPlatform />
   }
 
+  // Newsletter é página pública — renderiza sem Layout mesmo logado
+  if (location.pathname === '/newsletter') {
+    return <NewsletterPage />
+  }
+
   // Chat is ALWAYS fullscreen (no sidebar) — dedicated messaging experience
   if (location.pathname.startsWith('/chat') || location.pathname.startsWith('/app/chat') || location.pathname.startsWith('/mensagens')) {
     return <WhatsAppChat appMode />
