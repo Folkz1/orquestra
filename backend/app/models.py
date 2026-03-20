@@ -750,3 +750,31 @@ class SubscriptionPayment(Base):
 
     def __repr__(self):
         return f"<ClientPortalLink {self.client_name} {self.token[:8]}>"
+
+
+class NewsletterSubscriber(Base):
+    __tablename__ = "newsletter_subscribers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    email = Column(String(320), nullable=False, unique=True)
+    name = Column(String(200), nullable=True)
+    source = Column(String(100), server_default="website")
+    status = Column(String(20), server_default="active")
+    metadata_json = Column(JSONB, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    unsubscribed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class NewsletterEdition(Base):
+    __tablename__ = "newsletter_editions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    title = Column(String(500), nullable=False)
+    content_html = Column(Text, nullable=False)
+    content_text = Column(Text, nullable=True)
+    status = Column(String(20), server_default="draft")
+    sent_count = Column(Integer, server_default="0")
+    youtube_video_id = Column(String(50), nullable=True)
+    metadata_json = Column(JSONB, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    sent_at = Column(TIMESTAMP(timezone=True), nullable=True)

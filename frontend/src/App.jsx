@@ -5,6 +5,7 @@ import ClientsWorkspace from './pages/ClientsWorkspace'
 import ExecutiveHome from './pages/ExecutiveHome'
 import JarbasChat from './pages/JarbasChat'
 import Login from './pages/Login'
+import NewsletterPage from './pages/NewsletterPage'
 import Briefs from './pages/Briefs'
 import Memory from './pages/Memory'
 import Recordings from './pages/Recordings'
@@ -108,6 +109,7 @@ export default function App() {
         <AppRoutes onLogout={() => { localStorage.removeItem('orquestra_token'); setAuthenticated(false) }} />
       ) : (
         <Routes>
+          <Route path="/newsletter" element={<NewsletterPage />} />
           <Route path="/youtube-briefing" element={<YouTubeBriefing />} />
           <Route path="/proposta/:slug" element={<ProposalView />} />
           <Route path="/cliente/:slug/entregas" element={<ClienteEntregasPage />} />
