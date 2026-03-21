@@ -63,51 +63,55 @@ async def scheduled_daily_brief():
 
 
 def start_scheduler():
-    """Start the APScheduler with the daily brief and YouTube analysis jobs."""
-    scheduler.add_job(
-        scheduled_daily_brief,
-        "cron",
-        hour=settings.BRIEFING_HOUR,
-        minute=0,
-        id="daily_brief",
-        replace_existing=True,
-        timezone="UTC",
-    )
+    """Start the APScheduler with active jobs only."""
 
-    # YouTube daily analysis at 8:00 UTC (5:00 AM BRT)
-    scheduler.add_job(
-        daily_youtube_analysis,
-        "cron",
-        hour=8,
-        minute=0,
-        id="youtube_analysis",
-        replace_existing=True,
-        timezone="UTC",
-    )
+    # ---- PAUSADOS POR DIEGO (2026-03-21) ----
+    # Motivo: relatórios automáticos não estão sendo úteis.
+    # Para reativar, descomentar os blocos abaixo e fazer redeploy.
 
-    # Client digests: 9:00 UTC (6:00 AM BRT) - summarize conversations before proactive analysis
-    scheduler.add_job(
-        run_client_digests,
-        "cron",
-        hour=9,
-        minute=0,
-        id="client_digests",
-        replace_existing=True,
-        timezone="UTC",
-    )
+    # scheduler.add_job(
+    #     scheduled_daily_brief,
+    #     "cron",
+    #     hour=settings.BRIEFING_HOUR,
+    #     minute=0,
+    #     id="daily_brief",
+    #     replace_existing=True,
+    #     timezone="UTC",
+    # )
 
-    # Proactive bot: morning at 10:00 UTC (7:00 AM BRT) + afternoon at 17:00 UTC (14:00 BRT)
-    scheduler.add_job(
-        scheduled_proactive_analysis,
-        "cron",
-        hour="10,17",
-        minute=0,
-        id="proactive_bot",
-        replace_existing=True,
-        timezone="UTC",
-    )
+    # scheduler.add_job(
+    #     daily_youtube_analysis,
+    #     "cron",
+    #     hour=8,
+    #     minute=0,
+    #     id="youtube_analysis",
+    #     replace_existing=True,
+    #     timezone="UTC",
+    # )
 
-    # Scheduled messages - check every minute
+    # scheduler.add_job(
+    #     run_client_digests,
+    #     "cron",
+    #     hour=9,
+    #     minute=0,
+    #     id="client_digests",
+    #     replace_existing=True,
+    #     timezone="UTC",
+    # )
+
+    # scheduler.add_job(
+    #     scheduled_proactive_analysis,
+    #     "cron",
+    #     hour="10,17",
+    #     minute=0,
+    #     id="proactive_bot",
+    #     replace_existing=True,
+    #     timezone="UTC",
+    # )
+
+    # ---- ATIVOS ----
+
+    # Scheduled messages - check every minute (funcional, envia msgs agendadas)
     scheduler.add_job(
         process_scheduled_messages,
         "interval",
@@ -130,8 +134,7 @@ def start_scheduler():
 
     scheduler.start()
     logger.info(
-        "[DAILY_BRIEF] Scheduler started. Brief %02d:00, YouTube 08:00, Digests 09:00, Proactive 10:00+17:00 UTC, Msgs every 1min, Subscription alerts dia 15 12:00 UTC",
-        settings.BRIEFING_HOUR,
+        "[SCHEDULER] Started. ATIVOS: scheduled_messages (1min), subscription_alerts (dia 15). PAUSADOS: daily_brief, youtube, digests, proactive.",
     )
 
 
