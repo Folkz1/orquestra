@@ -13,7 +13,7 @@ import {
 } from '../api'
 import { useMessageSocket } from '../hooks/useMessageSocket'
 import { usePushNotifications } from '../hooks/usePushNotifications'
-import { isStandalonePWA } from '../lib/native'
+import { isStandalonePWA, isNativeApp } from '../lib/native'
 
 function upsertConversation(list, nextConversation) {
   const filtered = list.filter((item) => item.contact_id !== nextConversation.contact_id)
@@ -86,7 +86,7 @@ export default function WhatsAppChat({ appMode = false }) {
   const [showSwitcher, setShowSwitcher] = useState(false)
   const selectedContactId = searchParams.get('contact') || ''
   const { permission, requestPermission, notify } = usePushNotifications()
-  const installedApp = isStandalonePWA()
+  const installedApp = isStandalonePWA() || isNativeApp()
 
   function selectConversation(contactId) {
     if (!contactId) return

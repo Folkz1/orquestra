@@ -84,7 +84,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://localhost",
+        "capacitor://localhost",
+        "http://localhost",
+        "http://localhost:5173",
+        "https://guyyfolkz.mbest.site",
+        "http://guyyfolkz.mbest.site",
+    ],
+    allow_origin_regex=r"https?://.*\.easypanel\.host",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

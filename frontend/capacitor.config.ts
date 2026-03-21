@@ -5,10 +5,11 @@ const config: CapacitorConfig = {
   appName: 'Orquestra',
   webDir: 'dist',
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false,
   },
   server: {
     androidScheme: 'https',
+    allowNavigation: ['orquestra-backend.jz9bd8.easypanel.host'],
   },
 }
 
