@@ -266,7 +266,29 @@ async def list_recordings(
     db: AsyncSession = Depends(get_db),
 ):
     """List recordings with filters and pagination. Returns lightweight responses with truncated transcription."""
-    stmt = select(Recording).options(selectinload(Recording.project))
+    # Select only needed columns — avoid loading full transcription text on list.
+    # transcription_preview is the first 500 chars; transcription_length is the DB-computed length.
+    preview_col = func.left(Recording.transcription, TRANSCRIPTION_PREVIEW_LENGTH).label("transcription_preview")
+    length_col = func.coalesce(func.length(Recording.transcription), 0).label("transcription_length")
+
+    stmt = select(
+        Recording.id,
+        Recording.title,
+        Recording.source,
+        Recording.file_path,
+        Recording.file_size_bytes,
+        Recording.duration_seconds,
+        Recording.project_id,
+        Recording.summary,
+        Recording.action_items,
+        Recording.decisions,
+        Recording.key_topics,
+        Recording.processed,
+        Recording.recorded_at,
+        Recording.created_at,
+        preview_col,
+        length_col,
+    )
     count_stmt = select(func.count(Recording.id))
 
     filters = []
@@ -289,7 +311,6 @@ async def list_recordings(
         filters.append(
             or_(
                 Recording.title.ilike(search_pattern),
-                Recording.transcription.ilike(search_pattern),
                 Recording.summary.ilike(search_pattern),
             )
         )
@@ -303,16 +324,51 @@ async def list_recordings(
     total = total_result.scalar() or 0
 
     # Paginate
-    offset = (page - 1) * per_page
-    stmt = stmt.order_by(Recording.recorded_at.desc()).offset(offset).limit(per_page)
+    db_offset = (page - 1) * per_page
+    stmt = stmt.order_by(Recording.recorded_at.desc()).offset(db_offset).limit(per_page)
 
     result = await db.execute(stmt)
-    recordings = result.scalars().all()
+    rows = result.all()
+
+    # Batch-fetch project names in one query
+    project_ids_in_page = list({row.project_id for row in rows if row.project_id})
+    project_name_map: dict = {}
+    if project_ids_in_page:
+        proj_stmt = select(Project.id, Project.name).where(Project.id.in_(project_ids_in_page))
+        proj_result = await db.execute(proj_stmt)
+        project_name_map = {r.id: r.name for r in proj_result.all()}
+
+    items = []
+    for row in rows:
+        preview = row.transcription_preview
+        if preview and row.transcription_length > TRANSCRIPTION_PREVIEW_LENGTH:
+            preview += "..."
+        items.append(
+            RecordingLightResponse(
+                id=row.id,
+                title=row.title,
+                source=row.source,
+                file_path=row.file_path,
+                file_size_bytes=row.file_size_bytes,
+                duration_seconds=row.duration_seconds,
+                project_id=row.project_id,
+                transcription_preview=preview,
+                transcription_length=row.transcription_length,
+                summary=row.summary,
+                action_items=row.action_items or [],
+                decisions=row.decisions or [],
+                key_topics=row.key_topics or [],
+                processed=row.processed,
+                project_name=project_name_map.get(row.project_id) if row.project_id else None,
+                recorded_at=row.recorded_at,
+                created_at=row.created_at,
+            )
+        )
 
     total_pages = math.ceil(total / per_page) if total > 0 else 0
 
     return PaginatedResponse(
-        items=[_recording_to_light_response(rec) for rec in recordings],
+        items=items,
         total=total,
         page=page,
         page_size=per_page,

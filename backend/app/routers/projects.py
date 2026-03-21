@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
@@ -30,33 +31,24 @@ router = APIRouter()
 async def _build_project_response(
     db: AsyncSession, project: Project
 ) -> ProjectResponse:
-    """Build a ProjectResponse with computed stats."""
-    # Total messages for this project
-    msg_count_stmt = select(func.count(Message.id)).where(
-        Message.project_id == project.id
-    )
-    msg_result = await db.execute(msg_count_stmt)
-    total_messages = msg_result.scalar() or 0
+    """Build a ProjectResponse with computed stats (single project — used on write paths)."""
+    # Fetch all stats in two queries instead of four
+    msg_stmt = select(
+        func.count(Message.id).label("total_messages"),
+        func.max(Message.timestamp).label("last_msg"),
+    ).where(Message.project_id == project.id)
+    rec_stmt = select(
+        func.count(Recording.id).label("total_recordings"),
+        func.max(Recording.recorded_at).label("last_rec"),
+    ).where(Recording.project_id == project.id)
 
-    # Total recordings for this project
-    rec_count_stmt = select(func.count(Recording.id)).where(
-        Recording.project_id == project.id
-    )
-    rec_result = await db.execute(rec_count_stmt)
-    total_recordings = rec_result.scalar() or 0
+    msg_result = await db.execute(msg_stmt)
+    rec_result = await db.execute(rec_stmt)
+    msg_row = msg_result.one()
+    rec_row = rec_result.one()
 
-    # Last activity: most recent message or recording timestamp
-    last_msg_stmt = select(func.max(Message.timestamp)).where(
-        Message.project_id == project.id
-    )
-    last_rec_stmt = select(func.max(Recording.recorded_at)).where(
-        Recording.project_id == project.id
-    )
-    last_msg_result = await db.execute(last_msg_stmt)
-    last_rec_result = await db.execute(last_rec_stmt)
-    last_msg = last_msg_result.scalar()
-    last_rec = last_rec_result.scalar()
-
+    last_msg = msg_row.last_msg
+    last_rec = rec_row.last_rec
     last_activity = None
     if last_msg and last_rec:
         last_activity = max(last_msg, last_rec)
@@ -66,8 +58,8 @@ async def _build_project_response(
         last_activity = last_rec
 
     stats = ProjectStats(
-        total_messages=total_messages,
-        total_recordings=total_recordings,
+        total_messages=msg_row.total_messages or 0,
+        total_recordings=rec_row.total_recordings or 0,
         last_activity=last_activity,
     )
 
@@ -85,12 +77,81 @@ async def _build_project_response(
     )
 
 
+async def _fetch_all_project_stats(db: AsyncSession, project_ids: list) -> dict:
+    """
+    Batch-fetch message and recording stats for multiple projects in two queries.
+    Returns a dict: project_id -> ProjectStats.
+    """
+    if not project_ids:
+        return {}
+
+    # One query for all message stats grouped by project
+    msg_stmt = (
+        select(
+            Message.project_id,
+            func.count(Message.id).label("total_messages"),
+            func.max(Message.timestamp).label("last_msg"),
+        )
+        .where(Message.project_id.in_(project_ids))
+        .group_by(Message.project_id)
+    )
+    rec_stmt = (
+        select(
+            Recording.project_id,
+            func.count(Recording.id).label("total_recordings"),
+            func.max(Recording.recorded_at).label("last_rec"),
+        )
+        .where(Recording.project_id.in_(project_ids))
+        .group_by(Recording.project_id)
+    )
+
+    msg_result = await db.execute(msg_stmt)
+    rec_result = await db.execute(rec_stmt)
+
+    msg_map = {row.project_id: row for row in msg_result.all()}
+    rec_map = {row.project_id: row for row in rec_result.all()}
+
+    stats_map: dict = {}
+    for pid in project_ids:
+        msg_row = msg_map.get(pid)
+        rec_row = rec_map.get(pid)
+        total_messages = msg_row.total_messages if msg_row else 0
+        total_recordings = rec_row.total_recordings if rec_row else 0
+        last_msg = msg_row.last_msg if msg_row else None
+        last_rec = rec_row.last_rec if rec_row else None
+
+        last_activity = None
+        if last_msg and last_rec:
+            last_activity = max(last_msg, last_rec)
+        elif last_msg:
+            last_activity = last_msg
+        elif last_rec:
+            last_activity = last_rec
+
+        stats_map[pid] = ProjectStats(
+            total_messages=total_messages,
+            total_recordings=total_recordings,
+            last_activity=last_activity,
+        )
+
+    return stats_map
+
+
 @router.get("/options", response_model=list[ProjectOptionResponse])
 async def list_project_options(
     db: AsyncSession = Depends(get_db),
 ):
     """List lightweight project options for selectors/dropdowns."""
-    stmt = select(Project).order_by(Project.name.asc())
+    stmt = (
+        select(Project)
+        .options(
+            noload(Project.contacts),
+            noload(Project.messages),
+            noload(Project.recordings),
+            noload(Project.tasks),
+        )
+        .order_by(Project.name.asc())
+    )
     result = await db.execute(stmt)
     projects = result.scalars().all()
     return [
@@ -107,10 +168,25 @@ async def list_project_options(
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects(
     compact: bool = Query(False, description="Return lightweight project data without computed stats"),
+    limit: int = Query(50, ge=1, le=200, description="Max records to return"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
     db: AsyncSession = Depends(get_db),
 ):
     """List all projects with computed stats."""
-    stmt = select(Project).order_by(Project.name.asc())
+    # noload prevents SQLAlchemy from firing selectin queries for Project relationships
+    # (contacts, messages, recordings, tasks) — those have lazy="selectin" in the model
+    stmt = (
+        select(Project)
+        .options(
+            noload(Project.contacts),
+            noload(Project.messages),
+            noload(Project.recordings),
+            noload(Project.tasks),
+        )
+        .order_by(Project.name.asc())
+        .offset(offset)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     projects = result.scalars().all()
 
@@ -131,7 +207,25 @@ async def list_projects(
             for project in projects
         ]
 
-    return [await _build_project_response(db, p) for p in projects]
+    # Batch-fetch all stats in 2 queries instead of 4 per project (N+1 fix)
+    project_ids = [p.id for p in projects]
+    stats_map = await _fetch_all_project_stats(db, project_ids)
+
+    return [
+        ProjectResponse(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            status=p.status,
+            color=p.color,
+            keywords=p.keywords or [],
+            credentials=p.credentials or {},
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+            stats=stats_map.get(p.id, ProjectStats()),
+        )
+        for p in projects
+    ]
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)

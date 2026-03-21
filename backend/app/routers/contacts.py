@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.database import get_db
 from app.models import Contact, Message, Proposal, ProposalEvent
@@ -28,10 +29,12 @@ async def list_contacts(
     has_recent_messages: bool | None = Query(
         None, description="Filter contacts with messages in the last 7 days"
     ),
+    limit: int = Query(50, ge=1, le=200, description="Max records to return"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    List contacts with optional filters.
+    List contacts with optional filters and pagination.
     Includes message_count and last_message_at computed via subquery.
     """
     # Subqueries for message stats
@@ -50,7 +53,12 @@ async def list_contacts(
         .label("last_message_at")
     )
 
-    stmt = select(Contact, msg_count_subq, last_msg_subq)
+    # noload prevents the selectin relationship load for Contact.messages and Contact.delivery_reports
+    # (message stats come from the correlated subqueries above, not from the ORM relationship)
+    stmt = select(Contact, msg_count_subq, last_msg_subq).options(
+        noload(Contact.messages),
+        noload(Contact.delivery_reports),
+    )
 
     # Apply filters
     filters = []
@@ -85,7 +93,7 @@ async def list_contacts(
     if filters:
         stmt = stmt.where(and_(*filters))
 
-    stmt = stmt.order_by(Contact.updated_at.desc())
+    stmt = stmt.order_by(Contact.updated_at.desc()).offset(offset).limit(limit)
 
     result = await db.execute(stmt)
     rows = result.all()

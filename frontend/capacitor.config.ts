@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true,
   },
+  server: {
+    androidScheme: 'https',
+  },
 }
 
 export default config

@@ -46,9 +46,11 @@ async def list_tasks(
     project_id: UUID | None = Query(None, description="Filter by project"),
     status: str | None = Query(None, description="Filter by status"),
     assigned_to: str | None = Query(None, description="Filter by assignee"),
+    limit: int = Query(50, ge=1, le=200, description="Max records to return"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List tasks with optional filters."""
+    """List tasks with optional filters and pagination."""
     stmt = (
         select(ProjectTask, Project)
         .outerjoin(Project, ProjectTask.project_id == Project.id)
@@ -69,7 +71,7 @@ async def list_tasks(
             else_=2,
         ),
         ProjectTask.created_at.desc(),
-    )
+    ).offset(offset).limit(limit)
 
     result = await db.execute(stmt)
     rows = result.all()
