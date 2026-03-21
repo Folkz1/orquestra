@@ -10,6 +10,10 @@
     --bg-elevated: #10141b;
     --accent: #8bd450;
     --accent-soft: rgba(139, 212, 80, 0.16);
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
   }
 
   html {
@@ -171,7 +175,7 @@
   }
 
   .metric-value {
-    @apply mt-3 text-3xl font-bold text-white;
+    @apply mt-2 text-2xl font-bold text-white sm:mt-3 sm:text-3xl;
   }
 
   .metric-footnote {
@@ -205,15 +209,37 @@
   }
 
   .native-dock {
-    @apply fixed inset-x-3 bottom-3 z-30 flex items-center justify-between rounded-[28px] border border-white/10 bg-zinc-950/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur;
+    @apply fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-white/10 bg-zinc-950/95 backdrop-blur;
+    padding-bottom: max(0.25rem, var(--safe-bottom));
+    padding-top: 0.375rem;
   }
 
   .native-dock-item {
-    @apply flex flex-1 flex-col items-center gap-1 rounded-[20px] px-3 py-2 text-xs text-zinc-500 transition-colors;
+    @apply relative flex flex-1 flex-col items-center gap-0.5 px-1 py-1.5 text-zinc-500 transition-colors;
+    font-size: 10px;
+  }
+
+  .native-dock-item svg {
+    @apply h-5 w-5;
   }
 
   .native-dock-active {
-    @apply bg-white/10 text-white;
+    @apply text-white;
+  }
+
+  .native-dock-active::before {
+    content: '';
+    @apply absolute -top-[0.375rem] left-1/2 h-[3px] w-6 -translate-x-1/2 rounded-full;
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(139, 212, 80, 0.5);
+  }
+
+  .native-header {
+    padding-top: max(0.75rem, calc(var(--safe-top) + 0.25rem));
+  }
+
+  .native-main {
+    padding-bottom: 4.5rem;
   }
 
   @keyframes pulse-record {

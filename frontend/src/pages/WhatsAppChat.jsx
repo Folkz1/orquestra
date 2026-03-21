@@ -14,6 +14,7 @@ import {
 import { useMessageSocket } from '../hooks/useMessageSocket'
 import { usePushNotifications } from '../hooks/usePushNotifications'
 import { isStandalonePWA, isNativeApp } from '../lib/native'
+import { hapticTap } from '../lib/haptics'
 
 function upsertConversation(list, nextConversation) {
   const filtered = list.filter((item) => item.contact_id !== nextConversation.contact_id)
@@ -244,6 +245,7 @@ export default function WhatsAppChat({ appMode = false }) {
         content: draft.trim(),
       })
       setDraft('')
+      hapticTap()
       setMessages((current) => upsertMessage(current, sentMessage))
       setConversations((current) =>
         upsertConversation(current, {
@@ -299,7 +301,7 @@ export default function WhatsAppChat({ appMode = false }) {
   if (appMode) {
     return (
       <div className="relative flex h-screen flex-col overflow-hidden bg-[#06080d]">
-        <header className="relative z-10 flex items-center gap-3 border-b border-white/8 bg-zinc-950/90 px-4 py-2 backdrop-blur">
+        <header className="native-header relative z-10 flex items-center gap-3 border-b border-white/8 bg-zinc-950/90 px-4 py-2 backdrop-blur">
           <a
             href="/"
             className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
@@ -354,7 +356,7 @@ export default function WhatsAppChat({ appMode = false }) {
               className="absolute inset-0"
             />
 
-            <div className="absolute inset-y-3 left-3 flex w-[min(380px,calc(100vw-1.5rem))] flex-col rounded-[30px] border border-white/10 bg-zinc-950/95 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
+            <div className="absolute inset-0 flex flex-col bg-zinc-950/98 sm:inset-y-3 sm:left-3 sm:right-auto sm:w-[min(380px,calc(100vw-1.5rem))] sm:rounded-[30px] sm:border sm:border-white/10 sm:bg-zinc-950/95 sm:shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
               <div className="border-b border-white/8 px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>

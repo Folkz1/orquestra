@@ -282,7 +282,24 @@ function ReviewDetailModal({ task, onClose }) {
   )
 }
 
-function TaskCard({ task, onDragStart, onEdit, onDelete, onOpenReview }) {
+function MobileStatusButtons({ task, onStatusChange }) {
+  const nextStatuses = COLUMNS.filter((col) => col.id !== task.status)
+  return (
+    <div className="flex gap-1.5 mt-2 pt-2 border-t border-zinc-700/50 sm:hidden">
+      {nextStatuses.map((col) => (
+        <button
+          key={col.id}
+          onClick={(e) => { e.stopPropagation(); onStatusChange(task.id, col.id) }}
+          className="flex-1 text-[10px] font-medium py-1.5 rounded-lg border border-zinc-700/50 bg-zinc-800/50 text-zinc-400 active:bg-zinc-700 transition-colors"
+        >
+          {col.icon} {col.label.split(' ')[0]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TaskCard({ task, onDragStart, onEdit, onDelete, onOpenReview, onStatusChange }) {
   const priority = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium
   const assignee = ASSIGNEE_LABELS[task.assigned_to] || { label: task.assigned_to, color: 'text-zinc-400' }
   const isReview = task.status === 'review'
@@ -306,7 +323,7 @@ function TaskCard({ task, onDragStart, onEdit, onDelete, onOpenReview }) {
         <p className="text-sm text-zinc-100 font-medium leading-snug flex-1">
           {task.title}
         </p>
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <div className="flex gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0">
           <button
             onClick={(e) => { e.stopPropagation(); onEdit(task) }}
             className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-700/50 transition-colors"
@@ -409,6 +426,8 @@ function TaskCard({ task, onDragStart, onEdit, onDelete, onOpenReview }) {
           </>
         )}
       </div>
+
+      {onStatusChange && <MobileStatusButtons task={task} onStatusChange={onStatusChange} />}
     </div>
   )
 }
@@ -477,6 +496,7 @@ export default function Kanban() {
     title: '', description: '', project_id: '', priority: 'medium', assigned_to: 'claude', status: 'backlog',
   })
   const [draggedTask, setDraggedTask] = useState(null)
+  const [statusFilter, setStatusFilter] = useState('all')
 
   const loadData = async () => {
     setLoading(true)
@@ -731,26 +751,70 @@ export default function Kanban() {
       {/* Review Detail Modal */}
       <ReviewDetailModal task={reviewTask} onClose={() => setReviewTask(null)} />
 
+      {/* Mobile: Status filter pills */}
+      <div className="flex gap-2 overflow-x-auto pb-3 sm:hidden">
+        <button
+          onClick={() => setStatusFilter('all')}
+          className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+            statusFilter === 'all' ? 'bg-white/15 text-white' : 'bg-zinc-800/80 text-zinc-400'
+          }`}
+        >
+          Todas ({totals.total})
+        </button>
+        {COLUMNS.map((col) => (
+          <button
+            key={col.id}
+            onClick={() => setStatusFilter(col.id)}
+            className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+              statusFilter === col.id ? 'bg-white/15 text-white' : 'bg-zinc-800/80 text-zinc-400'
+            }`}
+          >
+            {col.icon} {col.label.split('/')[0].trim()} ({tasksByStatus[col.id]?.length || 0})
+          </button>
+        ))}
+      </div>
+
       {/* Kanban Board */}
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-2 border-zinc-700 border-t-primary rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
-          {COLUMNS.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              column={column}
-              tasks={tasksByStatus[column.id] || []}
-              onDrop={onDrop}
-              onDragStart={onDragStart}
-              onEdit={openEdit}
-              onDelete={handleDelete}
-              onOpenReview={setReviewTask}
-            />
-          ))}
-        </div>
+        <>
+          {/* Mobile: Vertical list */}
+          <div className="space-y-2 sm:hidden">
+            {(statusFilter === 'all' ? tasks : tasksByStatus[statusFilter] || []).map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onDragStart={onDragStart}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onOpenReview={setReviewTask}
+                onStatusChange={handleStatusChange}
+              />
+            ))}
+            {(statusFilter === 'all' ? tasks : tasksByStatus[statusFilter] || []).length === 0 && (
+              <p className="text-center text-sm text-zinc-600 py-8">Nenhuma task neste filtro</p>
+            )}
+          </div>
+
+          {/* Desktop: Kanban columns */}
+          <div className="hidden sm:flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+            {COLUMNS.map((column) => (
+              <KanbanColumn
+                key={column.id}
+                column={column}
+                tasks={tasksByStatus[column.id] || []}
+                onDrop={onDrop}
+                onDragStart={onDragStart}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onOpenReview={setReviewTask}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

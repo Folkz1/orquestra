@@ -224,7 +224,7 @@ export default function ChatThread({
         )}
       </div>
 
-      <div className={`border-t border-white/8 ${appVariant ? 'bg-black/30 px-3 py-2 sm:px-4' : 'bg-black/20 px-4 py-2.5 sm:px-6'}`}>
+      <div className={`border-t border-white/8 ${appVariant ? 'bg-black/30 px-3 py-2 sm:px-4' : 'bg-black/20 px-4 py-2.5 sm:px-6'}`} style={appVariant ? { paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' } : undefined}>
         <div className={`mx-auto ${maxWidthClass}`}>
           {quickReplies.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">

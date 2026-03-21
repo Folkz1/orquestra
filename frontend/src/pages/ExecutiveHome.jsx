@@ -121,11 +121,11 @@ export default function ExecutiveHome() {
       <section className="hero-panel">
         <div className="hero-copy">
           <p className="eyebrow">Visao executiva</p>
-          <h1 className="mt-3 text-3xl font-bold text-white sm:text-4xl">
-            Orquestra agora opera por sinais, nao por menus dispersos.
+          <h1 className="mt-2 text-2xl font-bold text-white sm:mt-3 sm:text-4xl">
+            Motor 100K
           </h1>
-          <p className="mt-4 max-w-2xl text-sm text-zinc-300 sm:text-base">
-            KPI de receita, urgencia operacional, clientes vivos e progresso de projetos no mesmo lugar.
+          <p className="mt-2 max-w-2xl text-sm text-zinc-300 sm:mt-4 sm:text-base">
+            Receita, urgencias, clientes e projetos num lugar so.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link to="/clientes?tab=pipeline" className="btn-primary">
@@ -154,12 +154,14 @@ export default function ExecutiveHome() {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="MRR" value={loading ? '...' : formatCurrency(metrics.mrr)} footnote="Soma da receita mensal dos clientes ativos" accent="lime" />
-        <StatCard label="Clientes" value={loading ? '...' : formatCompactNumber(metrics.clients)} footnote="Contatos com receita, empresa ou estagio vivo" accent="cyan" />
-        <StatCard label="Tasks" value={loading ? '...' : formatCompactNumber(metrics.tasks)} footnote="Itens que ainda nao foram concluidos" accent="blue" />
-        <StatCard label="Propostas" value={loading ? '...' : formatCompactNumber(metrics.proposals)} footnote="Rascunhos, enviadas e visualizadas" accent="amber" />
-        <StatCard label="Urgentes" value={loading ? '...' : formatCompactNumber(metrics.urgent)} footnote="Alta prioridade ou review pendente" accent="rose" />
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+        <div className="col-span-2 xl:col-span-1">
+          <StatCard label="MRR" value={loading ? '...' : formatCurrency(metrics.mrr)} footnote="Receita mensal recorrente" accent="lime" />
+        </div>
+        <StatCard label="Clientes" value={loading ? '...' : formatCompactNumber(metrics.clients)} footnote="Clientes ativos" accent="cyan" />
+        <StatCard label="Tasks" value={loading ? '...' : formatCompactNumber(metrics.tasks)} footnote="Pendentes" accent="blue" />
+        <StatCard label="Propostas" value={loading ? '...' : formatCompactNumber(metrics.proposals)} footnote="Em aberto" accent="amber" />
+        <StatCard label="Urgentes" value={loading ? '...' : formatCompactNumber(metrics.urgent)} footnote="Alta prioridade" accent="rose" />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">

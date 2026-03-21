@@ -40,11 +40,11 @@ export const desktopNavSections = [
 ]
 
 export const nativeMobileTabs = [
-  { to: '/', label: 'Home' },
-  { to: '/chat', label: 'Chat' },
-  { to: '/clientes', label: 'Clientes' },
-  { to: '/tarefas', label: 'Tarefas' },
-  { to: '/jarbas', label: 'Jarbas' },
+  { to: '/', label: 'Home', icon: 'home' },
+  { to: '/chat', label: 'Chat', icon: 'chat' },
+  { to: '/clientes', label: 'Clientes', icon: 'users' },
+  { to: '/tarefas', label: 'Tarefas', icon: 'tasks' },
+  { to: '/jarbas', label: 'Jarbas', icon: 'bot' },
 ]
 
 const flatItems = [
