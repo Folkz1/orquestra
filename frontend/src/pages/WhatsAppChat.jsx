@@ -16,6 +16,8 @@ import { usePushNotifications } from '../hooks/usePushNotifications'
 import { isStandalonePWA, isNativeApp } from '../lib/native'
 import { hapticTap } from '../lib/haptics'
 
+const CONVERSATION_BOOTSTRAP_LIMIT = 50
+
 function upsertConversation(list, nextConversation) {
   const filtered = list.filter((item) => item.contact_id !== nextConversation.contact_id)
   return [nextConversation, ...filtered]
@@ -98,6 +100,7 @@ export default function WhatsAppChat({ appMode = false }) {
     setLoadingList(true)
     try {
       const data = await getConversations({
+        limit: 60,
         search: deferredSearch,
         unread_only: unreadOnly,
       })
@@ -117,15 +120,11 @@ export default function WhatsAppChat({ appMode = false }) {
     setLoadingThread(true)
     setLoadingContext(true)
     try {
-      const [conversationData, contextData] = await Promise.all([
-        getConversation(contactId),
-        getConversationContext(contactId),
-      ])
-      setMessages(conversationData)
-      setContext({
-        ...contextData,
-        contact: { ...contextData.contact, unread_count: 0 },
+      const conversationData = await getConversation(contactId, {
+        limit: CONVERSATION_BOOTSTRAP_LIMIT,
       })
+      setMessages(conversationData)
+      setLoadingThread(false)
       setSuggestion('')
       await markConversationRead(contactId)
       setConversations((current) =>
@@ -133,6 +132,12 @@ export default function WhatsAppChat({ appMode = false }) {
           item.contact_id === contactId ? { ...item, unread_count: 0 } : item
         )
       )
+
+      const contextData = await getConversationContext(contactId)
+      setContext({
+        ...contextData,
+        contact: { ...contextData.contact, unread_count: 0 },
+      })
     } finally {
       setLoadingThread(false)
       setLoadingContext(false)

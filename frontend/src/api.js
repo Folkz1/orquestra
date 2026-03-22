@@ -110,12 +110,22 @@ export function getMessages(params = {}) {
   return request(`/api/messages${qs ? '?' + qs : ''}`);
 }
 
-export function getConversation(contactId) {
-  return request(`/api/messages/conversation/${contactId}`);
+export function getConversation(contactId, params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, String(value));
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/messages/conversation/${contactId}${qs ? '?' + qs : ''}`);
 }
 
 export function getConversations(params = {}) {
   const query = new URLSearchParams();
+  if (params.limit === undefined) {
+    query.append('limit', '60');
+  }
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
       query.append(key, String(value));

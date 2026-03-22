@@ -138,21 +138,19 @@ async def list_messages(
 async def list_conversations(
     search: str | None = Query(None),
     unread_only: bool = Query(False),
-    limit: int = Query(100, ge=1, le=300),
+    limit: int = Query(60, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
-    msg_count_subq = (
-        select(func.count(Message.id))
-        .where(Message.contact_id == Contact.id)
-        .correlate(Contact)
-        .scalar_subquery()
-        .label("message_count")
-    )
-
     stmt = (
-        select(Contact, Project.name.label("project_name"), msg_count_subq)
+        select(Contact, Project.name.label("project_name"))
         .outerjoin(Project, Contact.project_id == Project.id)
-        .where(or_(Contact.last_message_at.is_not(None), msg_count_subq > 0))
+        .where(
+            or_(
+                Contact.last_message_at.is_not(None),
+                Contact.last_message_preview.is_not(None),
+                Contact.unread_count > 0,
+            )
+        )
         .options(
             noload(Contact.messages),
             noload(Contact.delivery_reports),
@@ -189,11 +187,11 @@ async def list_conversations(
             project_name=project_name,
             pipeline_stage=contact.pipeline_stage or "lead",
             unread_count=contact.unread_count or 0,
-            message_count=message_count or 0,
+            message_count=0,
             last_message_preview=contact.last_message_preview,
             last_message_at=contact.last_message_at,
         )
-        for contact, project_name, message_count in rows
+        for contact, project_name in rows
     ]
 
 
@@ -238,13 +236,13 @@ async def search_conversation(
 @router.get("/conversation/{contact_id}", response_model=list[MessageResponse])
 async def get_conversation(
     contact_id: UUID,
-    limit: int = Query(80, ge=1, le=100000),
+    limit: int = Query(50, ge=1, le=100000),
     include_raw: bool = Query(False, description="Include original webhook payload in response"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get messages in a conversation, ordered chronologically (oldest first).
 
-    Returns last 80 messages by default for fast loading. Set limit higher if needed.
+    Returns last 50 messages by default for fast loading. Set limit higher if needed.
     """
     stmt = (
         select(Message)
