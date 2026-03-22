@@ -36,6 +36,10 @@ async def process_scheduled_messages():
                 )
                 .order_by(ScheduledMessage.scheduled_for.asc())
                 .limit(50)
+                # Each uvicorn worker starts its own scheduler process.
+                # Row locking prevents two workers from sending the same
+                # pending message before one of them commits "sent".
+                .with_for_update(skip_locked=True)
             )
             result = await db.execute(stmt)
             messages = result.scalars().all()

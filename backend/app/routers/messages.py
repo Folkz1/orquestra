@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.database import get_db
 from app.models import Contact, DeliveryReport, Message, Project, ProjectTask, Proposal
@@ -40,9 +41,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _build_message_response(row) -> MessageResponse:
+def _build_message_response(row, include_raw: bool = False) -> MessageResponse:
     msg = row[0]
     msg_dict = MessageResponse.model_validate(msg).model_dump()
+    if not include_raw:
+        msg_dict["raw_payload"] = None
     msg_dict["contact_name"] = row.contact_name or row.contact_push_name
     msg_dict["contact_phone"] = row.contact_phone
     msg_dict["project_name"] = row.project_name
@@ -68,6 +71,7 @@ async def list_messages(
     date_from: datetime | None = Query(None, description="Start date filter"),
     date_to: datetime | None = Query(None, description="End date filter"),
     search: str | None = Query(None, description="Full-text search in content and transcription"),
+    include_raw: bool = Query(False, description="Include original webhook payload in response"),
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     db: AsyncSession = Depends(get_db),
@@ -118,7 +122,7 @@ async def list_messages(
     total_pages = math.ceil(total / per_page) if total > 0 else 0
 
     return PaginatedResponse(
-        items=[_build_message_response(row) for row in rows],
+        items=[_build_message_response(row, include_raw=include_raw) for row in rows],
         total=total,
         page=page,
         page_size=per_page,
@@ -145,6 +149,10 @@ async def list_conversations(
         select(Contact, Project.name.label("project_name"), msg_count_subq)
         .outerjoin(Project, Contact.project_id == Project.id)
         .where(or_(Contact.last_message_at.is_not(None), msg_count_subq > 0))
+        .options(
+            noload(Contact.messages),
+            noload(Contact.delivery_reports),
+        )
     )
 
     filters = []
@@ -189,6 +197,7 @@ async def list_conversations(
 async def search_conversation(
     contact_id: UUID,
     q: str = Query(..., min_length=1, description="Search text inside this contact conversation"),
+    include_raw: bool = Query(False, description="Include original webhook payload in response"),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
@@ -219,13 +228,14 @@ async def search_conversation(
 
     rows = (await db.execute(stmt)).all()
     rows.reverse()
-    return [_build_message_response(row) for row in rows]
+    return [_build_message_response(row, include_raw=include_raw) for row in rows]
 
 
 @router.get("/conversation/{contact_id}", response_model=list[MessageResponse])
 async def get_conversation(
     contact_id: UUID,
     limit: int = Query(80, ge=1, le=100000),
+    include_raw: bool = Query(False, description="Include original webhook payload in response"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get messages in a conversation, ordered chronologically (oldest first).
@@ -258,7 +268,7 @@ async def get_conversation(
     stmt = stmt.order_by(Message.timestamp.asc())
 
     rows = (await db.execute(stmt)).all()
-    return [_build_message_response(row) for row in rows]
+    return [_build_message_response(row, include_raw=include_raw) for row in rows]
 
 
 @router.post("/read/{contact_id}", response_model=MarkConversationReadResponse)
@@ -371,7 +381,15 @@ async def get_conversation_context(
     contact_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    contact = await db.get(Contact, contact_id)
+    contact_stmt = (
+        select(Contact)
+        .where(Contact.id == contact_id)
+        .options(
+            noload(Contact.messages),
+            noload(Contact.delivery_reports),
+        )
+    )
+    contact = (await db.execute(contact_stmt)).scalar_one_or_none()
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
@@ -413,6 +431,11 @@ async def get_conversation_context(
     proposal_rows = (
         await db.execute(
             select(Proposal)
+            .options(
+                noload(Proposal.comments),
+                noload(Proposal.contact),
+                noload(Proposal.delivery_report),
+            )
             .where(Proposal.contact_id == contact.id)
             .order_by(Proposal.updated_at.desc())
             .limit(5)
@@ -434,6 +457,10 @@ async def get_conversation_context(
     report_rows = (
         await db.execute(
             select(DeliveryReport)
+            .options(
+                noload(DeliveryReport.proposal),
+                noload(DeliveryReport.contact),
+            )
             .where(DeliveryReport.contact_id == contact.id)
             .order_by(DeliveryReport.generated_at.desc())
             .limit(4)
