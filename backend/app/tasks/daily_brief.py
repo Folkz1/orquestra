@@ -77,6 +77,8 @@ def start_scheduler():
     #     id="daily_brief",
     #     replace_existing=True,
     #     timezone="UTC",
+    #     max_instances=1,
+    #     misfire_grace_time=3600,
     # )
 
     # scheduler.add_job(
@@ -87,6 +89,8 @@ def start_scheduler():
     #     id="youtube_analysis",
     #     replace_existing=True,
     #     timezone="UTC",
+    #     max_instances=1,
+    #     misfire_grace_time=3600,
     # )
 
     # scheduler.add_job(
@@ -97,6 +101,8 @@ def start_scheduler():
     #     id="client_digests",
     #     replace_existing=True,
     #     timezone="UTC",
+    #     max_instances=1,
+    #     misfire_grace_time=3600,
     # )
 
     # scheduler.add_job(
@@ -107,6 +113,8 @@ def start_scheduler():
     #     id="proactive_bot",
     #     replace_existing=True,
     #     timezone="UTC",
+    #     max_instances=1,
+    #     misfire_grace_time=3600,
     # )
 
     # ---- ATIVOS ----
@@ -118,6 +126,8 @@ def start_scheduler():
         minutes=1,
         id="scheduled_messages",
         replace_existing=True,
+        max_instances=1,           # Prevent overlap if previous run still executing
+        misfire_grace_time=30,     # Skip if missed by >30s (don't pile up)
     )
 
     # Subscription alerts - todo dia 15 às 12:00 UTC (9h BRT)
@@ -130,6 +140,8 @@ def start_scheduler():
         id="subscription_alerts",
         replace_existing=True,
         timezone="UTC",
+        max_instances=1,
+        misfire_grace_time=3600,   # Allow up to 1h grace for monthly job
     )
 
     scheduler.start()

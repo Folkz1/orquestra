@@ -166,10 +166,35 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 async def health_check():
+    from app.database import async_session, engine
+    from sqlalchemy import text
+
+    db_ok = False
+    pool_info = {}
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+            db_ok = True
+        pool = engine.pool
+        try:
+            pool_info = {
+                "pool_size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow(),
+            }
+        except Exception:
+            pool_info = {"error": "pool stats unavailable"}
+    except Exception:
+        pass
+
+    status_val = "ok" if db_ok else "degraded"
     return {
-        "status": "ok",
+        "status": status_val,
         "service": "orquestra",
-        "version": "1.0.0",
+        "version": "1.0.1",
+        "db": db_ok,
+        "pool": pool_info,
     }
 
 

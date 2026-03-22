@@ -3,6 +3,7 @@ Orquestra - Recordings Router
 Upload, list, and retrieve recording details.
 """
 
+import asyncio
 import logging
 import math
 import os
@@ -79,10 +80,15 @@ def _recording_to_light_response(recording: Recording) -> RecordingLightResponse
     return RecordingLightResponse(**data)
 
 
+TRANSCRIPTION_TIMEOUT = 600  # 10 min max for transcription (covers compress + API)
+SUMMARY_TIMEOUT = 120  # 2 min max for LLM summary generation
+
+
 async def process_recording(recording_id: str):
     """
     Background task: transcribe audio and generate summary for a recording.
     Uses its own database session since this runs outside the request lifecycle.
+    Includes explicit timeouts to prevent silent hangs on large files.
     """
     async with async_session() as db:
         try:
@@ -94,11 +100,28 @@ async def process_recording(recording_id: str):
                 logger.error("[RECORDINGS] Recording %s not found", recording_id)
                 return
 
-            # Transcribe
+            file_size_mb = (recording.file_size_bytes or 0) / (1024 * 1024)
+            logger.info(
+                "[RECORDINGS] Processing %s (%.1fMB)...", recording_id, file_size_mb
+            )
+
+            # Transcribe with explicit timeout
             try:
-                transcription = await transcribe_audio(recording.file_path)
+                transcription = await asyncio.wait_for(
+                    transcribe_audio(recording.file_path),
+                    timeout=TRANSCRIPTION_TIMEOUT,
+                )
                 recording.transcription = transcription
                 logger.info("[RECORDINGS] Transcribed recording %s", recording_id)
+            except asyncio.TimeoutError:
+                logger.error(
+                    "[RECORDINGS] Transcription TIMEOUT after %ds for %s (%.1fMB)",
+                    TRANSCRIPTION_TIMEOUT, recording_id, file_size_mb,
+                )
+                recording.transcription = (
+                    f"[Transcription timeout: arquivo de {file_size_mb:.0f}MB "
+                    f"excedeu {TRANSCRIPTION_TIMEOUT}s. Use /reprocess para tentar novamente.]"
+                )
             except Exception as exc:
                 logger.error(
                     "[RECORDINGS] Transcription failed for %s: %s", recording_id, exc
@@ -106,9 +129,8 @@ async def process_recording(recording_id: str):
                 recording.transcription = f"[Transcription error: {str(exc)[:200]}]"
 
             # Generate summary if transcription succeeded
-            if recording.transcription and not recording.transcription.startswith(
-                "[Transcription error"
-            ):
+            projects_map = {}
+            if recording.transcription and not recording.transcription.startswith("[Transcription"):
                 try:
                     # Fetch known project names for auto-detection
                     proj_stmt = select(Project.id, Project.name).where(Project.status == "active")
@@ -116,8 +138,11 @@ async def process_recording(recording_id: str):
                     projects_map = {row.name: row.id for row in proj_result.all()}
                     known_projects = list(projects_map.keys())
 
-                    summary_data = await generate_meeting_summary(
-                        recording.transcription, known_projects=known_projects
+                    summary_data = await asyncio.wait_for(
+                        generate_meeting_summary(
+                            recording.transcription, known_projects=known_projects
+                        ),
+                        timeout=SUMMARY_TIMEOUT,
                     )
                     recording.title = recording.title or summary_data.get("title", "")
                     recording.summary = summary_data.get("summary", "")
@@ -135,19 +160,21 @@ async def process_recording(recording_id: str):
                                 break
 
                     logger.info("[RECORDINGS] Summary generated for %s", recording_id)
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "[RECORDINGS] Summary TIMEOUT after %ds for %s",
+                        SUMMARY_TIMEOUT, recording_id,
+                    )
                 except Exception as exc:
                     logger.error(
                         "[RECORDINGS] Summary generation failed for %s: %s",
-                        recording_id,
-                        exc,
+                        recording_id, exc,
                     )
 
             recording.processed = True
 
             # Store transcription in vector memory
-            if recording.transcription and not recording.transcription.startswith(
-                "[Transcription error"
-            ):
+            if recording.transcription and not recording.transcription.startswith("[Transcription"):
                 try:
                     memory_content = recording.transcription
                     if recording.summary:
@@ -178,12 +205,11 @@ async def process_recording(recording_id: str):
                 except Exception as exc:
                     logger.error(
                         "[RECORDINGS] Failed to store recording memory for %s: %s",
-                        recording_id,
-                        exc,
+                        recording_id, exc,
                     )
 
             await db.commit()
-            logger.info("[RECORDINGS] Processing complete for %s", recording_id)
+            logger.info("[RECORDINGS] Processing complete for %s (processed=True)", recording_id)
 
         except Exception as exc:
             logger.error(
@@ -204,23 +230,30 @@ async def upload_recording(
     Upload a recording file (audio).
     Saves the file, creates a Recording record, and starts background transcription.
     """
-    # Validate file size
+    # Save file to disk using streaming (avoid loading entire file in memory)
     max_bytes = settings.MAX_AUDIO_SIZE_MB * 1024 * 1024
-    content = await file.read()
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Maximum size: {settings.MAX_AUDIO_SIZE_MB}MB",
-        )
-
-    # Save file to disk
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     file_ext = os.path.splitext(file.filename or "recording.ogg")[1] or ".ogg"
     filename = f"recording_{uuid.uuid4().hex}{file_ext}"
     file_path = os.path.join(settings.UPLOAD_DIR, filename)
 
+    total_size = 0
+    chunk_size = 1024 * 1024  # 1MB chunks
     with open(file_path, "wb") as f:
-        f.write(content)
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_bytes:
+                f.close()
+                os.remove(file_path)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large. Maximum size: {settings.MAX_AUDIO_SIZE_MB}MB",
+                )
+            f.write(chunk)
+    content_length = total_size
 
     # Parse project_id if provided
     parsed_project_id = None
@@ -235,7 +268,7 @@ async def upload_recording(
         title=title,
         source="pwa",
         file_path=file_path,
-        file_size_bytes=len(content),
+        file_size_bytes=content_length,
         project_id=parsed_project_id,
         processed=False,
     )
@@ -244,7 +277,7 @@ async def upload_recording(
     await db.refresh(recording)
 
     logger.info(
-        "[RECORDINGS] Uploaded recording %s (%d bytes)", recording.id, len(content)
+        "[RECORDINGS] Uploaded recording %s (%d bytes)", recording.id, content_length
     )
 
     # Schedule background transcription + summary

@@ -3,6 +3,7 @@ Orquestra - Webhook Router
 Receives Evolution API webhook events and processes WhatsApp messages.
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -305,18 +306,23 @@ async def process_media(
             file_path = await save_media(media_bytes, filename)
             message.media_local_path = file_path
 
-            # Process based on type
+            # Process based on type (with timeouts to prevent session leak)
             if msg_type == "audio":
                 try:
-                    transcription = await transcribe_audio(file_path)
+                    transcription = await asyncio.wait_for(
+                        transcribe_audio(file_path), timeout=600
+                    )
                     message.transcription = transcription
                     message.processed = True
                     logger.info("[WEBHOOK] Audio transcribed: %s", message_id)
 
-                    # Store transcription in vector memory
                     await _store_message_memory(
                         db, str(message.id), transcription, contact_name
                     )
+                except asyncio.TimeoutError:
+                    logger.error("[WEBHOOK] Audio transcription TIMEOUT (600s): %s", message_id)
+                    message.transcription = "[Transcription timeout: arquivo muito grande]"
+                    message.processed = True
                 except Exception as exc:
                     logger.error("[WEBHOOK] Audio transcription failed: %s", exc)
                     message.processed = False
@@ -324,22 +330,28 @@ async def process_media(
             elif msg_type == "image":
                 try:
                     mimetype = message.media_mimetype or "image/jpeg"
-                    description = await describe_image(media_bytes, mimetype)
+                    description = await asyncio.wait_for(
+                        describe_image(media_bytes, mimetype), timeout=120
+                    )
                     message.transcription = description
                     message.processed = True
                     logger.info("[WEBHOOK] Image described: %s", message_id)
 
-                    # Store image description in vector memory
                     await _store_message_memory(
                         db, str(message.id), description, contact_name
                     )
+                except asyncio.TimeoutError:
+                    logger.error("[WEBHOOK] Image description TIMEOUT (120s): %s", message_id)
+                    message.processed = True
                 except Exception as exc:
                     logger.error("[WEBHOOK] Image description failed: %s", exc)
                     message.processed = False
             elif msg_type == "document":
                 try:
                     mimetype = message.media_mimetype
-                    transcription = await extract_document_text(file_path, mimetype)
+                    transcription = await asyncio.wait_for(
+                        extract_document_text(file_path, mimetype), timeout=300
+                    )
                     if transcription:
                         message.transcription = transcription
                         message.processed = True
@@ -348,7 +360,6 @@ async def process_media(
                             message_id, len(transcription),
                         )
 
-                        # Store transcription in vector memory
                         await _store_message_memory(
                             db, str(message.id), transcription, contact_name
                         )
@@ -357,6 +368,9 @@ async def process_media(
                         logger.info(
                             "[WEBHOOK] Document saved but no text extracted: %s", message_id
                         )
+                except asyncio.TimeoutError:
+                    logger.error("[WEBHOOK] Document extraction TIMEOUT (300s): %s", message_id)
+                    message.processed = True
                 except Exception as exc:
                     logger.error("[WEBHOOK] Document transcription failed: %s", exc)
                     message.processed = True  # File is saved, mark processed
