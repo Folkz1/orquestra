@@ -481,6 +481,13 @@ async def evolution_webhook(
         and not group
     )
     if owner_text_message:
+        async def _send_owner_reply(text: str) -> bool:
+            return await send_whatsapp_message(
+                phone,
+                text,
+                instance=instance_name if instance_name != "unknown" else None,
+                base_url=server_url if server_url != "unknown" else None,
+            )
 
         # Natural language is the primary mode; /assist is only fallback.
         cmd = await parse_owner_natural_message(content)
@@ -500,25 +507,25 @@ async def evolution_webhook(
                         "/assist audio <telefone> | <objetivo>\n"
                         "/assist send <draft_id>"
                     )
-                    await send_whatsapp_message(phone, help_txt)
+                    await _send_owner_reply(help_txt)
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "open":
                     pending = await list_open_threads(db, limit=12)
                     if not pending:
-                        await send_whatsapp_message(phone, "Sem conversas em aberto agora ✅")
+                        await _send_owner_reply("Sem conversas em aberto agora ✅")
                         return {"status": "owner_command"}
 
                     lines = ["Mensagens em aberto (clientes):"]
                     for i, item in enumerate(pending, 1):
                         lines.append(f"{i}. {item['name']} ({item['phone']}) - {item['preview']}")
                     lines.append("\nUse: /assist draft <telefone> | <objetivo>")
-                    await send_whatsapp_message(phone, "\n".join(lines)[:3900])
+                    await _send_owner_reply("\n".join(lines)[:3900])
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "draft":
                     if not cmd.get("phone"):
-                        await send_whatsapp_message(phone, "Me manda o número do cliente com DDI (ex: 5551999998888) para eu gerar o rascunho.")
+                        await _send_owner_reply("Me manda o número do cliente com DDI (ex: 5551999998888) para eu gerar o rascunho.")
                         return {"status": "owner_command"}
                     target = await get_or_create_contact_by_phone(db, cmd["phone"])
                     draft = await generate_reply_draft(db, target, cmd.get("objective"))
@@ -529,12 +536,12 @@ async def evolution_webhook(
                         f"{draft.draft_text[:1200]}\n\n"
                         f"Para enviar: /assist send {draft.id}"
                     )
-                    await send_whatsapp_message(phone, preview)
+                    await _send_owner_reply(preview)
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "audio":
                     if not cmd.get("phone"):
-                        await send_whatsapp_message(phone, "Me manda o número do cliente com DDI para eu montar o roteiro de áudio.")
+                        await _send_owner_reply("Me manda o número do cliente com DDI para eu montar o roteiro de áudio.")
                         return {"status": "owner_command"}
                     target = await get_or_create_contact_by_phone(db, cmd["phone"])
                     script = await generate_voice_script(db, target, cmd.get("objective") or "")
@@ -543,44 +550,42 @@ async def evolution_webhook(
                         f"{script[:1500]}\n\n"
                         "Se quiser texto em vez de áudio: /assist draft <telefone> | <objetivo>"
                     )
-                    await send_whatsapp_message(phone, msg)
+                    await _send_owner_reply(msg)
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "send":
                     draft_id = (cmd.get("draft_id") or "").strip()
                     if not draft_id:
-                        await send_whatsapp_message(
-                            phone,
+                        await _send_owner_reply(
                             "Para enviar, me passe o ID do rascunho. Ex.: /assist send <draft_id>",
                         )
                         return {"status": "owner_command"}
 
                     draft = await db.get(AssistantDraft, draft_id)
                     if not draft:
-                        await send_whatsapp_message(phone, "Draft nao encontrado.")
+                        await _send_owner_reply("Draft nao encontrado.")
                         return {"status": "owner_command"}
 
                     ok = await send_draft(db, draft)
                     await db.commit()
                     txt = "Mensagem enviada ✅" if ok else "Falha ao enviar mensagem."
-                    await send_whatsapp_message(phone, txt)
+                    await _send_owner_reply(txt)
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "history":
                     target = (cmd.get("target") or "").strip()
                     limit = int(cmd.get("limit") or 10)
                     if not target:
-                        await send_whatsapp_message(phone, "Me diz de quem você quer o histórico (nome ou número).")
+                        await _send_owner_reply("Me diz de quem você quer o histórico (nome ou número).")
                         return {"status": "owner_command"}
 
                     contact_target, msgs = await get_recent_messages_for_target(db, target, limit=limit)
                     if not contact_target:
-                        await send_whatsapp_message(phone, f"Não encontrei esse contato: {target}.")
+                        await _send_owner_reply(f"Não encontrei esse contato: {target}.")
                         return {"status": "owner_command"}
 
                     if not msgs:
-                        await send_whatsapp_message(
-                            phone,
+                        await _send_owner_reply(
                             f"Não achei mensagens recentes de {contact_target.name or contact_target.push_name or contact_target.phone}.",
                         )
                         return {"status": "owner_command"}
@@ -594,7 +599,7 @@ async def evolution_webhook(
                         ts = m.timestamp.strftime("%d/%m %H:%M") if m.timestamp else "--"
                         lines.append(f"[{ts}] {who}: {text[:180]}")
 
-                    await send_whatsapp_message(phone, "\n".join(lines)[:3900])
+                    await _send_owner_reply("\n".join(lines)[:3900])
                     return {"status": "owner_command"}
 
                 if cmd["action"] == "chat":
@@ -632,12 +637,12 @@ async def evolution_webhook(
 
                     if not reply:
                         reply = await owner_chat_reply(db, content, contact.id)
-                    await send_whatsapp_message(phone, reply[:3500])
+                    await _send_owner_reply(reply[:3500])
                     return {"status": "owner_command"}
             except Exception as exc:
                 logger.error("[WEBHOOK] owner command failed: %s", exc)
                 await db.rollback()
-                await send_whatsapp_message(phone, "Deu um erro aqui para processar isso. Me manda de novo em uma frase que eu resolvo agora.")
+                await _send_owner_reply("Deu um erro aqui para processar isso. Me manda de novo em uma frase que eu resolvo agora.")
                 return {"status": "owner_command_error"}
 
     # Auto-associate project

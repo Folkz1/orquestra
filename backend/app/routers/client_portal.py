@@ -20,7 +20,10 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.models import ClientPortalLink, Contact, Project, ProjectTask, Proposal, Recording
-from app.services.whatsapp import send_whatsapp_message
+from app.services.whatsapp import (
+    resolve_contact_whatsapp_channel,
+    send_whatsapp_message,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -933,9 +936,16 @@ async def request_feedback(
         link.feedback_type = feedback_type
         link.feedback_title = feedback_title
         link.feedback_message = feedback_message
+        instance_name, base_url = await resolve_contact_whatsapp_channel(
+            db,
+            contact=link.contact,
+            phone=link.contact.phone,
+        )
         notification_sent = await send_whatsapp_message(
             link.contact.phone,
             _build_feedback_notification(link, portal_url),
+            instance=instance_name,
+            base_url=base_url,
         )
     values: dict[str, Any] = {
         "feedback_type": feedback_type,

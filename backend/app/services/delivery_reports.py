@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import Contact, DeliveryReport, Message, Proposal
 from app.services.llm import chat_completion
-from app.services.whatsapp import send_whatsapp_message
+from app.services.whatsapp import (
+    resolve_contact_whatsapp_channel,
+    send_whatsapp_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +424,17 @@ async def send_delivery_report_to_client(
         raise ValueError("Nao ha telefone para enviar o relatorio")
 
     message = await build_delivery_report_whatsapp_message(report, proposal, contact)
-    sent = await send_whatsapp_message(phone, message)
+    instance_name, base_url = await resolve_contact_whatsapp_channel(
+        db,
+        contact=contact,
+        phone=phone,
+    )
+    sent = await send_whatsapp_message(
+        phone,
+        message,
+        instance=instance_name,
+        base_url=base_url,
+    )
     if not sent:
         raise RuntimeError("Falha ao enviar mensagem no WhatsApp")
 

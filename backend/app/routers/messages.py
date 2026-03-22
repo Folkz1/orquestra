@@ -34,7 +34,11 @@ from app.schemas import (
 from app.services.chat_state import update_contact_chat_state
 from app.services.llm import chat_completion
 from app.services.realtime import broadcast_message_event, manager
-from app.services.whatsapp import send_whatsapp_message
+from app.services.whatsapp import (
+    build_outbound_channel_payload,
+    resolve_contact_whatsapp_channel,
+    send_whatsapp_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +322,17 @@ async def send_message(
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    ok = await send_whatsapp_message(contact.phone, data.content)
+    instance_name, base_url = await resolve_contact_whatsapp_channel(
+        db,
+        contact=contact,
+        phone=contact.phone,
+    )
+    ok = await send_whatsapp_message(
+        contact.phone,
+        data.content,
+        instance=instance_name,
+        base_url=base_url,
+    )
     if not ok:
         raise HTTPException(status_code=502, detail="Failed to send message via WhatsApp")
 
@@ -329,6 +343,11 @@ async def send_message(
         direction="outgoing",
         message_type="text",
         content=data.content,
+        raw_payload=build_outbound_channel_payload(
+            instance=instance_name,
+            base_url=base_url,
+            source="orquestra-manual-send",
+        ),
         processed=True,
         project_id=contact.project_id,
         timestamp=now,

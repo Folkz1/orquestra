@@ -16,7 +16,10 @@ from app.config import settings
 from app.models import AssistantDraft, Contact, Message, Project, ProjectTask
 from app.services.llm import chat_completion
 from app.services.memory import search_memory
-from app.services.whatsapp import send_whatsapp_message
+from app.services.whatsapp import (
+    resolve_contact_whatsapp_channel,
+    send_whatsapp_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +291,17 @@ async def send_draft(db: AsyncSession, draft: AssistantDraft) -> bool:
     if not contact:
         return False
 
-    ok = await send_whatsapp_message(contact.phone, draft.draft_text)
+    instance_name, base_url = await resolve_contact_whatsapp_channel(
+        db,
+        contact=contact,
+        phone=contact.phone,
+    )
+    ok = await send_whatsapp_message(
+        contact.phone,
+        draft.draft_text,
+        instance=instance_name,
+        base_url=base_url,
+    )
     if ok:
         draft.status = "sent"
         draft.sent_at = datetime.now(timezone.utc)
