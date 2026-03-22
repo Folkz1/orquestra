@@ -121,6 +121,11 @@ EXEMPT_PATHS = {
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Bearer token authentication middleware."""
+    # CORS preflight must pass through unchallenged or the browser will never
+    # send the real authenticated request.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # Skip auth if no secret key configured
     if not settings.APP_SECRET_KEY:
         return await call_next(request)
