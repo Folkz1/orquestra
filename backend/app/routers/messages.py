@@ -6,6 +6,7 @@ List, search, send, and contextualize WhatsApp conversations.
 import logging
 import math
 import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -46,6 +47,21 @@ router = APIRouter()
 
 
 def _build_message_response(row, include_raw: bool = False) -> MessageResponse:
+    if isinstance(row, Mapping) or hasattr(row, "_mapping"):
+        row_data = dict(row if isinstance(row, Mapping) else row._mapping)
+        contact_name = row_data.pop("contact_name", None)
+        contact_push_name = row_data.pop("contact_push_name", None)
+        contact_phone = row_data.pop("contact_phone", None)
+        project_name = row_data.pop("project_name", None)
+        if not include_raw:
+            row_data["raw_payload"] = None
+        return MessageResponse(
+            **row_data,
+            contact_name=contact_name or contact_push_name or contact_phone,
+            contact_phone=contact_phone,
+            project_name=project_name,
+        )
+
     msg = row[0]
     msg_dict = MessageResponse.model_validate(msg).model_dump()
     if not include_raw:
@@ -142,7 +158,18 @@ async def list_conversations(
     db: AsyncSession = Depends(get_db),
 ):
     stmt = (
-        select(Contact, Project.name.label("project_name"))
+        select(
+            Contact.id.label("contact_id"),
+            func.coalesce(Contact.name, Contact.push_name, Contact.phone).label("contact_name"),
+            Contact.phone.label("contact_phone"),
+            Contact.profile_pic_url.label("profile_pic_url"),
+            Contact.project_id.label("project_id"),
+            Project.name.label("project_name"),
+            Contact.pipeline_stage.label("pipeline_stage"),
+            Contact.unread_count.label("unread_count"),
+            Contact.last_message_preview.label("last_message_preview"),
+            Contact.last_message_at.label("last_message_at"),
+        )
         .outerjoin(Project, Contact.project_id == Project.id)
         .where(
             or_(
@@ -150,10 +177,6 @@ async def list_conversations(
                 Contact.last_message_preview.is_not(None),
                 Contact.unread_count > 0,
             )
-        )
-        .options(
-            noload(Contact.messages),
-            noload(Contact.delivery_reports),
         )
     )
 
@@ -175,23 +198,23 @@ async def list_conversations(
         stmt = stmt.where(and_(*filters))
 
     stmt = stmt.order_by(Contact.last_message_at.desc().nullslast(), desc(Contact.updated_at)).limit(limit)
-    rows = (await db.execute(stmt)).all()
+    rows = (await db.execute(stmt)).mappings().all()
 
     return [
         ConversationListItem(
-            contact_id=contact.id,
-            contact_name=contact.name or contact.push_name or contact.phone,
-            contact_phone=contact.phone,
-            profile_pic_url=contact.profile_pic_url,
-            project_id=contact.project_id,
-            project_name=project_name,
-            pipeline_stage=contact.pipeline_stage or "lead",
-            unread_count=contact.unread_count or 0,
+            contact_id=row["contact_id"],
+            contact_name=row["contact_name"],
+            contact_phone=row["contact_phone"],
+            profile_pic_url=row["profile_pic_url"],
+            project_id=row["project_id"],
+            project_name=row["project_name"],
+            pipeline_stage=row["pipeline_stage"] or "lead",
+            unread_count=row["unread_count"] or 0,
             message_count=0,
-            last_message_preview=contact.last_message_preview,
-            last_message_at=contact.last_message_at,
+            last_message_preview=row["last_message_preview"],
+            last_message_at=row["last_message_at"],
         )
-        for contact, project_name in rows
+        for row in rows
     ]
 
 
@@ -244,32 +267,48 @@ async def get_conversation(
 
     Returns last 50 messages by default for fast loading. Set limit higher if needed.
     """
-    stmt = (
-        select(Message)
-        .where(Message.contact_id == contact_id)
-        .outerjoin(Contact, Message.contact_id == Contact.id)
-        .outerjoin(Project, Message.project_id == Project.id)
-        .add_columns(
-            Contact.name.label("contact_name"),
-            Contact.push_name.label("contact_push_name"),
-            Contact.phone.label("contact_phone"),
-            Project.name.label("project_name"),
-        )
-    )
-
     latest_stmt = (
-        select(Message)
+        select(Message.id)
         .where(Message.contact_id == contact_id)
         .order_by(Message.timestamp.desc())
         .limit(limit)
         .subquery()
     )
-    stmt = stmt.where(Message.id.in_(select(latest_stmt.c.id)))
+
+    stmt = (
+        select(
+            Message.id,
+            Message.contact_id,
+            Message.remote_jid,
+            Message.direction,
+            Message.message_type,
+            Message.content,
+            Message.transcription,
+            Message.media_url,
+            Message.media_local_path,
+            Message.media_mimetype,
+            Message.media_duration_seconds,
+            Message.quoted_message_id,
+            Message.evolution_message_id,
+            Message.raw_payload,
+            Message.processed,
+            Message.project_id,
+            Message.timestamp,
+            Message.created_at,
+            Contact.name.label("contact_name"),
+            Contact.push_name.label("contact_push_name"),
+            Contact.phone.label("contact_phone"),
+            Project.name.label("project_name"),
+        )
+        .join(latest_stmt, Message.id == latest_stmt.c.id)
+        .outerjoin(Contact, Message.contact_id == Contact.id)
+        .outerjoin(Project, Message.project_id == Project.id)
+    )
 
     # Always order by timestamp ascending (oldest first) - chronological order
     stmt = stmt.order_by(Message.timestamp.asc())
 
-    rows = (await db.execute(stmt)).all()
+    rows = (await db.execute(stmt)).mappings().all()
     return [_build_message_response(row, include_raw=include_raw) for row in rows]
 
 
