@@ -5,6 +5,8 @@ Orquestra - YouTube analysis and editorial strategy service.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from copy import deepcopy
 from typing import Any
 
@@ -387,21 +389,180 @@ def _normalize_text(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
 def _unique_preserve_order(values: list[Any]) -> list[Any]:
     unique: list[Any] = []
     seen: set[str] = set()
     for value in values:
-        marker = _normalize_text(str(value))
+        clean_value = _clean_text(value)
+        marker = _normalize_text(clean_value)
         if not marker or marker in seen:
             continue
         seen.add(marker)
-        unique.append(value)
+        unique.append(clean_value)
     return unique
 
 
 def _named_item_key(item: dict[str, Any], key: str) -> str:
     raw_value = item.get(key) or item.get("name") or item.get("series")
     return _normalize_text(str(raw_value))
+
+
+def _slugify(value: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", _clean_text(value))
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_value.lower()).strip("-")
+
+
+def _compact_episode(item: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    episode = deepcopy(item)
+    for key, value in list(episode.items()):
+        if isinstance(value, str):
+            episode[key] = value.strip()
+    if not episode.get("title") and not episode.get("code"):
+        return None
+    return episode
+
+
+def _compact_calendar_items(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    cleaned: list[dict[str, Any]] = []
+    for item in list(items or []):
+        if not isinstance(item, dict):
+            continue
+        calendar_item = {
+            "series": _clean_text(item.get("series") or item.get("name")),
+            "slot": _clean_text(item.get("slot")),
+            "format": _clean_text(item.get("format")),
+            "goal": _clean_text(item.get("goal")),
+        }
+        if not any(calendar_item.values()):
+            continue
+        if not calendar_item["series"]:
+            continue
+        cleaned.append({key: value for key, value in calendar_item.items() if value})
+    return _merge_named_objects([], cleaned, "series")
+
+
+def _order_series_by_calendar(
+    series_items: list[dict[str, Any]],
+    calendar_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not series_items:
+        return []
+
+    by_name = {_normalize_text(item.get("name")): item for item in series_items}
+    ordered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for calendar_item in calendar_items:
+        series_name = _normalize_text(calendar_item.get("series"))
+        if not series_name or series_name not in by_name or series_name in seen:
+            continue
+        ordered.append(by_name[series_name])
+        seen.add(series_name)
+
+    for item in series_items:
+        series_name = _normalize_text(item.get("name"))
+        if series_name in seen:
+            continue
+        ordered.append(item)
+        seen.add(series_name)
+
+    return ordered
+
+
+def _compact_series_items(
+    items: list[dict[str, Any]] | None,
+    calendar_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    cleaned: list[dict[str, Any]] = []
+    for item in list(items or []):
+        if not isinstance(item, dict):
+            continue
+        series = deepcopy(item)
+        series["name"] = _clean_text(series.get("name"))
+        series["slug"] = _clean_text(series.get("slug")) or _slugify(series.get("name"))
+        if not series["name"] and not series["slug"]:
+            continue
+        if not series["name"]:
+            series["name"] = series["slug"].replace("-", " ").title()
+        if not series["slug"]:
+            series["slug"] = _slugify(series["name"])
+
+        for field in (
+            "status",
+            "objective",
+            "content_role",
+            "cadence",
+            "format",
+            "thumbnail_rule",
+            "summary",
+            "audience",
+            "promise",
+            "cta_focus",
+        ):
+            if field in series or field in {"status", "objective", "summary"}:
+                series[field] = _clean_text(series.get(field))
+
+        series["status"] = series.get("status") or "ativa"
+        series["idea_seeds"] = _unique_preserve_order(series.get("idea_seeds") or [])
+        series["episodes"] = [
+            compacted
+            for compacted in (_compact_episode(episode) for episode in list(series.get("episodes", []) or []))
+            if compacted
+        ]
+        cleaned.append(series)
+
+    merged = _merge_named_objects([], cleaned, "slug")
+    return _order_series_by_calendar(merged, calendar_items)
+
+
+def _compact_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
+    compacted = deepcopy(strategy or {})
+
+    for field in (
+        "goal",
+        "positioning",
+        "north_star",
+        "big_idea",
+        "brand_narrative",
+        "editorial_formula",
+        "last_synced_at",
+    ):
+        if field in compacted:
+            compacted[field] = _clean_text(compacted.get(field))
+
+    compacted["content_pillars"] = _unique_preserve_order(compacted.get("content_pillars") or [])
+    compacted["preferred_title_patterns"] = _unique_preserve_order(compacted.get("preferred_title_patterns") or [])
+    compacted["operating_rules"] = _unique_preserve_order(compacted.get("operating_rules") or [])
+    compacted["source_materials"] = _unique_preserve_order(compacted.get("source_materials") or [])
+
+    style = dict(compacted.get("style") or {})
+    for key in ("tone", "visual", "editing", "pacing"):
+        if key in style:
+            style[key] = _clean_text(style.get(key))
+    compacted["style"] = style
+
+    cta_templates = dict(compacted.get("cta_templates") or {})
+    for key, value in list(cta_templates.items()):
+        cta_templates[key] = _clean_text(value)
+    compacted["cta_templates"] = cta_templates
+
+    rhythm = dict(compacted.get("publishing_rhythm") or {})
+    for key in ("weekly_long_videos", "weekly_shorts", "weekly_lives"):
+        try:
+            rhythm[key] = int(rhythm.get(key) or 0)
+        except (TypeError, ValueError):
+            rhythm[key] = 0
+    rhythm["calendar"] = _compact_calendar_items(rhythm.get("calendar") or [])
+    compacted["publishing_rhythm"] = rhythm
+    compacted["series"] = _compact_series_items(compacted.get("series") or [], rhythm["calendar"])
+    return compacted
 
 
 def _merge_named_objects(
@@ -441,14 +602,22 @@ def _merge_strategy(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, 
     merged = _merge_dict(base, updates)
 
     merged["content_pillars"] = _unique_preserve_order(
-        list(base.get("content_pillars", []) or []) + list(updates.get("content_pillars", []) or [])
+        updates.get("content_pillars")
+        if isinstance(updates.get("content_pillars"), list)
+        else base.get("content_pillars", []) or []
     )
     merged["preferred_title_patterns"] = _unique_preserve_order(
-        list(base.get("preferred_title_patterns", []) or [])
-        + list(updates.get("preferred_title_patterns", []) or [])
+        updates.get("preferred_title_patterns")
+        if isinstance(updates.get("preferred_title_patterns"), list)
+        else base.get("preferred_title_patterns", []) or []
     )
     merged["operating_rules"] = _unique_preserve_order(
         list(base.get("operating_rules", []) or []) + list(updates.get("operating_rules", []) or [])
+    )
+    merged["source_materials"] = _unique_preserve_order(
+        updates.get("source_materials")
+        if isinstance(updates.get("source_materials"), list)
+        else base.get("source_materials", []) or []
     )
     merged["series"] = _merge_named_objects(
         list(base.get("series", []) or []),
@@ -465,7 +634,7 @@ def _merge_strategy(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, 
         "series",
     )
     merged["publishing_rhythm"] = merged_rhythm
-    return merged
+    return _compact_strategy(merged)
 
 
 def _active_series(strategy: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -630,6 +799,57 @@ def _extract_pipeline_summary(briefing: dict[str, Any] | None) -> dict[str, Any]
         "by_status": by_status,
         "ready_to_record": by_status.get("pronto_gravar", 0),
         "thumb_ready": by_status.get("thumbnail_pronta", 0),
+    }
+
+
+def _build_strategy_hygiene(strategy: dict[str, Any], pipeline: dict[str, Any]) -> dict[str, Any]:
+    active_series = _active_series(strategy)
+    calendar_items = list((strategy.get("publishing_rhythm") or {}).get("calendar", []) or [])
+    scheduled_series = {_normalize_text(item.get("series")) for item in calendar_items if item.get("series")}
+
+    missing_promise = [series.get("name") for series in active_series if not _clean_text(series.get("promise"))]
+    missing_cta = [series.get("name") for series in active_series if not _clean_text(series.get("cta_focus"))]
+    missing_audience = [series.get("name") for series in active_series if not _clean_text(series.get("audience"))]
+    unscheduled = [series.get("name") for series in active_series if _normalize_text(series.get("name")) not in scheduled_series]
+
+    issues: list[str] = []
+    if missing_promise:
+        issues.append(f"Series sem promise clara: {', '.join(missing_promise)}.")
+    if missing_cta:
+        issues.append(f"Series sem CTA focus definido: {', '.join(missing_cta)}.")
+    if missing_audience:
+        issues.append(f"Series sem audience clara: {', '.join(missing_audience)}.")
+    if unscheduled:
+        issues.append(f"Series ativas fora do calendario: {', '.join(unscheduled)}.")
+
+    weekly_long_videos = int((strategy.get("publishing_rhythm") or {}).get("weekly_long_videos") or 0)
+    long_slots = len(
+        [
+            item
+            for item in calendar_items
+            if _normalize_text(item.get("format") or "longo") in {"longo", "long", "video longo"}
+        ]
+    )
+    if weekly_long_videos and long_slots < weekly_long_videos:
+        issues.append(
+            f"Cadencia promete {weekly_long_videos} longos por semana, mas o calendario tem {long_slots} slots longos."
+        )
+    if pipeline.get("thumb_ready", 0) == 0:
+        issues.append("Nao ha thumbnail pronta no pipeline agora.")
+    if pipeline.get("ready_to_record", 0) == 0:
+        issues.append("Nao ha video pronto para gravar no pipeline atual.")
+
+    return {
+        "active_series_count": len(active_series),
+        "scheduled_slots": len(calendar_items),
+        "weekly_long_videos": weekly_long_videos,
+        "thumb_ready": pipeline.get("thumb_ready", 0),
+        "ready_to_record": pipeline.get("ready_to_record", 0),
+        "missing_promise_count": len(missing_promise),
+        "missing_cta_count": len(missing_cta),
+        "missing_audience_count": len(missing_audience),
+        "unscheduled_count": len(unscheduled),
+        "issues": issues,
     }
 
 
@@ -800,6 +1020,7 @@ async def build_youtube_workspace(
         opportunity_gaps.append("Oportunidade principal: serializar o que ja funcionou em vez de publicar temas isolados.")
 
     pipeline = _extract_pipeline_summary(latest_briefing)
+    strategy_hygiene = _build_strategy_hygiene(strategy, pipeline)
     videos_from_briefing = list((latest_briefing or {}).get("videos", []) or [])
     lanes_map: dict[str, dict[str, Any]] = {}
     for series in strategy.get("series", []):
@@ -905,6 +1126,7 @@ async def build_youtube_workspace(
         "playbook": _build_playbook_snapshot(strategy),
         "channel_audit": channel_audit,
         "pipeline": pipeline,
+        "strategy_hygiene": strategy_hygiene,
         "series_health": series_health,
         "series_lanes": series_lanes,
         "next_actions": next_actions,
