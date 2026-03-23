@@ -37,13 +37,20 @@ Interseccao: IA + negocios + automacao + agentes autonomos
 """
 
 DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
-    "version": 2,
+    "version": 3,
     "goal": "Motor 100K",
-    "positioning": "IA aplicada a operacao, automacao B2B e sistemas reais",
-    "north_star": "YouTube como topo de funil para gerar leads B2B no WhatsApp",
-    "big_idea": "Eu nao virei mais um cara de IA. Eu virei um operador de sistemas atraves de IA.",
-    "brand_narrative": "Diego mostra como usar IA, n8n, agentes e automacao para operar melhor, vender mais e construir sistemas reais.",
+    "positioning": "IA aplicada a operacao, automacao B2B, produto e sistemas reais",
+    "north_star": "YouTube como topo de funil para gerar leads B2B e autoridade tecnica no WhatsApp",
+    "big_idea": "Eu nao virei mais um cara de IA. Eu virei um operador de sistemas com IA e codigo aplicados ao negocio.",
+    "brand_narrative": "Diego mostra como usar IA, n8n, agentes, React e automacao para operar melhor, vender mais e construir sistemas reais.",
     "editorial_formula": "busca para atrair, prova para convencer, oferta para monetizar",
+    "operating_rules": [
+        "Toda pauta precisa nascer com serie, promessa e CTA definidos.",
+        "RADAR IA fecha sempre em impacto pratico: projeto, servico ou acao concreta.",
+        "A Virada precisa mostrar sistema, bastidor, prova e decisao operacional real.",
+        "React na Pratica precisa partir de bug, interface, performance ou arquitetura real.",
+        "Nada de video solto: cada publicacao precisa reforcar uma trilha editorial clara.",
+    ],
     "style": {
         "tone": "direto, tecnico, pratico, energetico e conversado",
         "visual": "premium, escuro, contraste alto, moderno, sem poluicao",
@@ -51,7 +58,7 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
         "pacing": "denso nos primeiros 20s, objetivo no miolo tecnico, fechamento simples e claro",
     },
     "publishing_rhythm": {
-        "weekly_long_videos": 2,
+        "weekly_long_videos": 3,
         "weekly_shorts": 7,
         "weekly_lives": 0,
         "calendar": [
@@ -60,6 +67,12 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
                 "slot": "terca 12:00",
                 "format": "longo",
                 "goal": "autoridade + bastidor + prova",
+            },
+            {
+                "series": "React na Pratica",
+                "slot": "quarta 12:00",
+                "format": "longo",
+                "goal": "busca evergreen + autoridade tecnica + dev funnel",
             },
             {
                 "series": "RADAR IA",
@@ -75,6 +88,7 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
         "IA aplicada a licitacoes",
         "Agentes para operacao real",
         "Negocio de automacao",
+        "React e Next.js para produto real",
     ],
     "preferred_title_patterns": [
         "o jeito certo de...",
@@ -83,9 +97,10 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
         "esse sistema...",
         "quanto custa ... e quanto devolve",
         "pare de ... faca isso",
+        "3 erros que quebram ...",
     ],
     "cta_templates": {
-        "cold": "Se voce quer construir automacoes reais, se inscreve e acompanha os proximos testes.",
+        "cold": "Se voce quer construir automacoes e sistemas reais, se inscreve e acompanha os proximos testes.",
         "warm": "Se voce quer esse fluxo adaptado para o seu caso, o link esta na descricao.",
         "hot": "Se voce quer que eu desenhe essa operacao com voce, me chama no WhatsApp.",
     },
@@ -101,6 +116,9 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
             "format": "video longo 10-20min",
             "thumbnail_rule": "resultado + tensao + sistema real",
             "summary": "Serie de bastidores e virada operacional: menos execucao manual, mais sistema, mais margem.",
+            "audience": "Empreendedor, operador e dev que quer aplicar IA em processos reais.",
+            "promise": "Mostrar a virada operacional com prova, stack e impacto financeiro.",
+            "cta_focus": "Mentoria, implantacao ou desenho de automacao via WhatsApp.",
             "idea_seeds": [
                 "Como o Claude Code me fez trabalhar menos e entregar mais",
                 "Como eu parei de mexer em tudo e meu negocio cresceu",
@@ -141,6 +159,48 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
             ],
         },
         {
+            "slug": "react-na-pratica",
+            "name": "React na Pratica",
+            "status": "ativa",
+            "objective": "Abrir frente semanal de busca evergreen com React e Next.js ligados a produto real.",
+            "content_role": "topo/meio de funil",
+            "cadence": "1 episodio por semana",
+            "format": "video longo 8-15min",
+            "thumbnail_rule": "bug ou UI clara + before/after + uma promessa objetiva",
+            "summary": "Serie semanal de React aplicada a produto: bugs reais, arquitetura, UI e decisao tecnica sem tutorial generico.",
+            "audience": "Devs, founders e times de produto que constroem app real com React ou Next.js.",
+            "promise": "Resolver uma dor concreta de interface, estado, arquitetura ou performance em cada episodio.",
+            "cta_focus": "Projetos com stack web, automacao de produto ou consultoria tecnica.",
+            "idea_seeds": [
+                "O jeito certo de usar useEffect em 2026",
+                "3 erros de estado que quebram teu app React",
+                "Como eu organizo componentes React sem virar bagunca",
+                "Next.js ou React puro: como eu escolho em projeto real",
+            ],
+            "episodes": [
+                {
+                    "code": "RP-01",
+                    "title": "O Jeito Certo de Usar useEffect em 2026",
+                    "status": "planejado",
+                },
+                {
+                    "code": "RP-02",
+                    "title": "3 Erros de Estado que QUEBRAM teu App React",
+                    "status": "planejado",
+                },
+                {
+                    "code": "RP-03",
+                    "title": "Como Eu Organizo Componentes React sem Virar Bagunca",
+                    "status": "planejado",
+                },
+                {
+                    "code": "RP-04",
+                    "title": "Next.js ou React Puro: Como Eu Escolho em Projeto Real",
+                    "status": "planejado",
+                },
+            ],
+        },
+        {
             "slug": "radar-ia",
             "name": "RADAR IA",
             "status": "ativa",
@@ -150,6 +210,9 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
             "format": "video longo 8-12min",
             "thumbnail_rule": "uma manchete dominante + take forte do Diego",
             "summary": "Curadoria semanal: o que importa em IA e como isso afeta negocio, automacao e servico.",
+            "audience": "Publico frio que acompanha novidades de IA, automacao e ferramentas.",
+            "promise": "Filtrar hype e transformar noticia em oportunidade pratica de negocio.",
+            "cta_focus": "Discovery, diagnostico e implantacao de automacao.",
             "idea_seeds": [
                 "RADAR IA: o que muda para automacao B2B nessa semana",
                 "RADAR IA: as 3 noticias que realmente importam para quem vende automacao",
@@ -187,7 +250,7 @@ Sua missao: identificar tendencias e gerar ideias de conteudo para o canal GuyFo
 
 {channel_context}
 
-ESTRATEGIA EDITORIAL FIXA:
+ESTRATEGIA EDITORIAL ATIVA:
 {strategy_context}
 
 SNAPSHOT DO CANAL:
@@ -225,7 +288,7 @@ Analise as tendencias atuais nesses topicos e gere um JSON com a seguinte estrut
             "cta_strategy": "Estrategia de CTA para captura via WhatsApp",
             "difficulty": "easy|medium|hard",
             "urgency": "high|medium|low",
-            "recommended_series": "A Virada|RADAR IA|Fora de serie",
+            "recommended_series": "nome exato da serie mais adequada",
             "content_goal": "topo|meio|fundo",
             "why_now": "por que isso importa agora",
             "fit_score": 0
@@ -238,10 +301,10 @@ Analise as tendencias atuais nesses topicos e gere um JSON com a seguinte estrut
 }}
 
 REGRAS:
-1. Respeite as duas series fixas: A Virada e RADAR IA.
+1. Escolha sempre a serie mais adequada dentre as series ativas descritas na estrategia.
 2. Titulos precisam combinar clique com aplicacao real.
-3. RADAR IA nunca pode virar noticia generica: sempre terminar em impacto pratico.
-4. A Virada precisa soar como bastidor, sistema, prova e virada operacional.
+3. Series de noticia ou discovery nunca podem virar noticia generica: sempre terminar em impacto pratico.
+4. Series de bastidor e prova precisam soar como sistema, metodo, prova e virada operacional.
 5. CTA sempre direciona para WhatsApp (captura de leads).
 6. Gere exatamente 4 ideias de video.
 7. Responda APENAS com JSON.
@@ -324,6 +387,114 @@ def _normalize_text(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+def _unique_preserve_order(values: list[Any]) -> list[Any]:
+    unique: list[Any] = []
+    seen: set[str] = set()
+    for value in values:
+        marker = _normalize_text(str(value))
+        if not marker or marker in seen:
+            continue
+        seen.add(marker)
+        unique.append(value)
+    return unique
+
+
+def _named_item_key(item: dict[str, Any], key: str) -> str:
+    raw_value = item.get(key) or item.get("name") or item.get("series")
+    return _normalize_text(str(raw_value))
+
+
+def _merge_named_objects(
+    base_items: list[dict[str, Any]] | None,
+    updated_items: list[dict[str, Any]] | None,
+    key: str,
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    by_key: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+
+    for item in list(base_items or []):
+        item_key = _named_item_key(item, key)
+        if not item_key:
+            merged.append(deepcopy(item))
+            continue
+        by_key[item_key] = deepcopy(item)
+        order.append(item_key)
+
+    for item in list(updated_items or []):
+        item_key = _named_item_key(item, key)
+        if not item_key:
+            merged.append(deepcopy(item))
+            continue
+        if item_key in by_key:
+            by_key[item_key] = _merge_dict(by_key[item_key], item)
+        else:
+            by_key[item_key] = deepcopy(item)
+            order.append(item_key)
+
+    merged.extend(by_key[item_key] for item_key in order)
+    return merged
+
+
+def _merge_strategy(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    updates = updates or {}
+    merged = _merge_dict(base, updates)
+
+    merged["content_pillars"] = _unique_preserve_order(
+        list(base.get("content_pillars", []) or []) + list(updates.get("content_pillars", []) or [])
+    )
+    merged["preferred_title_patterns"] = _unique_preserve_order(
+        list(base.get("preferred_title_patterns", []) or [])
+        + list(updates.get("preferred_title_patterns", []) or [])
+    )
+    merged["operating_rules"] = _unique_preserve_order(
+        list(base.get("operating_rules", []) or []) + list(updates.get("operating_rules", []) or [])
+    )
+    merged["series"] = _merge_named_objects(
+        list(base.get("series", []) or []),
+        list(updates.get("series", []) or []),
+        "slug",
+    )
+
+    base_rhythm = dict(base.get("publishing_rhythm") or {})
+    updated_rhythm = dict(updates.get("publishing_rhythm") or {})
+    merged_rhythm = _merge_dict(base_rhythm, updated_rhythm)
+    merged_rhythm["calendar"] = _merge_named_objects(
+        list(base_rhythm.get("calendar", []) or []),
+        list(updated_rhythm.get("calendar", []) or []),
+        "series",
+    )
+    merged["publishing_rhythm"] = merged_rhythm
+    return merged
+
+
+def _active_series(strategy: dict[str, Any] | None) -> list[dict[str, Any]]:
+    return [
+        series
+        for series in list((strategy or {}).get("series", []) or [])
+        if _normalize_text(series.get("status")) not in {"arquivada", "archive", "archived"}
+    ]
+
+
+def _active_series_names(strategy: dict[str, Any] | None) -> list[str]:
+    return [series.get("name") for series in _active_series(strategy) if series.get("name")]
+
+
+def _find_series_name(strategy: dict[str, Any] | None, *keywords: str) -> str:
+    for series in _active_series(strategy):
+        haystack = " ".join(
+            [
+                series.get("name") or "",
+                series.get("slug") or "",
+                series.get("summary") or "",
+                series.get("objective") or "",
+            ]
+        ).lower()
+        if any(keyword in haystack for keyword in keywords):
+            return series.get("name") or ""
+    return ""
+
+
 def _title_views_average(videos: list[dict[str, Any]], keywords: tuple[str, ...]) -> int:
     matched_views = [
         int(video.get("views") or 0)
@@ -336,10 +507,15 @@ def _title_views_average(videos: list[dict[str, Any]], keywords: tuple[str, ...]
     return sum(matched_views) // len(matched_views)
 
 
-def _series_name_for_idea(video: dict[str, Any]) -> str:
+def _series_name_for_idea(video: dict[str, Any], strategy: dict[str, Any] | None = None) -> str:
     explicit = _normalize_text(video.get("recommended_series"))
-    if explicit in {"a virada", "radar ia"}:
-        return "A Virada" if explicit == "a virada" else "RADAR IA"
+    for series in _active_series(strategy):
+        name = series.get("name") or ""
+        slug = series.get("slug") or ""
+        if explicit and explicit in {_normalize_text(name), _normalize_text(slug)}:
+            return name
+        if explicit and explicit in _normalize_text(name):
+            return name
 
     text = " ".join(
         [
@@ -348,6 +524,22 @@ def _series_name_for_idea(video: dict[str, Any]) -> str:
             video.get("formato") or "",
         ]
     ).lower()
+
+    react_keywords = (
+        "react",
+        "next.js",
+        "nextjs",
+        "frontend",
+        "componente",
+        "hook",
+        "useeffect",
+        "estado",
+        "tailwind",
+        "ui",
+    )
+    react_series = _find_series_name(strategy, "react", "next.js", "nextjs", "frontend")
+    if react_series and any(keyword in text for keyword in react_keywords):
+        return react_series
 
     radar_keywords = (
         "radar",
@@ -364,8 +556,9 @@ def _series_name_for_idea(video: dict[str, Any]) -> str:
         "noticia",
         "news",
     )
+    radar_series = _find_series_name(strategy, "radar", "news", "noticia")
     if any(keyword in text for keyword in radar_keywords):
-        return "RADAR IA"
+        return radar_series or "RADAR IA"
 
     virada_keywords = (
         "claude code",
@@ -379,10 +572,12 @@ def _series_name_for_idea(video: dict[str, Any]) -> str:
         "operar",
         "sistema",
     )
+    virada_series = _find_series_name(strategy, "virada", "bastidor", "operacao", "sistema")
     if any(keyword in text for keyword in virada_keywords):
-        return "A Virada"
+        return virada_series or "A Virada"
 
-    return "A Virada"
+    active_series_names = _active_series_names(strategy)
+    return active_series_names[0] if active_series_names else "Fora de serie"
 
 
 def _build_channel_stage(subscribers: int) -> str:
@@ -447,10 +642,21 @@ def _build_playbook_snapshot(strategy: dict[str, Any]) -> dict[str, Any]:
         "big_idea": strategy.get("big_idea") or "",
         "brand_narrative": strategy.get("brand_narrative") or "",
         "editorial_formula": strategy.get("editorial_formula") or "",
+        "operating_rules": list(strategy.get("operating_rules", []) or [])[:6],
         "content_pillars": list(strategy.get("content_pillars", []) or [])[:6],
         "title_patterns": list(strategy.get("preferred_title_patterns", []) or [])[:6],
         "cta_templates": dict(strategy.get("cta_templates") or {}),
         "style": dict(strategy.get("style") or {}),
+        "publishing_calendar": list((strategy.get("publishing_rhythm") or {}).get("calendar", []) or [])[:6],
+        "series_summary": [
+            {
+                "name": series.get("name"),
+                "cadence": series.get("cadence"),
+                "promise": series.get("promise"),
+                "status": series.get("status"),
+            }
+            for series in list(strategy.get("series", []) or [])[:6]
+        ],
         "voice_promise_style": voice_core.get("promise_style") or "",
         "signature_phrases": list(signature_elements.get("high_frequency", []) or [])[:6],
         "source_materials": source_materials,
@@ -468,9 +674,9 @@ async def get_project_youtube_strategy(
     project = await get_or_create_project_by_name(db, project_name)
     current_credentials = dict(project.credentials or {})
     stored_strategy = current_credentials.get("youtube_strategy")
-    strategy = _merge_dict(get_default_youtube_strategy(), stored_strategy or {})
+    strategy = _merge_strategy(get_default_youtube_strategy(), stored_strategy or {})
 
-    if persist_default and not stored_strategy:
+    if persist_default and strategy != (stored_strategy or {}):
         current_credentials["youtube_strategy"] = strategy
         project.credentials = current_credentials
         flag_modified(project, "credentials")
@@ -487,7 +693,7 @@ async def save_project_youtube_strategy(
 ) -> dict[str, Any]:
     project = await get_or_create_project_by_name(db, project_name)
     current_credentials = dict(project.credentials or {})
-    strategy = _merge_dict(get_default_youtube_strategy(), strategy_payload or {})
+    strategy = _merge_strategy(get_default_youtube_strategy(), strategy_payload or {})
     current_credentials["youtube_strategy"] = strategy
     project.credentials = current_credentials
     flag_modified(project, "credentials")
@@ -576,13 +782,18 @@ async def build_youtube_workspace(
         top_patterns.append("O canal responde melhor quando IA aparece conectada a processo real e resultado.")
 
     existing_titles = [(_normalize_text(video.get("title"))) for video in video_pool]
+    active_series_names = _active_series_names(strategy)
+    radar_series = _find_series_name(strategy, "radar", "news", "noticia")
+    react_series = _find_series_name(strategy, "react", "next.js", "nextjs", "frontend")
     opportunity_gaps: list[str] = []
-    if not any("radar ia" in title for title in existing_titles):
-        opportunity_gaps.append("RADAR IA ainda nao virou ritual semanal. Isso abre espaco para recorrencia com discovery.")
-    if not any("a virada" in title for title in existing_titles):
-        opportunity_gaps.append("A Virada ainda nao esta marcada como narrativa recorrente do canal.")
-    if practical_avg > macro_news_avg:
-        opportunity_gaps.append("Noticias puras tendem a performar pior que videos com metodo. RADAR IA precisa terminar em impacto pratico.")
+    for series_name in active_series_names:
+        normalized_name = _normalize_text(series_name)
+        if normalized_name and not any(normalized_name in title for title in existing_titles):
+            opportunity_gaps.append(f"{series_name} ainda nao esta marcada como serie recorrente no historico do canal.")
+    if radar_series and practical_avg > macro_news_avg:
+        opportunity_gaps.append(f"Noticias puras tendem a performar pior que videos com metodo. {radar_series} precisa terminar em impacto pratico.")
+    if react_series and not any(keyword in title for title in existing_titles for keyword in ("react", "next")):
+        opportunity_gaps.append(f"{react_series} ainda nao tem historico publicado. Isso abre espaco para busca evergreen semanal.")
     if recent_avg_views and median_views and recent_avg_views < median_views:
         opportunity_gaps.append("Os ultimos videos estao abaixo da mediana historica. Falta reforcar thumbnail e promessa logo no titulo.")
     if not opportunity_gaps:
@@ -599,7 +810,7 @@ async def build_youtube_workspace(
         }
 
     for video in videos_from_briefing:
-        series_name = _series_name_for_idea(video)
+        series_name = _series_name_for_idea(video, strategy)
         lanes_map.setdefault(
             series_name,
             {"series": series_name, "objective": "", "ideas": []},
@@ -636,9 +847,21 @@ async def build_youtube_workspace(
             }
         )
 
+    calendar_items = list((strategy.get("publishing_rhythm") or {}).get("calendar", []) or [])
+    calendar_text = ", ".join(
+        [
+            f"{item.get('series')} em {item.get('slot')}"
+            for item in calendar_items
+            if item.get("series") and item.get("slot")
+        ]
+    )
     next_actions: list[str] = [
-        "Fixar o calendario editorial: A Virada na terca 12h e RADAR IA na sexta 12h.",
-        "Toda pauta nova precisa nascer ja com serie definida. Sem video solto fora das duas trilhas principais.",
+        (
+            f"Fixar o calendario editorial: {calendar_text}."
+            if calendar_text
+            else "Fixar o calendario editorial com slot definido para cada serie ativa."
+        ),
+        "Toda pauta nova precisa nascer com serie, promessa e CTA definidos. Sem video solto fora das trilhas principais.",
     ]
     if pipeline.get("thumb_ready", 0) == 0:
         next_actions.append("Escolher pelo menos 1 video do pipeline e fechar thumbnail hoje.")
@@ -646,7 +869,10 @@ async def build_youtube_workspace(
         next_actions.append("Subir 1 pauta para pronto_gravar antes de gerar novas ideias.")
     if videos_from_briefing:
         next_actions.append(f"Priorizar '{videos_from_briefing[0].get('title', 'proxima pauta')}' no proximo ciclo.")
-    next_actions.append("No RADAR IA, fechar sempre com a pergunta: isso vira projeto, servico ou nao?")
+    if react_series:
+        next_actions.append(f"Na {react_series}, priorizar bug, interface ou arquitetura real antes de tutorial generico.")
+    if radar_series:
+        next_actions.append(f"No {radar_series}, fechar sempre com a pergunta: isso vira projeto, servico ou nao?")
 
     channel_audit = {
         "stage": _build_channel_stage(subscribers),
@@ -689,13 +915,30 @@ async def build_youtube_workspace(
 def _strategy_context_text(strategy_context: dict[str, Any] | None) -> str:
     if not strategy_context:
         return "Sem estrategia adicional."
+    calendar = list((strategy_context.get("publishing_rhythm") or {}).get("calendar", []) or [])
     lines = [
         f"- Objetivo: {strategy_context.get('goal', 'Motor 100K')}",
         f"- Posicionamento: {strategy_context.get('positioning', '')}",
     ]
+    if calendar:
+        lines.append(
+            "- Calendario: "
+            + " | ".join(
+                [
+                    f"{item.get('series')} em {item.get('slot')}"
+                    for item in calendar
+                    if item.get("series") and item.get("slot")
+                ]
+            )
+        )
+    for rule in list(strategy_context.get("operating_rules", []) or [])[:5]:
+        lines.append(f"- Regra: {rule}")
     for series in strategy_context.get("series", []):
         lines.append(
-            f"- Serie {series.get('name')}: {series.get('summary')} | Cadencia: {series.get('cadence')}"
+            (
+                f"- Serie {series.get('name')}: {series.get('summary')} | Cadencia: {series.get('cadence')} "
+                f"| Promessa: {series.get('promise', '')} | CTA: {series.get('cta_focus', '')}"
+            )
         )
     return "\n".join(lines)
 
@@ -741,7 +984,7 @@ async def analyze_channel_trends(
             "content": (
                 f"Analise tendencias atuais para os topicos: {', '.join(topics)}. "
                 f"Fontes: {', '.join(sources)}. "
-                "Gere ideias de video alinhadas as series A Virada e RADAR IA. "
+                f"Gere ideias de video alinhadas a estas series: {', '.join(_active_series_names(strategy_context)) or 'series ativas da estrategia'}. "
                 "Foco em conteudo que gera leads via WhatsApp."
             ),
         },

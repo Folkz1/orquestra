@@ -1,561 +1,535 @@
-import { useState } from 'react'
-import { getYouTubeChannelStats, getYouTubeVideos, saveYouTubeAnalytics } from '../api'
+import { useEffect, useState } from 'react'
+import { getYouTubeStrategy, getYouTubeWorkspace, saveYouTubeStrategy } from '../api'
 
-const API_URL = import.meta.env.VITE_API_URL || ''
-const TOKEN = () => localStorage.getItem('orquestra_token')
+const PROJECT_NAME = 'GuyFolkz'
 
-// ─── Data extraída do AutoResearch (resource-youtube.md, 2026-03-19) ──────────
+const inputClass =
+  'w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-red-500/60 focus:ring-2 focus:ring-red-500/20'
+const textareaClass = `${inputClass} min-h-[110px] resize-y`
+const selectClass = inputClass
 
-const TITLE_PATTERNS = [
-  {
-    type: 'Funciona',
-    color: 'text-green-400',
-    bg: 'bg-green-500/10 border-green-500/20',
-    dot: 'bg-green-400',
-    patterns: [
-      '"[Ferramenta] + [Frustração específica] + [Como resolver]"',
-      'Tutorial definitivo — "Guia", "Definitivo", "em X Minutos"',
-      'Foco na dor — "O ERRO que...", "NUNCA MAIS...", "o problema..."',
-      'Nome da ferramenta no título — Claude Code, Automação, Agentes IA',
-      'Números concretos — R$, %, quantidade',
-    ],
-  },
-  {
-    type: 'Evitar',
-    color: 'text-red-400',
-    bg: 'bg-red-500/10 border-red-500/20',
-    dot: 'bg-red-400',
-    patterns: [
-      'ALL CAPS completo no título',
-      'Primeira pessoa — "Eu fiz", "Meu negócio" → -67% views',
-      '"IA" ou "Inteligência Artificial" genérico sem ferramenta concreta',
-      'Títulos vagos sem ferramenta ou resultado concreto',
-      'MCP como ferramenta — Diego não usa MCP na stack dele',
-    ],
-  },
-]
-
-const DURATION_DATA = [
-  { range: '3–10 min', avgViews: 375, vsBaseline: '+91%', engagement: '5.1%', highlight: true },
-  { range: '30+ min', avgViews: 203, vsBaseline: '+4%', engagement: '7.8%', highlight: false },
-  { range: '20–30 min', avgViews: 191, vsBaseline: '-3%', engagement: '6.5%', highlight: false },
-  { range: '10–20 min', avgViews: 129, vsBaseline: '-34%', engagement: '9.9%', highlight: false },
-]
-
-const TOPICS_DATA = [
-  { topic: 'N8N / WhatsApp / Tools', avgViews: 576, vsBaseline: '+194%', note: 'Formato que funciona (tutorial+ferramenta+dor)' },
-  { topic: 'Tutorial prático', avgViews: 338, vsBaseline: '+72%', note: 'Claude Code + frustração específica do usuário' },
-  { topic: 'IA Notícia / Radar', avgViews: 164, vsBaseline: '-17%', note: 'Bom para base fiel, não para crescimento' },
-  { topic: 'Claude / Agentes IA (genérico)', avgViews: 88, vsBaseline: '-55%', note: 'Sem dor concreta = sem resultado' },
-  { topic: 'Storytelling pessoal', avgViews: 64, vsBaseline: '-67%', note: '"Minha história" não performa' },
-]
-
-const SCHEDULE_DATA = {
-  days: [
-    { day: 'Seg', avgViews: 255, vsBaseline: '+30%', good: true },
-    { day: 'Ter', avgViews: 390, vsBaseline: '+99%', best: true },
-    { day: 'Qua', avgViews: 207, vsBaseline: '+5%', good: true },
-    { day: 'Qui', avgViews: 221, vsBaseline: '+12%', good: true },
-    { day: 'Sex', avgViews: null, vsBaseline: '—', neutral: true },
-    { day: 'Sáb', avgViews: 92, vsBaseline: '-53%', bad: true },
-    { day: 'Dom', avgViews: 52, vsBaseline: '-74%', bad: true },
-  ],
-  times: [
-    { time: '19h', avgViews: 512, vsBaseline: '+161%', best: true },
-    { time: '16h', avgViews: 212, vsBaseline: '+8%', good: true },
-    { time: '04h', avgViews: 223, vsBaseline: '+14%', good: true },
-    { time: '21h', avgViews: 51, vsBaseline: '-74%', bad: true },
-    { time: '08h', avgViews: 46, vsBaseline: '-77%', bad: true },
-  ],
+function unwrap(payload) {
+  return payload?.data || payload || null
 }
 
-const TOP_VIDEOS = [
-  { rank: 1, title: 'Fiz o Claude Code trabalhar sem pedir permissão', views: 652, note: 'Dor específica + solução direta, +233% vs baseline' },
-  { rank: 2, title: 'WhatsApp API em 10 Minutos', views: 801, note: 'Tutorial + ferramenta + tempo no título' },
-  { rank: 3, title: 'Instalar N8N Guia Definitivo', views: 684, note: 'Guia definitivo + ferramenta' },
-  { rank: 4, title: 'A IA ESCAPOU DA PRÓPRIA JAULA', views: 196, note: 'Notícia impactante — só baseline' },
-  { rank: 5, title: 'GPT-5.4 CONTROLA TEU PC', views: 113, note: 'Radar IA notícia — abaixo da média' },
-]
+function cloneValue(value) {
+  return JSON.parse(JSON.stringify(value))
+}
 
-const WORKFLOW_RULES = [
-  {
-    from: 'Ideia',
-    to: 'Thumb Pronta',
-    fromColor: 'text-zinc-300',
-    toColor: 'text-blue-400',
-    arrowColor: 'text-zinc-600',
-    rule: 'Thumbnail validada — clareza, contraste, texto legível',
-    icon: '🖼️',
-  },
-  {
-    from: 'Thumb Pronta',
-    to: 'Pronto p/ Gravar',
-    fromColor: 'text-blue-400',
-    toColor: 'text-green-400',
-    arrowColor: 'text-zinc-600',
-    rule: 'Roteiro completo + pontos-chave definidos',
-    icon: '📝',
-  },
-  {
-    from: 'Pronto p/ Gravar',
-    to: 'Publicado',
-    fromColor: 'text-green-400',
-    toColor: 'text-purple-400',
-    arrowColor: 'text-zinc-600',
-    rule: 'Gravado + editado + upload feito',
-    icon: '✅',
-  },
-]
+function linesToText(lines) {
+  return Array.isArray(lines) ? lines.join('\n') : ''
+}
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function textToLines(value) {
+  return String(value || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
 
-function SectionHeader({ title, sub, accent = 'text-zinc-100' }) {
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('pt-BR')
+}
+
+function MetricCard({ label, value, sub }) {
   return (
-    <div className="mb-3">
-      <h2 className={`text-base font-semibold ${accent} flex items-center gap-2`}>{title}</h2>
-      {sub && <p className="text-xs text-zinc-500 mt-0.5">{sub}</p>}
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">{label}</div>
+      <div className="mt-2 text-2xl font-semibold text-zinc-100">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
     </div>
   )
 }
 
-function FormulaCard() {
+function SectionCard({ title, sub, children, action }) {
   return (
-    <div className="card mb-6 border border-green-500/30 bg-green-500/5">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="w-2 h-2 rounded-full bg-green-400" />
-        <span className="text-xs font-semibold text-green-400 uppercase tracking-wider">Fórmula do Vídeo Vencedor</span>
-        <span className="text-[10px] text-zinc-600 ml-auto">Atualizado 2026-03-19</span>
-      </div>
-      <p className="text-sm font-mono text-zinc-100 bg-zinc-900/60 rounded px-3 py-2 mb-3">
-        [Claude Code] + [Frustração específica] + [Como resolver] | 5–10min | Ter–Qui 19h BRT
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-        {[
-          'Fiz o Claude Code trabalhar sem pedir permissão ← TOP 1 (652 views)',
-          'Claude Code: O Erro que Quebra Todo Contexto (e Como Evitar)',
-          'Agentes Autônomos com Claude Code — Do Zero em 10 Min',
-          'Claude Code: Como 1 Pessoa Opera 7 Projetos SaaS',
-        ].map((ex, i) => (
-          <div key={i} className="flex items-start gap-1.5 text-xs text-zinc-400">
-            <span className="text-green-500 mt-0.5 flex-shrink-0">→</span>
-            <span>{ex}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function TitlePatterns() {
-  return (
-    <div className="card mb-4">
-      <SectionHeader title="Padrões de Título" sub="Baseado em análise dos 20 vídeos mais recentes" />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {TITLE_PATTERNS.map((group) => (
-          <div key={group.type} className={`rounded-lg border p-3 ${group.bg}`}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${group.dot}`} />
-              <span className={`text-xs font-semibold uppercase tracking-wider ${group.color}`}>{group.type}</span>
-            </div>
-            <ul className="space-y-1">
-              {group.patterns.map((p, i) => (
-                <li key={i} className="text-xs text-zinc-300 flex items-start gap-1.5">
-                  <span className={`mt-0.5 flex-shrink-0 ${group.color}`}>{group.type === 'Funciona' ? '✓' : '✕'}</span>
-                  <span>{p}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function DurationTable() {
-  const maxViews = Math.max(...DURATION_DATA.map(d => d.avgViews))
-  return (
-    <div className="card mb-4">
-      <SectionHeader title="Duração vs Performance" sub="Sweet spot: 3–10 min para views (+91%)" />
-      <div className="space-y-2">
-        {DURATION_DATA.map((row) => (
-          <div key={row.range} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${row.highlight ? 'bg-green-500/10 border border-green-500/20' : 'bg-zinc-800/30'}`}>
-            <div className="w-20 flex-shrink-0">
-              <span className={`text-xs font-semibold ${row.highlight ? 'text-green-400' : 'text-zinc-300'}`}>{row.range}</span>
-            </div>
-            <div className="flex-1">
-              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${row.highlight ? 'bg-green-500' : 'bg-zinc-600'}`}
-                  style={{ width: `${(row.avgViews / maxViews) * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="w-16 text-right flex-shrink-0">
-              <span className="text-sm font-semibold text-zinc-100">{row.avgViews}</span>
-              <span className="text-[10px] text-zinc-600 ml-1">views</span>
-            </div>
-            <div className="w-16 text-right flex-shrink-0">
-              <span className={`text-xs font-semibold ${row.vsBaseline.startsWith('+') ? 'text-green-400' : 'text-red-400'}`}>
-                {row.vsBaseline}
-              </span>
-            </div>
-            <div className="w-12 text-right flex-shrink-0">
-              <span className="text-xs text-zinc-500">{row.engagement}</span>
-            </div>
-          </div>
-        ))}
-        <div className="flex items-center gap-3 px-3 text-[10px] text-zinc-600">
-          <div className="w-20" />
-          <div className="flex-1" />
-          <div className="w-16 text-right">avg views</div>
-          <div className="w-16 text-right">vs base</div>
-          <div className="w-12 text-right">eng</div>
+    <div className="card border border-zinc-800/80 bg-zinc-900/55">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-300">{title}</h2>
+          {sub ? <p className="mt-1 text-xs text-zinc-500">{sub}</p> : null}
         </div>
+        {action}
       </div>
+      {children}
     </div>
   )
 }
 
-function TopicsTable() {
-  const maxViews = Math.max(...TOPICS_DATA.map(d => d.avgViews))
+function Field({ label, value, onChange, placeholder, rows = 4 }) {
+  const isTextarea = rows > 1
   return (
-    <div className="card mb-4">
-      <SectionHeader title="Temas — O Que o Público Quer" sub="Foco atual: Claude Code + frustração específica" />
-      <div className="space-y-2">
-        {TOPICS_DATA.map((row, i) => (
-          <div key={i} className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-zinc-800/30 transition-colors">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-zinc-200 truncate">{row.topic}</p>
-              <p className="text-[10px] text-zinc-600 mt-0.5">{row.note}</p>
-              <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mt-1.5">
-                <div
-                  className={`h-full rounded-full ${i < 2 ? 'bg-green-500/70' : 'bg-zinc-600/70'}`}
-                  style={{ width: `${(row.avgViews / maxViews) * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="flex-shrink-0 text-right">
-              <div className="text-sm font-semibold text-zinc-100">{row.avgViews}</div>
-              <div className={`text-xs font-semibold ${row.vsBaseline.startsWith('+') ? 'text-green-400' : 'text-red-400'}`}>
-                {row.vsBaseline}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ScheduleCard() {
-  return (
-    <div className="card mb-4">
-      <SectionHeader title="Melhor Horário de Publicação" sub="Janela de ouro: 19h BRT Ter–Qui (+161%)" />
-
-      {/* Days */}
-      <div className="mb-4">
-        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Dia da semana</p>
-        <div className="flex gap-1">
-          {SCHEDULE_DATA.days.map((d) => {
-            const cls = d.best
-              ? 'bg-green-500 text-white'
-              : d.good
-              ? 'bg-green-500/20 text-green-400'
-              : d.bad
-              ? 'bg-red-500/15 text-red-400'
-              : 'bg-zinc-800 text-zinc-500'
-            return (
-              <div key={d.day} className={`flex-1 flex flex-col items-center rounded-lg py-2 px-1 ${cls}`}>
-                <span className="text-xs font-semibold">{d.day}</span>
-                <span className="text-[9px] mt-0.5 opacity-80">{d.vsBaseline}</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Times */}
-      <div>
-        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Horário (BRT)</p>
-        <div className="flex gap-2 flex-wrap">
-          {SCHEDULE_DATA.times.map((t) => {
-            const cls = t.best
-              ? 'bg-green-500 text-white'
-              : t.good
-              ? 'bg-green-500/20 text-green-400 border border-green-500/20'
-              : 'bg-red-500/10 text-red-400 border border-red-500/15'
-            return (
-              <div key={t.time} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
-                <span>{t.time}</span>
-                <span className="opacity-70 text-[10px]">{t.vsBaseline}</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function TopVideosCard() {
-  return (
-    <div className="card mb-4">
-      <SectionHeader title="Top 5 Vídeos — Referência" sub="Use como modelo de formato, ângulo e título" />
-      <div className="space-y-1">
-        {TOP_VIDEOS.map((v) => (
-          <div key={v.rank} className="flex items-start gap-3 py-2 px-2 rounded-lg hover:bg-zinc-800/30 transition-colors">
-            <span className={`text-sm font-mono font-bold w-5 flex-shrink-0 mt-0.5 ${v.rank <= 3 ? 'text-yellow-400' : 'text-zinc-600'}`}>
-              {v.rank}
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-zinc-100 truncate">{v.title}</p>
-              <p className="text-[10px] text-zinc-600 mt-0.5">{v.note}</p>
-            </div>
-            <div className="flex-shrink-0 text-right">
-              <span className="text-sm font-semibold text-zinc-100">{v.views.toLocaleString('pt-BR')}</span>
-              <span className="text-[10px] text-zinc-600 ml-1">views</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function WorkflowRulesCard() {
-  return (
-    <div className="card mb-4">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-        <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Regras do Kanban — Critérios de Avanço</span>
-      </div>
-      <div className="space-y-2">
-        {WORKFLOW_RULES.map((rule, i) => (
-          <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-zinc-800/40 border border-zinc-700/40">
-            <span className="text-base flex-shrink-0">{rule.icon}</span>
-            <div className="flex items-center gap-1.5 flex-shrink-0 text-xs font-semibold">
-              <span className={rule.fromColor}>{rule.from}</span>
-              <span className={rule.arrowColor}>→</span>
-              <span className={rule.toColor}>{rule.to}</span>
-            </div>
-            <div className="w-px h-4 bg-zinc-700 flex-shrink-0" />
-            <p className="text-xs text-zinc-400">{rule.rule}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function QuickActionsCard({ onBriefingGenerated }) {
-  const [generatingBriefing, setGeneratingBriefing] = useState(false)
-  const [updatingAnalytics, setUpdatingAnalytics] = useState(false)
-  const [feedback, setFeedback] = useState(null)
-
-  function showFeedback(msg, type = 'ok') {
-    setFeedback({ msg, type })
-    setTimeout(() => setFeedback(null), 3500)
-  }
-
-  async function handleGerarBriefing() {
-    if (generatingBriefing) return
-    setGeneratingBriefing(true)
-    try {
-      const token = TOKEN()
-      const res = await fetch(`${API_URL}/api/youtube/briefings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          date: new Date().toISOString().slice(0, 10),
-          tipo: 'semanal',
-          videos: [],
-        }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      showFeedback('Briefing gerado com sucesso', 'ok')
-      onBriefingGenerated?.()
-    } catch (err) {
-      showFeedback(`Erro: ${err.message}`, 'err')
-    }
-    setGeneratingBriefing(false)
-  }
-
-  async function handleAtualizarAnalytics() {
-    if (updatingAnalytics) return
-    setUpdatingAnalytics(true)
-    try {
-      const [statsRes, videosRes] = await Promise.all([
-        getYouTubeChannelStats(),
-        getYouTubeVideos(50),
-      ])
-      const channelStats = statsRes?.data
-      const videos = videosRes?.data?.items || []
-      const publicVideos = videos.filter(v => v.privacy_status === 'public')
-      const viewsList = publicVideos.map(v => v.views || 0).filter(v => v > 0)
-      const sorted = [...viewsList].sort((a, b) => a - b)
-      const avg = viewsList.length > 0 ? Math.round(viewsList.reduce((a, b) => a + b, 0) / viewsList.length) : 0
-      const median = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0
-
-      await saveYouTubeAnalytics({
-        date: new Date().toISOString().slice(0, 10),
-        subscribers: channelStats?.subscribers || 0,
-        total_views: channelStats?.total_views || 0,
-        videos_count: channelStats?.total_videos || 0,
-        avg_views: avg,
-        median_views: median,
-        max_views: Math.max(...viewsList, 0),
-        videos: publicVideos.slice(0, 10).map(v => ({
-          video_id: v.video_id,
-          title: v.title,
-          views: v.views,
-          likes: v.likes,
-        })),
-      })
-      showFeedback('Snapshot de analytics salvo', 'ok')
-    } catch (err) {
-      showFeedback(`Erro: ${err.message}`, 'err')
-    }
-    setUpdatingAnalytics(false)
-  }
-
-  return (
-    <div className="card mb-4">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-        <span className="text-xs font-semibold text-primary uppercase tracking-wider">Ações Rápidas</span>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={handleGerarBriefing}
-          disabled={generatingBriefing}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 text-sm font-medium hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {generatingBriefing ? (
-            <>
-              <span className="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
-              Gerando...
-            </>
-          ) : (
-            <>
-              <span>✦</span>
-              Gerar Briefing
-            </>
-          )}
-        </button>
-
-        <button
-          onClick={handleAtualizarAnalytics}
-          disabled={updatingAnalytics}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {updatingAnalytics ? (
-            <>
-              <span className="w-3.5 h-3.5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-              Atualizando...
-            </>
-          ) : (
-            <>
-              <span>↻</span>
-              Atualizar Analytics
-            </>
-          )}
-        </button>
-
-        <a
-          href="/youtube-briefing"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 text-sm font-medium hover:bg-zinc-700 transition-colors"
-        >
-          <span>↗</span>
-          Ver Briefing Andriely
-        </a>
-      </div>
-
-      {feedback && (
-        <div className={`mt-2 px-3 py-1.5 rounded text-xs font-medium animate-fade-in ${
-          feedback.type === 'ok'
-            ? 'bg-green-500/15 text-green-400'
-            : 'bg-red-500/15 text-red-400'
-        }`}>
-          {feedback.msg}
-        </div>
+    <label className="block">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">{label}</div>
+      {isTextarea ? (
+        <textarea
+          className={textareaClass}
+          rows={rows}
+          value={value || ''}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <input
+          className={inputClass}
+          value={value || ''}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
       )}
+    </label>
+  )
+}
+
+function NumberField({ label, value, onChange }) {
+  return (
+    <label className="block">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">{label}</div>
+      <input
+        className={inputClass}
+        type="number"
+        min="0"
+        value={value ?? 0}
+        onChange={(event) => onChange(Number(event.target.value || 0))}
+      />
+    </label>
+  )
+}
+
+function InsightList({ title, items, tone = 'zinc' }) {
+  const toneMap = {
+    zinc: 'border-zinc-800 bg-zinc-900/55 text-zinc-300',
+    green: 'border-green-500/20 bg-green-500/8 text-green-300',
+    amber: 'border-amber-500/20 bg-amber-500/8 text-amber-200',
+  }
+
+  return (
+    <div className={`rounded-2xl border p-4 ${toneMap[tone] || toneMap.zinc}`}>
+      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">{title}</div>
+      <div className="mt-3 space-y-2">
+        {(items || []).length ? (
+          items.map((item, index) => (
+            <div key={`${title}-${index}`} className="rounded-xl border border-white/5 bg-black/10 px-3 py-2 text-sm">
+              {item}
+            </div>
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-zinc-800 px-3 py-2 text-sm text-zinc-500">
+            Sem dados ainda.
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+function SeriesCard({ series, health, onFieldChange, onListChange }) {
+  const episodes = Array.isArray(series.episodes) ? series.episodes : []
+  const nextEpisode = health?.next_episode?.title || ''
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-zinc-950/55 p-5">
+      <div className="flex flex-col gap-3 border-b border-zinc-800/80 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-lg font-semibold text-zinc-100">{series.name || 'Nova serie'}</div>
+          <div className="mt-1 text-sm text-zinc-500">{series.summary || 'Defina a promessa central da serie.'}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400 lg:min-w-[280px]">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 px-3 py-2">
+            <div className="text-zinc-500">Pipeline</div>
+            <div className="mt-1 text-sm font-semibold text-zinc-100">{health?.ideas_in_pipeline || 0} ideias</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 px-3 py-2">
+            <div className="text-zinc-500">Planejados</div>
+            <div className="mt-1 text-sm font-semibold text-zinc-100">{health?.episodes_planned || episodes.length}</div>
+          </div>
+          <div className="col-span-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-3 py-2">
+            <div className="text-zinc-500">Proximo episodio</div>
+            <div className="mt-1 text-sm font-semibold text-zinc-100">{nextEpisode || 'Sem episodio definido'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Field label="Nome" value={series.name} onChange={(value) => onFieldChange('name', value)} rows={1} />
+        <Field label="Slug" value={series.slug} onChange={(value) => onFieldChange('slug', value)} rows={1} />
+
+        <label className="block">
+          <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">Status</div>
+          <select className={selectClass} value={series.status || 'ativa'} onChange={(event) => onFieldChange('status', event.target.value)}>
+            <option value="ativa">Ativa</option>
+            <option value="pausada">Pausada</option>
+            <option value="arquivada">Arquivada</option>
+          </select>
+        </label>
+
+        <Field
+          label="Papel no funil"
+          value={series.content_role}
+          onChange={(value) => onFieldChange('content_role', value)}
+          rows={1}
+          placeholder="topo/meio/fundo"
+        />
+
+        <Field label="Cadencia" value={series.cadence} onChange={(value) => onFieldChange('cadence', value)} rows={1} />
+        <Field label="Formato" value={series.format} onChange={(value) => onFieldChange('format', value)} rows={1} />
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Field label="Objetivo" value={series.objective} onChange={(value) => onFieldChange('objective', value)} placeholder="Resultado estrategico da serie" />
+        <Field label="Resumo" value={series.summary} onChange={(value) => onFieldChange('summary', value)} placeholder="Descricao curta e clara para o banco" />
+        <Field label="Audience" value={series.audience} onChange={(value) => onFieldChange('audience', value)} placeholder="Para quem essa serie existe" />
+        <Field label="Promise" value={series.promise} onChange={(value) => onFieldChange('promise', value)} placeholder="Transformacao prometida por episodio" />
+        <Field label="CTA Focus" value={series.cta_focus} onChange={(value) => onFieldChange('cta_focus', value)} placeholder="Qual CTA essa serie puxa" />
+        <Field
+          label="Regra de thumbnail"
+          value={series.thumbnail_rule}
+          onChange={(value) => onFieldChange('thumbnail_rule', value)}
+          placeholder="Regra visual fixa da serie"
+        />
+      </div>
+
+      <div className="mt-4">
+        <Field
+          label="Idea Seeds"
+          value={linesToText(series.idea_seeds)}
+          onChange={(value) => onListChange('idea_seeds', value)}
+          placeholder="Uma ideia por linha"
+          rows={6}
+        />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/55 p-4">
+        <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Episodios cadastrados</div>
+        <div className="mt-3 grid gap-2">
+          {episodes.length ? (
+            episodes.map((episode) => (
+              <div key={`${series.slug}-${episode.code}-${episode.title}`} className="flex items-center justify-between rounded-xl border border-zinc-800 px-3 py-2 text-sm">
+                <span className="text-zinc-200">{episode.title}</span>
+                <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  {episode.status}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-zinc-800 px-3 py-2 text-sm text-zinc-500">
+              Nenhum episodio cadastrado.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function YouTubeStrategy() {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [strategy, setStrategy] = useState(null)
+  const [workspace, setWorkspace] = useState(null)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  async function loadData() {
+    setLoading(true)
+    setError('')
+    try {
+      const [strategyResponse, workspaceResponse] = await Promise.all([
+        getYouTubeStrategy(PROJECT_NAME),
+        getYouTubeWorkspace(PROJECT_NAME),
+      ])
+      const strategyPayload = unwrap(strategyResponse)
+      const workspacePayload = unwrap(workspaceResponse)
+      setStrategy(strategyPayload?.strategy || null)
+      setWorkspace(workspacePayload || null)
+    } catch (err) {
+      setError(err.message || 'Falha ao carregar a estrategia.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function updateStrategy(mutator) {
+    setStrategy((current) => {
+      if (!current) return current
+      const next = cloneValue(current)
+      mutator(next)
+      return next
+    })
+  }
+
+  function updateTopLevel(key, value) {
+    updateStrategy((next) => {
+      next[key] = value
+    })
+  }
+
+  function updateNested(section, key, value) {
+    updateStrategy((next) => {
+      next[section] = next[section] || {}
+      next[section][key] = value
+    })
+  }
+
+  function updateList(key, value) {
+    updateStrategy((next) => {
+      next[key] = textToLines(value)
+    })
+  }
+
+  function updateCalendarItem(index, key, value) {
+    updateStrategy((next) => {
+      next.publishing_rhythm = next.publishing_rhythm || {}
+      next.publishing_rhythm.calendar = Array.isArray(next.publishing_rhythm.calendar) ? next.publishing_rhythm.calendar : []
+      next.publishing_rhythm.calendar[index] = {
+        ...(next.publishing_rhythm.calendar[index] || {}),
+        [key]: value,
+      }
+    })
+  }
+
+  function addCalendarItem() {
+    updateStrategy((next) => {
+      next.publishing_rhythm = next.publishing_rhythm || {}
+      next.publishing_rhythm.calendar = Array.isArray(next.publishing_rhythm.calendar) ? next.publishing_rhythm.calendar : []
+      next.publishing_rhythm.calendar.push({
+        series: '',
+        slot: '',
+        format: 'longo',
+        goal: '',
+      })
+    })
+  }
+
+  function updateSeriesField(index, key, value) {
+    updateStrategy((next) => {
+      next.series = Array.isArray(next.series) ? next.series : []
+      next.series[index] = {
+        ...(next.series[index] || {}),
+        [key]: value,
+      }
+    })
+  }
+
+  function updateSeriesList(index, key, value) {
+    updateStrategy((next) => {
+      next.series = Array.isArray(next.series) ? next.series : []
+      next.series[index] = {
+        ...(next.series[index] || {}),
+        [key]: textToLines(value),
+      }
+    })
+  }
+
+  function addSeries() {
+    updateStrategy((next) => {
+      next.series = Array.isArray(next.series) ? next.series : []
+      next.series.push({
+        slug: `nova-serie-${next.series.length + 1}`,
+        name: 'Nova serie',
+        status: 'ativa',
+        objective: '',
+        content_role: 'topo/meio',
+        cadence: '1 episodio por semana',
+        format: 'video longo 8-15min',
+        thumbnail_rule: '',
+        summary: '',
+        audience: '',
+        promise: '',
+        cta_focus: '',
+        idea_seeds: [],
+        episodes: [],
+      })
+    })
+  }
+
+  async function handleSave() {
+    if (!strategy || saving) return
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const response = await saveYouTubeStrategy(strategy, PROJECT_NAME)
+      const payload = unwrap(response)
+      setStrategy(payload?.strategy || strategy)
+      const workspaceResponse = await getYouTubeWorkspace(PROJECT_NAME)
+      setWorkspace(unwrap(workspaceResponse) || null)
+      setNotice('Estrategia salva no banco com sucesso.')
+    } catch (err) {
+      setError(err.message || 'Falha ao salvar a estrategia.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-sm text-zinc-500">Carregando estrategia do YouTube...</div>
+  }
+
+  if (!strategy) {
+    return <div className="text-sm text-red-400">{error || 'Nao foi possivel carregar a estrategia.'}</div>
+  }
+
+  const audit = workspace?.channel_audit || {}
+  const seriesHealth = Array.isArray(workspace?.series_health) ? workspace.series_health : []
+
   return (
-    <div>
-      {/* Page header */}
-      <div className="flex items-center justify-between mb-5">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 rounded-3xl border border-zinc-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.14),_transparent_42%),linear-gradient(135deg,_rgba(24,24,27,0.95),_rgba(9,9,11,0.96))] p-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <span className="text-green-500">◈</span> Estratégia GuyFolkz
-          </h1>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Dados do AutoResearch — 20 vídeos analisados · Atualizado 2026-03-19
+          <div className="text-[11px] uppercase tracking-[0.22em] text-red-300/80">YouTube Strategy DB</div>
+          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Editor da estrategia do canal</h1>
+          <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+            Esta tela salva direto em <span className="font-mono text-zinc-200">projects.credentials.youtube_strategy</span>.
+            A serie semanal <span className="text-zinc-100">React na Pratica</span> ja entrou no calendario junto com A Virada e RADAR IA.
           </p>
         </div>
-        <div className="text-right text-xs text-zinc-600">
-          <div>Canal: GuyFolkz</div>
-          <div>Baseline: 196 views · Eng: 8.1%</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="rounded-full border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100" onClick={loadData}>
+            Recarregar
+          </button>
+          <button
+            className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? 'Salvando...' : 'Salvar estrategia'}
+          </button>
         </div>
       </div>
 
-      {/* Fórmula do vídeo vencedor */}
-      <FormulaCard />
+      {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div> : null}
+      {notice ? <div className="rounded-2xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">{notice}</div> : null}
 
-      {/* Quick Actions */}
-      <QuickActionsCard />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Inscritos" value={formatNumber(audit.subscribers)} sub={`Stage ${audit.stage || '0-1k'}`} />
+        <MetricCard label="Media views" value={formatNumber(audit.avg_views)} sub={`Mediana ${formatNumber(audit.median_views)}`} />
+        <MetricCard label="Videos" value={formatNumber(audit.total_videos)} sub={`Fonte ${audit.source || 'snapshot'}`} />
+        <MetricCard
+          label="Melhor video"
+          value={formatNumber(audit.best_video?.views)}
+          sub={audit.best_video?.title || 'Sem referencia ainda'}
+        />
+      </div>
 
-      {/* Two-column layout on larger screens */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
-          <DurationTable />
-          <ScheduleCard />
-        </div>
-        <div>
-          <TopicsTable />
-          <TopVideosCard />
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <SectionCard title="Motor do canal" sub="Descricao central do canal e da estrategia.">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Field label="Goal" value={strategy.goal} onChange={(value) => updateTopLevel('goal', value)} rows={1} />
+            <Field label="North Star" value={strategy.north_star} onChange={(value) => updateTopLevel('north_star', value)} rows={1} />
+            <Field label="Positioning" value={strategy.positioning} onChange={(value) => updateTopLevel('positioning', value)} />
+            <Field label="Editorial Formula" value={strategy.editorial_formula} onChange={(value) => updateTopLevel('editorial_formula', value)} />
+            <Field label="Big Idea" value={strategy.big_idea} onChange={(value) => updateTopLevel('big_idea', value)} />
+            <Field label="Brand Narrative" value={strategy.brand_narrative} onChange={(value) => updateTopLevel('brand_narrative', value)} />
+          </div>
+        </SectionCard>
+
+        <div className="grid gap-4">
+          <InsightList title="Padroes fortes" items={audit.top_patterns} tone="green" />
+          <InsightList title="Gaps e oportunidades" items={audit.opportunity_gaps} tone="amber" />
+          <InsightList title="Proximas acoes" items={workspace?.next_actions} />
         </div>
       </div>
 
-      {/* Title patterns — full width */}
-      <TitlePatterns />
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <SectionCard title="Playbook operacional" sub="Campos claros para manter o banco organizado.">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Field label="Tone" value={strategy.style?.tone} onChange={(value) => updateNested('style', 'tone', value)} />
+            <Field label="Visual" value={strategy.style?.visual} onChange={(value) => updateNested('style', 'visual', value)} />
+            <Field label="Editing" value={strategy.style?.editing} onChange={(value) => updateNested('style', 'editing', value)} />
+            <Field label="Pacing" value={strategy.style?.pacing} onChange={(value) => updateNested('style', 'pacing', value)} />
+            <Field label="CTA Cold" value={strategy.cta_templates?.cold} onChange={(value) => updateNested('cta_templates', 'cold', value)} />
+            <Field label="CTA Warm" value={strategy.cta_templates?.warm} onChange={(value) => updateNested('cta_templates', 'warm', value)} />
+            <Field label="CTA Hot" value={strategy.cta_templates?.hot} onChange={(value) => updateNested('cta_templates', 'hot', value)} />
+            <Field
+              label="Operating Rules"
+              value={linesToText(strategy.operating_rules)}
+              onChange={(value) => updateList('operating_rules', value)}
+              placeholder="Uma regra por linha"
+              rows={7}
+            />
+            <Field
+              label="Content Pillars"
+              value={linesToText(strategy.content_pillars)}
+              onChange={(value) => updateList('content_pillars', value)}
+              placeholder="Um pilar por linha"
+              rows={7}
+            />
+            <Field
+              label="Title Patterns"
+              value={linesToText(strategy.preferred_title_patterns)}
+              onChange={(value) => updateList('preferred_title_patterns', value)}
+              placeholder="Um padrao por linha"
+              rows={7}
+            />
+          </div>
+        </SectionCard>
 
-      {/* Workflow rules — full width */}
-      <WorkflowRulesCard />
+        <SectionCard
+          title="Calendario editorial"
+          sub="Cadencia semanal e slots oficiais das series."
+          action={
+            <button className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100" onClick={addCalendarItem}>
+              Adicionar slot
+            </button>
+          }
+        >
+          <div className="grid gap-4 md:grid-cols-3">
+            <NumberField
+              label="Longos por semana"
+              value={strategy.publishing_rhythm?.weekly_long_videos}
+              onChange={(value) => updateNested('publishing_rhythm', 'weekly_long_videos', value)}
+            />
+            <NumberField
+              label="Shorts por semana"
+              value={strategy.publishing_rhythm?.weekly_shorts}
+              onChange={(value) => updateNested('publishing_rhythm', 'weekly_shorts', value)}
+            />
+            <NumberField
+              label="Lives por semana"
+              value={strategy.publishing_rhythm?.weekly_lives}
+              onChange={(value) => updateNested('publishing_rhythm', 'weekly_lives', value)}
+            />
+          </div>
 
-      {/* Baseline reference */}
-      <div className="card border border-zinc-700/40 bg-zinc-800/20">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Métricas de Referência do Canal</span>
-          <span className="text-[10px] text-zinc-700 ml-auto">637 subs · 106 vídeos · 17 longos analisados</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Views média (baseline)', value: '196', color: 'text-zinc-100' },
-            { label: 'Engagement rate', value: '8.1%', color: 'text-green-400', note: 'Muito bom p/ canal pequeno' },
-            { label: 'Duração média', value: '18 min', color: 'text-zinc-100' },
-            { label: 'Foco do canal', value: 'Claude Code', color: 'text-blue-400', note: 'N8N só eventualmente' },
-          ].map((m) => (
-            <div key={m.label} className="flex flex-col">
-              <span className="text-[10px] text-zinc-600">{m.label}</span>
-              <span className={`text-lg font-bold mt-0.5 ${m.color}`}>{m.value}</span>
-              {m.note && <span className="text-[10px] text-zinc-600">{m.note}</span>}
-            </div>
+          <div className="mt-5 space-y-3">
+            {(strategy.publishing_rhythm?.calendar || []).map((item, index) => (
+              <div key={`${item.series || 'slot'}-${index}`} className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/55 p-4 lg:grid-cols-4">
+                <Field label="Serie" value={item.series} onChange={(value) => updateCalendarItem(index, 'series', value)} rows={1} />
+                <Field label="Slot" value={item.slot} onChange={(value) => updateCalendarItem(index, 'slot', value)} rows={1} />
+                <Field label="Formato" value={item.format} onChange={(value) => updateCalendarItem(index, 'format', value)} rows={1} />
+                <Field label="Objetivo" value={item.goal} onChange={(value) => updateCalendarItem(index, 'goal', value)} rows={1} />
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title="Series do canal"
+        sub="Descricao organizada por serie, com objetivo, promessa, CTA e seeds."
+        action={
+          <button className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100" onClick={addSeries}>
+            Nova serie
+          </button>
+        }
+      >
+        <div className="space-y-5">
+          {(strategy.series || []).map((series, index) => (
+            <SeriesCard
+              key={`${series.slug || 'series'}-${index}`}
+              series={series}
+              health={seriesHealth.find((item) => item.name === series.name)}
+              onFieldChange={(key, value) => updateSeriesField(index, key, value)}
+              onListChange={(key, value) => updateSeriesList(index, key, value)}
+            />
           ))}
         </div>
-      </div>
+      </SectionCard>
     </div>
   )
 }
