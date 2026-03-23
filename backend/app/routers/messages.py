@@ -108,7 +108,38 @@ async def list_messages(
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Message)
+    # Select individual columns (same pattern as get_conversation)
+    # to produce flat mappings with string keys
+    msg_columns = [
+        Message.id,
+        Message.contact_id,
+        Message.remote_jid,
+        Message.direction,
+        Message.message_type,
+        Message.content,
+        Message.transcription,
+        Message.media_url,
+        Message.media_local_path,
+        Message.media_mimetype,
+        Message.media_duration_seconds,
+        Message.quoted_message_id,
+        Message.evolution_message_id,
+        Message.raw_payload,
+        Message.processed,
+        Message.project_id,
+        Message.timestamp,
+        Message.created_at,
+        Contact.name.label("contact_name"),
+        Contact.push_name.label("contact_push_name"),
+        Contact.phone.label("contact_phone"),
+        Project.name.label("project_name"),
+    ]
+
+    stmt = select(*msg_columns).outerjoin(
+        Contact, Message.contact_id == Contact.id
+    ).outerjoin(
+        Project, Message.project_id == Project.id
+    )
     count_stmt = select(func.count(Message.id))
     filters = []
 
@@ -139,18 +170,8 @@ async def list_messages(
 
     offset = (page - 1) * per_page
     stmt = stmt.order_by(Message.timestamp.desc()).offset(offset).limit(per_page)
-    stmt = (
-        stmt.outerjoin(Contact, Message.contact_id == Contact.id)
-        .outerjoin(Project, Message.project_id == Project.id)
-        .add_columns(
-            Contact.name.label("contact_name"),
-            Contact.push_name.label("contact_push_name"),
-            Contact.phone.label("contact_phone"),
-            Project.name.label("project_name"),
-        )
-    )
 
-    rows = (await db.execute(stmt)).all()
+    rows = (await db.execute(stmt)).mappings().all()
     total_pages = math.ceil(total / per_page) if total > 0 else 0
 
     return PaginatedResponse(
