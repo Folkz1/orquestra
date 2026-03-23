@@ -106,6 +106,14 @@ DEFAULT_YOUTUBE_STRATEGY: dict[str, Any] = {
         "warm": "Se voce quer esse fluxo adaptado para o seu caso, o link esta na descricao.",
         "hot": "Se voce quer que eu desenhe essa operacao com voce, me chama no WhatsApp.",
     },
+    "recording_focus": {
+        "series": "",
+        "title": "",
+        "status": "",
+        "source": "",
+        "reason": "",
+        "updated_at": "",
+    },
     "source_materials": [],
     "series": [
         {
@@ -429,6 +437,18 @@ def _compact_episode(item: dict[str, Any] | None) -> dict[str, Any] | None:
     return episode
 
 
+def _compact_recording_focus(item: dict[str, Any] | None) -> dict[str, Any]:
+    focus = dict(item or {})
+    return {
+        "series": _clean_text(focus.get("series")),
+        "title": _clean_text(focus.get("title")),
+        "status": _clean_text(focus.get("status")),
+        "source": _clean_text(focus.get("source")),
+        "reason": _clean_text(focus.get("reason")),
+        "updated_at": _clean_text(focus.get("updated_at")),
+    }
+
+
 def _compact_calendar_items(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
     for item in list(items or []):
@@ -552,6 +572,7 @@ def _compact_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
     for key, value in list(cta_templates.items()):
         cta_templates[key] = _clean_text(value)
     compacted["cta_templates"] = cta_templates
+    compacted["recording_focus"] = _compact_recording_focus(compacted.get("recording_focus"))
 
     rhythm = dict(compacted.get("publishing_rhythm") or {})
     for key in ("weekly_long_videos", "weekly_shorts", "weekly_lives"):
@@ -802,6 +823,350 @@ def _extract_pipeline_summary(briefing: dict[str, Any] | None) -> dict[str, Any]
     }
 
 
+def _normalize_key(value: Any) -> str:
+    return _normalize_text(str(value or "")).replace(" ", "_").replace("-", "_")
+
+
+def _status_score(value: Any) -> int:
+    return {
+        "pronto_gravar": 40,
+        "thumbnail_pronta": 32,
+        "rascunho": 24,
+        "planejado": 18,
+        "ideia": 12,
+        "seed": 10,
+        "publicado": -100,
+    }.get(_normalize_key(value), 8)
+
+
+def _urgency_score(value: Any) -> int:
+    return {
+        "altissima": 24,
+        "alta": 18,
+        "media": 10,
+        "baixa": 4,
+    }.get(_normalize_key(value), 6)
+
+
+def _series_slot_index(strategy: dict[str, Any], series_name: str | None) -> int | None:
+    calendar_items = list((strategy.get("publishing_rhythm") or {}).get("calendar", []) or [])
+    normalized_series = _normalize_text(series_name)
+    for index, item in enumerate(calendar_items):
+        if _normalize_text(item.get("series")) == normalized_series:
+            return index
+    return None
+
+
+def _series_history_signal(
+    series_name: str,
+    *,
+    strategy: dict[str, Any],
+    pattern_scores: dict[str, int],
+    median_views: int,
+    existing_titles: list[str],
+) -> dict[str, Any]:
+    normalized_series = _normalize_text(series_name)
+    react_series = _normalize_text(_find_series_name(strategy, "react", "next.js", "nextjs", "frontend"))
+    radar_series = _normalize_text(_find_series_name(strategy, "radar", "news", "noticia"))
+    virada_series = _normalize_text(_find_series_name(strategy, "virada", "bastidor", "operacao", "sistema"))
+
+    practical_avg = int(pattern_scores.get("practical_avg") or 0)
+    business_avg = int(pattern_scores.get("business_avg") or 0)
+    macro_news_avg = int(pattern_scores.get("macro_news_avg") or 0)
+    operator_avg = int(pattern_scores.get("operator_avg") or 0)
+    has_react_history = any(keyword in title for title in existing_titles for keyword in ("react", "next"))
+
+    if normalized_series and normalized_series == react_series:
+        score = 18
+        if practical_avg and practical_avg >= median_views:
+            score += 5
+        if not has_react_history:
+            score += 7
+        return {
+            "score": score,
+            "note": "React na Pratica abre busca evergreen e ainda nao foi explorada com consistencia no historico.",
+        }
+
+    if normalized_series and normalized_series == virada_series:
+        score = 12
+        if operator_avg and operator_avg >= median_views:
+            score += 6
+        if business_avg and business_avg >= median_views:
+            score += 3
+        return {
+            "score": score,
+            "note": "A Virada reforca autoridade operacional e conversa com o sinal de bastidor/sistema do canal.",
+        }
+
+    if normalized_series and normalized_series == radar_series:
+        score = 6
+        note = "RADAR IA traz recorrencia, mas precisa aterrissar sempre em impacto pratico."
+        if macro_news_avg and macro_news_avg >= median_views:
+            score += 4
+        if practical_avg and macro_news_avg and practical_avg > macro_news_avg:
+            score -= 4
+        return {"score": score, "note": note}
+
+    score = 8
+    if practical_avg and practical_avg >= median_views:
+        score += 4
+    return {
+        "score": score,
+        "note": "O canal reage melhor quando o tema vira metodo, sistema ou resultado concreto.",
+    }
+
+
+def _title_signal(title: str) -> dict[str, Any]:
+    text = _normalize_text(title)
+    score = 0
+    hits: list[str] = []
+
+    patterns = [
+        ("jeito certo", 8, "usa formula 'jeito certo'"),
+        ("3 erros", 8, "abre com erro concreto"),
+        ("erro", 6, "promete corrigir um erro"),
+        ("como", 4, "tem cara de metodo pratico"),
+        ("sistema", 4, "mostra sistema ou prova"),
+        ("fluxo", 4, "fala de fluxo operacional"),
+        ("react", 5, "captura busca evergreen de dev"),
+        ("next", 4, "captura busca de stack web"),
+        ("claude code", 5, "aproveita termo quente do teu ecossistema"),
+    ]
+    for marker, marker_score, label in patterns:
+        if marker in text:
+            score += marker_score
+            hits.append(label)
+
+    if len(_clean_text(title)) <= 68:
+        score += 2
+        hits.append("titulo cabe melhor no mobile")
+
+    return {"score": min(score, 18), "hits": hits[:3]}
+
+
+def _title_overlap_penalty(title: str, existing_titles: list[str]) -> int:
+    normalized_title = _normalize_text(title)
+    if not normalized_title:
+        return 0
+    if normalized_title in existing_titles:
+        return -30
+
+    candidate_words = {word for word in re.split(r"[^a-z0-9]+", normalized_title) if len(word) >= 4}
+    if not candidate_words:
+        return 0
+
+    max_overlap = 0
+    for existing in existing_titles:
+        existing_words = {word for word in re.split(r"[^a-z0-9]+", existing) if len(word) >= 4}
+        max_overlap = max(max_overlap, len(candidate_words & existing_words))
+
+    if max_overlap >= 5:
+        return -10
+    if max_overlap >= 3:
+        return -4
+    return 0
+
+
+def _candidate_blockers(candidate: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    status = _normalize_key(candidate.get("status"))
+    if status in {"ideia", "seed"}:
+        blockers.append("Ainda esta so em ideia. Falta fechar estrutura minima.")
+    elif status == "planejado":
+        blockers.append("Ainda precisa virar thumbnail + roteiro final.")
+    elif status == "rascunho":
+        blockers.append("Tem direcao, mas ainda falta consolidar a versao final.")
+
+    if not _clean_text(candidate.get("hook")):
+        blockers.append("Falta hook claro dos primeiros segundos.")
+    if not _clean_text(candidate.get("thumbnail_rule")):
+        blockers.append("Falta regra de thumbnail definida ou aplicada.")
+    return blockers
+
+
+def _candidate_actions(candidate: dict[str, Any]) -> list[str]:
+    actions: list[str] = []
+    status = _normalize_key(candidate.get("status"))
+    if status in {"ideia", "seed"}:
+        actions.append("Fechar titulo e hook em 1 frase antes de roteirizar.")
+    if status in {"planejado", "rascunho", "ideia", "seed"}:
+        actions.append("Escolher thumbnail e prova visual antes da gravacao.")
+    if not _clean_text(candidate.get("hook")):
+        actions.append("Escrever hook com dor + promessa + prova em ate 20s.")
+    actions.append("Confirmar CTA final alinhado com a serie.")
+    return actions[:3]
+
+
+def _build_recording_queue(
+    *,
+    strategy: dict[str, Any],
+    videos_from_briefing: list[dict[str, Any]],
+    series_health: list[dict[str, Any]],
+    pattern_scores: dict[str, int],
+    median_views: int,
+    existing_titles: list[str],
+) -> dict[str, Any]:
+    health_by_name = {_normalize_text(item.get("name")): item for item in series_health}
+    candidates_map: dict[str, dict[str, Any]] = {}
+
+    def upsert_candidate(candidate: dict[str, Any]) -> None:
+        title_key = _normalize_text(candidate.get("title"))
+        if not title_key:
+            return
+        current = candidates_map.get(title_key)
+        if current is None or _status_score(candidate.get("status")) > _status_score(current.get("status")):
+            candidates_map[title_key] = candidate
+
+    for video in videos_from_briefing:
+        status = _normalize_key(video.get("status") or "ideia")
+        if status == "publicado":
+            continue
+        series_name = _series_name_for_idea(video, strategy)
+        series_meta = next((series for series in strategy.get("series", []) if series.get("name") == series_name), {})
+        upsert_candidate(
+            {
+                "title": video.get("chosen_title") or video.get("title") or video.get("working_title"),
+                "series": series_name,
+                "status": video.get("status") or "ideia",
+                "urgency": video.get("urgencia") or video.get("urgency") or "media",
+                "hook": video.get("hook") or "",
+                "source": "briefing",
+                "source_label": "briefing atual",
+                "thumbnail_rule": series_meta.get("thumbnail_rule") or "",
+                "objective": series_meta.get("objective") or "",
+                "promise": series_meta.get("promise") or "",
+                "cta_focus": series_meta.get("cta_focus") or "",
+            }
+        )
+
+    for series in strategy.get("series", []):
+        if _normalize_text(series.get("status")) == "arquivada":
+            continue
+        planned_episodes = [episode for episode in list(series.get("episodes", []) or []) if _normalize_key(episode.get("status")) != "publicado"]
+        for episode in planned_episodes[:3]:
+            upsert_candidate(
+                {
+                    "title": episode.get("working_title") or episode.get("title"),
+                    "series": series.get("name"),
+                    "status": episode.get("status") or "planejado",
+                    "urgency": "media",
+                    "hook": episode.get("hook") or episode.get("thesis") or "",
+                    "source": "strategy_episode",
+                    "source_label": "estrategia da serie",
+                    "thumbnail_rule": series.get("thumbnail_rule") or "",
+                    "objective": series.get("objective") or "",
+                    "promise": series.get("promise") or "",
+                    "cta_focus": series.get("cta_focus") or "",
+                }
+            )
+
+    queue: list[dict[str, Any]] = []
+    for candidate in candidates_map.values():
+        if not _clean_text(candidate.get("title")):
+            continue
+        series_name = candidate.get("series") or "Fora de serie"
+        slot_index = _series_slot_index(strategy, series_name)
+        slot_bonus = max(0, 8 - (slot_index or 0) * 2) if slot_index is not None else 0
+        health = health_by_name.get(_normalize_text(series_name), {})
+        series_signal = _series_history_signal(
+            series_name,
+            strategy=strategy,
+            pattern_scores=pattern_scores,
+            median_views=median_views,
+            existing_titles=existing_titles,
+        )
+        title_signal = _title_signal(candidate.get("title") or "")
+        overlap_penalty = _title_overlap_penalty(candidate.get("title") or "", existing_titles)
+        pipeline_pressure = 6 if int(health.get("ideas_in_pipeline") or 0) == 0 else 0
+        readiness = _status_score(candidate.get("status"))
+        urgency = _urgency_score(candidate.get("urgency"))
+        score = readiness + urgency + slot_bonus + pipeline_pressure + series_signal["score"] + title_signal["score"] + overlap_penalty
+
+        why_now: list[str] = []
+        if slot_index is not None:
+            why_now.append(f"{series_name} ja tem slot fixo no calendario e precisa alimentar esse trilho.")
+        if pipeline_pressure:
+            why_now.append(f"{series_name} esta sem gordura no pipeline. Se nao gravar, a serie seca.")
+        why_now.append(series_signal["note"])
+        why_now.extend(title_signal["hits"])
+        if readiness >= 32:
+            why_now.append("Ja esta perto da camera. Ganha velocidade sobre ideias cruas.")
+        elif readiness >= 18:
+            why_now.append("Ja existe estrutura suficiente para sair do papel rapido.")
+        if urgency >= 18:
+            why_now.append("A urgencia declarada pede decisao nesta rodada.")
+        if overlap_penalty < 0:
+            why_now.append("Existe alguma sobreposicao com titulos ja publicados. Precisa lapidar o angulo.")
+
+        blockers = _candidate_blockers(candidate)
+        queue.append(
+            {
+                **candidate,
+                "score": score,
+                "slot_index": slot_index,
+                "why_now": why_now[:5],
+                "blockers": blockers,
+                "actions": _candidate_actions(candidate),
+                "score_breakdown": {
+                    "readiness": readiness,
+                    "urgency": urgency,
+                    "series_fit": series_signal["score"],
+                    "slot_bonus": slot_bonus,
+                    "pipeline_pressure": pipeline_pressure,
+                    "title_signal": title_signal["score"],
+                    "overlap_penalty": overlap_penalty,
+                },
+            }
+        )
+
+    queue.sort(key=lambda item: (item.get("score", 0), _status_score(item.get("status")), _urgency_score(item.get("urgency"))), reverse=True)
+    for index, candidate in enumerate(queue, start=1):
+        candidate["rank"] = index
+
+    strategy_focus = _compact_recording_focus(strategy.get("recording_focus"))
+    focus_match = None
+    if strategy_focus.get("title"):
+        focus_match = next((candidate for candidate in queue if _normalize_text(candidate.get("title")) == _normalize_text(strategy_focus.get("title"))), None)
+
+    current_focus = None
+    if strategy_focus.get("title"):
+        current_focus = {
+            **strategy_focus,
+            "is_pinned": True,
+            "queue_position": focus_match.get("rank") if focus_match else None,
+            "still_recommended": bool(focus_match),
+            "stale": focus_match is None,
+        }
+    elif queue:
+        top_candidate = queue[0]
+        current_focus = {
+            "series": top_candidate.get("series"),
+            "title": top_candidate.get("title"),
+            "status": top_candidate.get("status"),
+            "source": top_candidate.get("source"),
+            "reason": "Sem pauta fixada ainda. Esta e a melhor sugestao automatica do workspace.",
+            "updated_at": "",
+            "is_pinned": False,
+            "queue_position": 1,
+            "still_recommended": True,
+            "stale": False,
+        }
+
+    decision_rules = [
+        "Pautas prontas vencem ideia solta quando o objetivo e gravar nesta semana.",
+        "Serie com slot fixo e pipeline vazio ganha pressao extra.",
+        "O canal premia mais metodo, sistema e erro concreto do que noticia pura.",
+        "Titulos com promessa clara e gancho mobile-friendly sobem na fila.",
+    ]
+
+    return {
+        "recording_queue": queue[:6],
+        "next_recording_recommendation": queue[0] if queue else {},
+        "current_focus": current_focus or {},
+        "decision_rules": decision_rules,
+    }
+
+
 def _build_strategy_hygiene(strategy: dict[str, Any], pipeline: dict[str, Any]) -> dict[str, Any]:
     active_series = _active_series(strategy)
     calendar_items = list((strategy.get("publishing_rhythm") or {}).get("calendar", []) or [])
@@ -858,6 +1223,7 @@ def _build_playbook_snapshot(strategy: dict[str, Any]) -> dict[str, Any]:
     speaking_style = dict(strategy.get("speaking_style") or {})
     voice_core = dict(speaking_style.get("voice_core") or {})
     signature_elements = dict(speaking_style.get("signature_elements") or {})
+    recording_focus = _compact_recording_focus(strategy.get("recording_focus"))
     return {
         "big_idea": strategy.get("big_idea") or "",
         "brand_narrative": strategy.get("brand_narrative") or "",
@@ -881,6 +1247,7 @@ def _build_playbook_snapshot(strategy: dict[str, Any]) -> dict[str, Any]:
         "signature_phrases": list(signature_elements.get("high_frequency", []) or [])[:6],
         "source_materials": source_materials,
         "source_count": len(source_materials),
+        "recording_focus": recording_focus,
         "last_synced_at": strategy.get("last_synced_at") or "",
     }
 
@@ -1068,6 +1435,22 @@ async def build_youtube_workspace(
             }
         )
 
+    recording_decision = _build_recording_queue(
+        strategy=strategy,
+        videos_from_briefing=videos_from_briefing,
+        series_health=series_health,
+        pattern_scores={
+            "practical_avg": practical_avg,
+            "business_avg": business_avg,
+            "macro_news_avg": macro_news_avg,
+            "operator_avg": operator_avg,
+        },
+        median_views=median_views,
+        existing_titles=existing_titles,
+    )
+    next_recording = dict(recording_decision.get("next_recording_recommendation") or {})
+    current_focus = dict(recording_decision.get("current_focus") or {})
+
     calendar_items = list((strategy.get("publishing_rhythm") or {}).get("calendar", []) or [])
     calendar_text = ", ".join(
         [
@@ -1084,6 +1467,10 @@ async def build_youtube_workspace(
         ),
         "Toda pauta nova precisa nascer com serie, promessa e CTA definidos. Sem video solto fora das trilhas principais.",
     ]
+    if next_recording:
+        next_actions.append(
+            f"Gravar agora: '{next_recording.get('title', 'proxima pauta')}' em {next_recording.get('series', 'serie indefinida')}."
+        )
     if pipeline.get("thumb_ready", 0) == 0:
         next_actions.append("Escolher pelo menos 1 video do pipeline e fechar thumbnail hoje.")
     if pipeline.get("ready_to_record", 0) == 0 and videos_from_briefing:
@@ -1129,6 +1516,10 @@ async def build_youtube_workspace(
         "strategy_hygiene": strategy_hygiene,
         "series_health": series_health,
         "series_lanes": series_lanes,
+        "recording_queue": recording_decision.get("recording_queue", []),
+        "next_recording_recommendation": next_recording,
+        "current_focus": current_focus,
+        "decision_rules": recording_decision.get("decision_rules", []),
         "next_actions": next_actions,
         "latest_briefing": latest_briefing,
     }

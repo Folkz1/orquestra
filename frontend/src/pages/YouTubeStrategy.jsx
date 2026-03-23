@@ -48,6 +48,33 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString('pt-BR')
 }
 
+function formatDateTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  })
+}
+
+function normalizeKey(value) {
+  return cleanText(value).toLowerCase().replaceAll(' ', '_').replaceAll('-', '_')
+}
+
+function formatStatusLabel(value) {
+  const normalized = normalizeKey(value)
+  if (!normalized) return 'planejado'
+  return normalized.replaceAll('_', ' ')
+}
+
+function scoreTone(score) {
+  if (score >= 75) return 'green'
+  if (score >= 58) return 'amber'
+  if (score >= 40) return 'red'
+  return 'zinc'
+}
+
 function slugify(value) {
   return cleanText(value)
     .normalize('NFD')
@@ -88,6 +115,11 @@ function normalizeStrategyData(strategy) {
   next.cta_templates = next.cta_templates || {}
   for (const key of Object.keys(next.cta_templates)) {
     next.cta_templates[key] = cleanText(next.cta_templates[key])
+  }
+
+  next.recording_focus = next.recording_focus || {}
+  for (const key of ['series', 'title', 'status', 'source', 'reason', 'updated_at']) {
+    next.recording_focus[key] = cleanText(next.recording_focus[key])
   }
 
   next.publishing_rhythm = next.publishing_rhythm || {}
@@ -281,6 +313,159 @@ function InsightList({ title, items, tone = 'zinc' }) {
   )
 }
 
+function MiniPill({ label, tone = 'zinc' }) {
+  const toneMap = {
+    zinc: 'border-zinc-700 text-zinc-300',
+    green: 'border-green-500/30 text-green-300',
+    amber: 'border-amber-500/30 text-amber-200',
+    red: 'border-red-500/30 text-red-200',
+  }
+
+  return <span className={`rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] ${toneMap[tone] || toneMap.zinc}`}>{label}</span>
+}
+
+function FocusCard({ currentFocus, recommendation, onClear, saving }) {
+  const pinned = Boolean(currentFocus?.is_pinned && currentFocus?.title)
+  const focusTitle = pinned ? currentFocus?.title : ''
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-zinc-950/65 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Proximo video escolhido</div>
+          <div className="mt-2 text-lg font-semibold text-zinc-100">
+            {focusTitle || 'Nenhuma pauta fixada ainda'}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <MiniPill label={pinned ? 'Fixado no banco' : 'Sem decisao travada'} tone={pinned ? 'green' : 'amber'} />
+            {pinned && currentFocus?.series ? <MiniPill label={currentFocus.series} /> : null}
+            {pinned && currentFocus?.status ? <MiniPill label={formatStatusLabel(currentFocus.status)} /> : null}
+          </div>
+        </div>
+        {pinned ? (
+          <button
+            className={`${ghostButtonClass} border-red-500/20 text-red-300 hover:border-red-400/50 hover:text-red-200`}
+            onClick={onClear}
+            disabled={saving}
+          >
+            Limpar foco
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-4 text-sm text-zinc-400">
+        {pinned
+          ? currentFocus.reason || 'Esta pauta esta travada como prioridade editorial.'
+          : 'Use a sugestao automatica ou a fila editorial para travar a proxima gravacao direto na estrategia.'}
+      </div>
+
+      {pinned && currentFocus?.updated_at ? (
+        <div className="mt-3 text-xs text-zinc-500">Atualizado em {formatDateTime(currentFocus.updated_at)}</div>
+      ) : null}
+
+      {pinned && currentFocus?.stale ? (
+        <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          Essa pauta nao aparece mais na fila automatica atual. Vale revisar antes de gravar.
+        </div>
+      ) : null}
+
+      {!pinned && recommendation?.title ? (
+        <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-300">
+          A melhor sugestao automatica agora e <span className="font-semibold text-zinc-100">{recommendation.title}</span>.
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function RecommendationCard({ recommendation, onPin, saving, currentFocusTitle }) {
+  if (!recommendation?.title) {
+    return (
+      <div className="rounded-3xl border border-zinc-800 bg-zinc-950/65 p-5">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Sugestao automatica</div>
+        <div className="mt-3 text-sm text-zinc-500">Sem candidatos suficientes para decidir a proxima gravacao ainda.</div>
+      </div>
+    )
+  }
+
+  const isPinned = cleanText(currentFocusTitle).toLowerCase() === cleanText(recommendation.title).toLowerCase()
+
+  return (
+    <div className="rounded-3xl border border-red-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.12),_transparent_46%),linear-gradient(135deg,_rgba(24,24,27,0.96),_rgba(9,9,11,0.96))] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-red-300/80">Gravar agora</div>
+          <div className="mt-2 text-xl font-semibold text-zinc-50">{recommendation.title}</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <MiniPill label={`Score ${recommendation.score || 0}`} tone={scoreTone(recommendation.score || 0)} />
+            <MiniPill label={recommendation.series || 'Serie'} />
+            <MiniPill label={formatStatusLabel(recommendation.status)} tone="amber" />
+            <MiniPill label={recommendation.source_label || recommendation.source || 'workspace'} />
+          </div>
+        </div>
+        <button
+          className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onPin(recommendation)}
+          disabled={saving || isPinned}
+        >
+          {isPinned ? 'Ja fixado' : saving ? 'Salvando...' : 'Fixar como proximo'}
+        </button>
+      </div>
+
+      <div className="mt-4 text-sm text-zinc-300">{recommendation.promise || recommendation.objective || 'Sem contexto adicional.'}</div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <InsightList title="Por que venceu" items={recommendation.why_now} tone="green" />
+        <InsightList title="O que falta" items={recommendation.blockers} tone={recommendation.blockers?.length ? 'amber' : 'green'} />
+      </div>
+    </div>
+  )
+}
+
+function QueueItemCard({ item, currentFocusTitle, onPin, saving }) {
+  const isFocused = cleanText(currentFocusTitle).toLowerCase() === cleanText(item.title).toLowerCase()
+
+  return (
+    <div className={`rounded-2xl border p-4 ${isFocused ? 'border-red-500/30 bg-red-500/8' : 'border-zinc-800 bg-zinc-950/55'}`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <MiniPill label={`#${item.rank || '-'}`} tone={scoreTone(item.score || 0)} />
+            <MiniPill label={`Score ${item.score || 0}`} tone={scoreTone(item.score || 0)} />
+            <MiniPill label={item.series || 'Serie'} />
+            <MiniPill label={formatStatusLabel(item.status)} tone="amber" />
+          </div>
+          <div className="mt-3 text-base font-semibold text-zinc-100">{item.title}</div>
+          <div className="mt-2 text-sm text-zinc-400">
+            {(item.why_now || []).slice(0, 2).join(' ')}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isFocused ? <MiniPill label="Foco atual" tone="red" /> : null}
+          <button className={ghostButtonClass} onClick={() => onPin(item)} disabled={saving || isFocused}>
+            {isFocused ? 'Fixado' : 'Fixar'}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/55 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Origem</div>
+          <div className="mt-1 text-sm text-zinc-100">{item.source_label || item.source || 'workspace'}</div>
+        </div>
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/55 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Proximo passo</div>
+          <div className="mt-1 text-sm text-zinc-100">{item.actions?.[0] || 'Pronto para decidir.'}</div>
+        </div>
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/55 px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Risco</div>
+          <div className="mt-1 text-sm text-zinc-100">{item.blockers?.[0] || 'Sem bloqueio forte agora.'}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CalendarItemCard({ item, index, total, onChange, onMove, onRemove }) {
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-950/55 p-4">
@@ -465,6 +650,33 @@ export default function YouTubeStrategy() {
     }
   }
 
+  async function refreshWorkspace() {
+    const workspaceResponse = await getYouTubeWorkspace(PROJECT_NAME)
+    setWorkspace(unwrap(workspaceResponse) || null)
+  }
+
+  async function persistStrategySnapshot(nextStrategy, successMessage) {
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const normalized = normalizeStrategyData(nextStrategy)
+      const response = await saveYouTubeStrategy(normalized, PROJECT_NAME)
+      const payload = unwrap(response)
+      const savedStrategy = normalizeStrategyData(payload?.strategy || normalized)
+      setStrategy(savedStrategy)
+      setOriginalStrategy(cloneValue(savedStrategy))
+      await refreshWorkspace()
+      setNotice(successMessage || 'Estrategia salva no banco com sucesso.')
+      return savedStrategy
+    } catch (err) {
+      setError(err.message || 'Falha ao salvar a estrategia.')
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function updateStrategy(mutator) {
     setStrategy((current) => {
       if (!current) return current
@@ -622,24 +834,39 @@ export default function YouTubeStrategy() {
 
   async function handleSave() {
     if (!strategy || saving) return
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      const normalized = normalizeStrategyData(strategy)
-      const response = await saveYouTubeStrategy(normalized, PROJECT_NAME)
-      const payload = unwrap(response)
-      const savedStrategy = normalizeStrategyData(payload?.strategy || normalized)
-      setStrategy(savedStrategy)
-      setOriginalStrategy(cloneValue(savedStrategy))
-      const workspaceResponse = await getYouTubeWorkspace(PROJECT_NAME)
-      setWorkspace(unwrap(workspaceResponse) || null)
-      setNotice('Estrategia salva no banco com sucesso.')
-    } catch (err) {
-      setError(err.message || 'Falha ao salvar a estrategia.')
-    } finally {
-      setSaving(false)
-    }
+    await persistStrategySnapshot(strategy, 'Estrategia salva no banco com sucesso.')
+  }
+
+  async function handlePinCandidate(candidate) {
+    if (!strategy || !candidate?.title || saving) return
+    const nextStrategy = normalizeStrategyData({
+      ...cloneValue(strategy),
+      recording_focus: {
+        series: candidate.series || '',
+        title: candidate.title || '',
+        status: candidate.status || '',
+        source: candidate.source || '',
+        reason: candidate.why_now?.[0] || candidate.objective || candidate.promise || '',
+        updated_at: new Date().toISOString(),
+      },
+    })
+    await persistStrategySnapshot(nextStrategy, 'Proximo video fixado no banco da estrategia.')
+  }
+
+  async function handleClearFocus() {
+    if (!strategy || saving) return
+    const nextStrategy = normalizeStrategyData({
+      ...cloneValue(strategy),
+      recording_focus: {
+        series: '',
+        title: '',
+        status: '',
+        source: '',
+        reason: '',
+        updated_at: '',
+      },
+    })
+    await persistStrategySnapshot(nextStrategy, 'Foco atual removido da estrategia.')
   }
 
   if (loading) {
@@ -653,16 +880,19 @@ export default function YouTubeStrategy() {
   const audit = workspace?.channel_audit || {}
   const seriesHealth = Array.isArray(workspace?.series_health) ? workspace.series_health : []
   const hygieneIssues = workspace?.strategy_hygiene?.issues?.length ? workspace.strategy_hygiene.issues : hygiene.issues
+  const recommendation = workspace?.next_recording_recommendation || {}
+  const recordingQueue = Array.isArray(workspace?.recording_queue) ? workspace.recording_queue : []
+  const currentFocus = workspace?.current_focus || strategy.recording_focus || {}
 
   return (
     <div className="space-y-6 pb-28">
       <div className="flex flex-col gap-4 rounded-3xl border border-zinc-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.14),_transparent_42%),linear-gradient(135deg,_rgba(24,24,27,0.95),_rgba(9,9,11,0.96))] p-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-red-300/80">YouTube Strategy DB</div>
-          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Editor da estrategia do canal</h1>
+          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Central de inteligencia do canal</h1>
           <p className="mt-2 max-w-3xl text-sm text-zinc-400">
             Esta tela salva direto em <span className="font-mono text-zinc-200">projects.credentials.youtube_strategy</span>.
-            Agora ela tambem sinaliza higiene editorial, estado sujo e lacunas reais da operacao.
+            Agora ela precisa te ajudar a decidir o proximo video, defender essa decisao com dados reais e manter a estrategia organizada no banco.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -698,6 +928,46 @@ export default function YouTubeStrategy() {
         <MetricCard label="Melhor video" value={formatNumber(audit.best_video?.views)} sub={audit.best_video?.title || 'Sem referencia ainda'} tone="red" />
       </div>
 
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <SectionCard title="Mesa de decisao" sub="Escolha e trave a proxima gravacao direto daqui.">
+          <div className="grid gap-4">
+            <FocusCard currentFocus={currentFocus} recommendation={recommendation} onClear={handleClearFocus} saving={saving} />
+            <RecommendationCard
+              recommendation={recommendation}
+              onPin={handlePinCandidate}
+              saving={saving}
+              currentFocusTitle={currentFocus?.title}
+            />
+          </div>
+        </SectionCard>
+
+        <div className="grid gap-4">
+          <InsightList title="Como a decisao e feita" items={workspace?.decision_rules} />
+          <InsightList title="Padroes fortes" items={audit.top_patterns} tone="green" />
+          <InsightList title="Gaps e oportunidades" items={audit.opportunity_gaps} tone="amber" />
+        </div>
+      </div>
+
+      <SectionCard title="Fila editorial" sub="Ranking das proximas pautas com base em prontidao, serie, historico e pressao do pipeline.">
+        <div className="grid gap-4">
+          {recordingQueue.length ? (
+            recordingQueue.map((item) => (
+              <QueueItemCard
+                key={`${item.series || 'serie'}-${item.title}`}
+                item={item}
+                currentFocusTitle={currentFocus?.title}
+                onPin={handlePinCandidate}
+                saving={saving}
+              />
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-zinc-800 px-4 py-5 text-sm text-zinc-500">
+              Sem fila editorial suficiente ainda. A estrategia precisa de episodios ou briefing mais ricos.
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <SectionCard title="Motor do canal" sub="Descricao central do canal e da estrategia.">
           <div className="grid gap-4 lg:grid-cols-2">
@@ -711,9 +981,15 @@ export default function YouTubeStrategy() {
         </SectionCard>
 
         <div className="grid gap-4">
-          <InsightList title="Padroes fortes" items={audit.top_patterns} tone="green" />
-          <InsightList title="Gaps e oportunidades" items={audit.opportunity_gaps} tone="amber" />
           <InsightList title="Higiene editorial" items={hygieneIssues} tone={hygieneIssues?.length ? 'red' : 'green'} />
+          <InsightList
+            title="Decisao atual"
+            items={[
+              currentFocus?.is_pinned && currentFocus?.title
+                ? `${currentFocus.title} (${currentFocus.series || 'sem serie'})`
+                : 'Nenhuma pauta fixada no banco.',
+            ]}
+          />
         </div>
       </div>
 
