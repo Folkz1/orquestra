@@ -69,12 +69,10 @@ def _build_message_response(row, include_raw: bool = False) -> MessageResponse:
 
         if not include_raw:
             msg_dict["raw_payload"] = None
-        return MessageResponse(
-            **msg_dict,
-            contact_name=contact_name or contact_push_name or contact_phone,
-            contact_phone=contact_phone,
-            project_name=project_name,
-        )
+        msg_dict["contact_name"] = contact_name or contact_push_name or contact_phone
+        msg_dict["contact_phone"] = contact_phone
+        msg_dict["project_name"] = project_name
+        return MessageResponse(**msg_dict)
 
     msg = row[0]
     msg_dict = MessageResponse.model_validate(msg).model_dump()
