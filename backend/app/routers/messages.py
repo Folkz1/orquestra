@@ -53,10 +53,24 @@ def _build_message_response(row, include_raw: bool = False) -> MessageResponse:
         contact_push_name = row_data.pop("contact_push_name", None)
         contact_phone = row_data.pop("contact_phone", None)
         project_name = row_data.pop("project_name", None)
+
+        # Handle ORM entity in mapping (from select(Model).add_columns(...))
+        # The key is the Model class itself, not a string — extract it first
+        msg_obj = None
+        for key in list(row_data):
+            if not isinstance(key, str):
+                msg_obj = row_data.pop(key)
+                break
+
+        if msg_obj is not None:
+            msg_dict = MessageResponse.model_validate(msg_obj).model_dump()
+        else:
+            msg_dict = row_data
+
         if not include_raw:
-            row_data["raw_payload"] = None
+            msg_dict["raw_payload"] = None
         return MessageResponse(
-            **row_data,
+            **msg_dict,
             contact_name=contact_name or contact_push_name or contact_phone,
             contact_phone=contact_phone,
             project_name=project_name,

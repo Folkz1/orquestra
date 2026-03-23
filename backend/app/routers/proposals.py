@@ -7,9 +7,10 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload, noload
 
 from app.database import get_db
 from app.models import Contact, Proposal, ProposalComment, ProposalEvent
@@ -33,10 +34,19 @@ router = APIRouter()
 @router.get("", response_model=list[ProposalResponse])
 async def list_proposals(
     status: str | None = None,
+    limit: int = Query(50, ge=1, le=200, description="Max proposals to return"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all proposals, optionally filtered by status."""
-    stmt = select(Proposal).order_by(Proposal.created_at.desc())
+    """List proposals, optionally filtered by status."""
+    stmt = (
+        select(Proposal)
+        .options(
+            selectinload(Proposal.contact).noload(Contact.messages),
+            selectinload(Proposal.contact).noload(Contact.delivery_reports),
+        )
+        .order_by(Proposal.created_at.desc())
+        .limit(limit)
+    )
     if status:
         stmt = stmt.where(Proposal.status == status)
     result = await db.execute(stmt)
