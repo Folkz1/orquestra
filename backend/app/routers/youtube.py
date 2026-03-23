@@ -249,12 +249,14 @@ async def get_latest_briefing(db: AsyncSession = Depends(get_db)):
 async def list_briefings(
     limit: int = Query(10, le=50),
     full: bool = Query(False),
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
     db: AsyncSession = Depends(get_db),
 ):
     """List all YouTube briefings. Use ?full=true for complete video data."""
     stmt = (
         select(MemoryEmbedding)
         .where(MemoryEmbedding.source_type == "youtube_briefing")
+        .where(MemoryEmbedding.project_name == _resolve_project_name(project_name))
         .order_by(desc(MemoryEmbedding.created_at))
         .limit(limit)
     )
@@ -284,18 +286,20 @@ async def list_briefings(
 
 # ─── Video Actions (Andriely workflow - PUBLIC) ─────────────────────
 
-@router.patch("/briefings/latest/videos/{video_index}")
-async def update_video(
-    video_index: int,
-    chosen_title: Optional[str] = Form(None),
-    status: Optional[str] = Form(None),
-    thumbnail_prompts_ptbr: Optional[str] = Form(None),
-    youtube_video_id: Optional[str] = Form(None),
-    roteiro: Optional[str] = Form(None),
-    thumbnail: Optional[UploadFile] = File(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update a video in the latest briefing (choose title, upload thumbnail, set status, update roteiro)."""
+async def _get_briefing_record(
+    db: AsyncSession,
+    *,
+    briefing_id: str | None = None,
+) -> MemoryEmbedding | None:
+    if briefing_id:
+        try:
+            parsed_id = uuid.UUID(str(briefing_id))
+        except ValueError:
+            return None
+        stmt = select(MemoryEmbedding).where(MemoryEmbedding.id == parsed_id).limit(1)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
     stmt = (
         select(MemoryEmbedding)
         .where(MemoryEmbedding.source_type == "youtube_briefing")
@@ -303,10 +307,21 @@ async def update_video(
         .limit(1)
     )
     result = await db.execute(stmt)
-    mem = result.scalar_one_or_none()
-    if not mem:
-        return {"error": "No briefing found"}
+    return result.scalar_one_or_none()
 
+
+async def _update_briefing_video_record(
+    db: AsyncSession,
+    *,
+    mem: MemoryEmbedding,
+    video_index: int,
+    chosen_title: Optional[str] = None,
+    status: Optional[str] = None,
+    thumbnail_prompts_ptbr: Optional[str] = None,
+    youtube_video_id: Optional[str] = None,
+    roteiro: Optional[str] = None,
+    thumbnail: Optional[UploadFile] = None,
+) -> dict[str, Any]:
     meta = dict(mem.metadata_ or {})
     briefing = dict(meta.get("briefing", {}))
     videos = list(briefing.get("videos", []))
@@ -339,7 +354,6 @@ async def update_video(
         except (ValueError, TypeError):
             pass
 
-    # Handle thumbnail upload - store as base64 in JSONB (persists across deploys)
     if thumbnail:
         import base64
         content = await thumbnail.read()
@@ -347,7 +361,6 @@ async def update_video(
         mime = "image/png" if ext == ".png" else "image/jpeg"
         b64 = base64.b64encode(content).decode("utf-8")
         video["thumbnail_data"] = f"data:{mime};base64,{b64}"
-        # Also save to disk as fallback
         os.makedirs(THUMBNAILS_DIR, exist_ok=True)
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(THUMBNAILS_DIR, filename)
@@ -359,15 +372,78 @@ async def update_video(
     videos[video_index] = video
     briefing["videos"] = videos
     meta["briefing"] = briefing
-
-    # Update the record - need to create new dict to trigger JSONB change detection
     mem.metadata_ = meta
     from sqlalchemy.orm.attributes import flag_modified
     flag_modified(mem, "metadata_")
     await db.flush()
-
-    logger.info("[YOUTUBE] Updated video %d: title=%s, status=%s, roteiro=%s", video_index, chosen_title, status, "set" if roteiro else "unchanged")
+    logger.info(
+        "[YOUTUBE] Updated video %d in briefing %s: title=%s, status=%s, roteiro=%s",
+        video_index,
+        mem.id,
+        chosen_title,
+        status,
+        "set" if roteiro else "unchanged",
+    )
     return {"ok": True, "video": video}
+
+
+@router.patch("/briefings/latest/videos/{video_index}")
+async def update_video(
+    video_index: int,
+    chosen_title: Optional[str] = Form(None),
+    status: Optional[str] = Form(None),
+    thumbnail_prompts_ptbr: Optional[str] = Form(None),
+    youtube_video_id: Optional[str] = Form(None),
+    roteiro: Optional[str] = Form(None),
+    thumbnail: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a video in the latest briefing (choose title, upload thumbnail, set status, update roteiro)."""
+    mem = await _get_briefing_record(db)
+    if not mem:
+        return {"error": "No briefing found"}
+
+    return await _update_briefing_video_record(
+        db,
+        mem=mem,
+        video_index=video_index,
+        chosen_title=chosen_title,
+        status=status,
+        thumbnail_prompts_ptbr=thumbnail_prompts_ptbr,
+        youtube_video_id=youtube_video_id,
+        roteiro=roteiro,
+        thumbnail=thumbnail,
+    )
+
+
+@router.patch("/briefings/{briefing_id}/videos/{video_index}")
+async def update_video_in_briefing(
+    briefing_id: str,
+    video_index: int,
+    chosen_title: Optional[str] = Form(None),
+    status: Optional[str] = Form(None),
+    thumbnail_prompts_ptbr: Optional[str] = Form(None),
+    youtube_video_id: Optional[str] = Form(None),
+    roteiro: Optional[str] = Form(None),
+    thumbnail: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a video in a specific briefing by id."""
+    mem = await _get_briefing_record(db, briefing_id=briefing_id)
+    if not mem:
+        return {"error": "Briefing not found"}
+
+    return await _update_briefing_video_record(
+        db,
+        mem=mem,
+        video_index=video_index,
+        chosen_title=chosen_title,
+        status=status,
+        thumbnail_prompts_ptbr=thumbnail_prompts_ptbr,
+        youtube_video_id=youtube_video_id,
+        roteiro=roteiro,
+        thumbnail=thumbnail,
+    )
 
 
 @router.get("/thumbnails/{filename}")

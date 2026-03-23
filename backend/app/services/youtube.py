@@ -803,8 +803,11 @@ def _fallback_series_lanes(strategy: dict[str, Any]) -> list[dict[str, Any]]:
     return lanes
 
 
-def _extract_pipeline_summary(briefing: dict[str, Any] | None) -> dict[str, Any]:
-    videos = list((briefing or {}).get("videos", []) or [])
+def _extract_pipeline_summary(source: dict[str, Any] | list[dict[str, Any]] | None) -> dict[str, Any]:
+    if isinstance(source, dict):
+        videos = list((source or {}).get("videos", []) or [])
+    else:
+        videos = list(source or [])
     by_status = {
         "ideia": 0,
         "thumbnail_pronta": 0,
@@ -821,6 +824,123 @@ def _extract_pipeline_summary(briefing: dict[str, Any] | None) -> dict[str, Any]
         "ready_to_record": by_status.get("pronto_gravar", 0),
         "thumb_ready": by_status.get("thumbnail_pronta", 0),
     }
+
+
+def _briefing_type_series_name(briefing_type: str | None, strategy: dict[str, Any]) -> str:
+    text = _normalize_text(briefing_type)
+    if not text:
+        return ""
+    if "virada" in text:
+        return _find_series_name(strategy, "virada", "bastidor", "operacao", "sistema") or "A Virada"
+    if "react" in text or "next" in text:
+        return _find_series_name(strategy, "react", "next.js", "nextjs", "frontend") or "React na Pratica"
+    if "radar" in text or "noticias" in text or "news" in text:
+        return _find_series_name(strategy, "radar", "news", "noticia") or "RADAR IA"
+    return ""
+
+
+def _coerce_pipeline_status(value: Any) -> str:
+    normalized = _normalize_key(value)
+    if normalized in {"ideia", "thumbnail_pronta", "pronto_gravar", "publicado"}:
+        return normalized
+    if normalized in {"rascunho", "planejado", "seed", ""}:
+        return "ideia"
+    return "ideia"
+
+
+def _series_name_from_briefing_video(
+    video: dict[str, Any],
+    briefing: dict[str, Any],
+    strategy: dict[str, Any],
+) -> str:
+    for candidate in (
+        video.get("series"),
+        video.get("recommended_series"),
+        _briefing_type_series_name(briefing.get("tipo"), strategy),
+    ):
+        if _clean_text(candidate):
+            return _clean_text(candidate)
+    return _series_name_for_idea(video, strategy)
+
+
+def _pipeline_item_priority(item: dict[str, Any]) -> tuple[int, int, str]:
+    return (
+        _status_score(item.get("status")),
+        1 if item.get("thumbnail_data") or item.get("thumbnail_file") else 0,
+        _clean_text(item.get("briefing_created_at")),
+    )
+
+
+def _build_pipeline_board(
+    strategy: dict[str, Any],
+    recent_briefings: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    board_by_title: dict[str, dict[str, Any]] = {}
+    briefings_feed: list[dict[str, Any]] = []
+
+    for row in recent_briefings:
+        briefing = dict(row.get("briefing") or {})
+        created_at = _clean_text(row.get("created_at"))
+        videos = list(briefing.get("videos", []) or [])
+        feed_status = _extract_pipeline_summary(videos)
+        briefings_feed.append(
+            {
+                "id": _clean_text(row.get("id")),
+                "date": _clean_text(briefing.get("date")),
+                "tipo": _clean_text(briefing.get("tipo")),
+                "created_at": created_at,
+                "videos_count": len(videos),
+                "by_status": feed_status.get("by_status", {}),
+            }
+        )
+
+        for video_index, raw_video in enumerate(videos):
+            video = deepcopy(raw_video or {})
+            title = _clean_text(video.get("chosen_title") or video.get("title") or video.get("working_title"))
+            if not title:
+                continue
+            status = _coerce_pipeline_status(video.get("status") or "ideia")
+            series_name = _series_name_from_briefing_video(video, briefing, strategy)
+            normalized_title = _normalize_text(title)
+            candidate = {
+                **video,
+                "title": title,
+                "status": status,
+                "series": series_name,
+                "recommended_series": series_name,
+                "urgency": _clean_text(video.get("urgencia") or video.get("urgency") or "media"),
+                "briefing_id": _clean_text(row.get("id")),
+                "briefing_date": _clean_text(briefing.get("date")),
+                "briefing_type": _clean_text(briefing.get("tipo")),
+                "briefing_created_at": created_at,
+                "video_index": video_index,
+                "source": "pipeline_board",
+                "source_label": f"kanban {briefing.get('date') or created_at or 'recente'}".strip(),
+                "occurrences": 1,
+            }
+
+            current = board_by_title.get(normalized_title)
+            if current is None:
+                board_by_title[normalized_title] = candidate
+                continue
+
+            candidate["occurrences"] = int(current.get("occurrences") or 1) + 1
+            if _pipeline_item_priority(candidate) >= _pipeline_item_priority(current):
+                candidate["occurrences"] = int(current.get("occurrences") or 1) + 1
+                board_by_title[normalized_title] = candidate
+            else:
+                current["occurrences"] = int(current.get("occurrences") or 1) + 1
+
+    board = list(board_by_title.values())
+    board.sort(
+        key=lambda item: (
+            _status_score(item.get("status")),
+            _urgency_score(item.get("urgency")),
+            _clean_text(item.get("briefing_created_at")),
+        ),
+        reverse=True,
+    )
+    return board, briefings_feed
 
 
 def _normalize_key(value: Any) -> str:
@@ -1000,7 +1120,7 @@ def _candidate_actions(candidate: dict[str, Any]) -> list[str]:
 def _build_recording_queue(
     *,
     strategy: dict[str, Any],
-    videos_from_briefing: list[dict[str, Any]],
+    pipeline_items: list[dict[str, Any]],
     series_health: list[dict[str, Any]],
     pattern_scores: dict[str, int],
     median_views: int,
@@ -1017,11 +1137,11 @@ def _build_recording_queue(
         if current is None or _status_score(candidate.get("status")) > _status_score(current.get("status")):
             candidates_map[title_key] = candidate
 
-    for video in videos_from_briefing:
+    for video in pipeline_items:
         status = _normalize_key(video.get("status") or "ideia")
         if status == "publicado":
             continue
-        series_name = _series_name_for_idea(video, strategy)
+        series_name = _clean_text(video.get("series")) or _series_name_for_idea(video, strategy)
         series_meta = next((series for series in strategy.get("series", []) if series.get("name") == series_name), {})
         upsert_candidate(
             {
@@ -1030,12 +1150,15 @@ def _build_recording_queue(
                 "status": video.get("status") or "ideia",
                 "urgency": video.get("urgencia") or video.get("urgency") or "media",
                 "hook": video.get("hook") or "",
-                "source": "briefing",
-                "source_label": "briefing atual",
+                "source": video.get("source") or "pipeline_board",
+                "source_label": video.get("source_label") or "pipeline recente",
                 "thumbnail_rule": series_meta.get("thumbnail_rule") or "",
                 "objective": series_meta.get("objective") or "",
                 "promise": series_meta.get("promise") or "",
                 "cta_focus": series_meta.get("cta_focus") or "",
+                "briefing_id": video.get("briefing_id") or "",
+                "briefing_date": video.get("briefing_date") or "",
+                "video_index": video.get("video_index"),
             }
         )
 
@@ -1309,6 +1432,43 @@ async def _get_latest_memory_payload(
     return dict((row.metadata_ or {}).get(key) or {})
 
 
+async def _get_recent_memory_rows(
+    db: AsyncSession,
+    source_type: str,
+    project_name: str,
+    *,
+    limit: int = 12,
+) -> list[MemoryEmbedding]:
+    stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == source_type)
+        .where(MemoryEmbedding.project_name == project_name)
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    rows = list(result.scalars().all())
+    if len(rows) >= limit:
+        return rows
+
+    seen_ids = {row.id for row in rows}
+    fallback_stmt = (
+        select(MemoryEmbedding)
+        .where(MemoryEmbedding.source_type == source_type)
+        .order_by(desc(MemoryEmbedding.created_at))
+        .limit(limit * 2)
+    )
+    fallback_result = await db.execute(fallback_stmt)
+    for row in fallback_result.scalars().all():
+        if row.id in seen_ids:
+            continue
+        rows.append(row)
+        seen_ids.add(row.id)
+        if len(rows) >= limit:
+            break
+    return rows
+
+
 async def build_youtube_workspace(
     db: AsyncSession,
     project_name: str = "GuyFolkz",
@@ -1316,6 +1476,15 @@ async def build_youtube_workspace(
     strategy = await get_project_youtube_strategy(db, project_name, persist_default=False)
     latest_briefing = await _get_latest_memory_payload(db, "youtube_briefing", "briefing", project_name) or {}
     latest_analytics = await _get_latest_memory_payload(db, "youtube_analytics", "analytics", project_name) or {}
+    recent_briefing_rows = await _get_recent_memory_rows(db, "youtube_briefing", project_name, limit=12)
+    recent_briefings = [
+        {
+            "id": str(row.id),
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+            "briefing": dict((row.metadata_ or {}).get("briefing") or {}),
+        }
+        for row in recent_briefing_rows
+    ]
 
     channel_error = ""
     current_stats: dict[str, Any] = {}
@@ -1386,9 +1555,9 @@ async def build_youtube_workspace(
     if not opportunity_gaps:
         opportunity_gaps.append("Oportunidade principal: serializar o que ja funcionou em vez de publicar temas isolados.")
 
-    pipeline = _extract_pipeline_summary(latest_briefing)
+    pipeline_board, briefings_feed = _build_pipeline_board(strategy, recent_briefings)
+    pipeline = _extract_pipeline_summary(pipeline_board)
     strategy_hygiene = _build_strategy_hygiene(strategy, pipeline)
-    videos_from_briefing = list((latest_briefing or {}).get("videos", []) or [])
     lanes_map: dict[str, dict[str, Any]] = {}
     for series in strategy.get("series", []):
         lanes_map[series.get("name")] = {
@@ -1397,8 +1566,10 @@ async def build_youtube_workspace(
             "ideas": [],
         }
 
-    for video in videos_from_briefing:
-        series_name = _series_name_for_idea(video, strategy)
+    for video in pipeline_board:
+        if _normalize_key(video.get("status")) == "publicado":
+            continue
+        series_name = _clean_text(video.get("series")) or _series_name_for_idea(video, strategy)
         lanes_map.setdefault(
             series_name,
             {"series": series_name, "objective": "", "ideas": []},
@@ -1409,6 +1580,7 @@ async def build_youtube_workspace(
                 "urgency": video.get("urgencia") or video.get("urgency") or "media",
                 "hook": video.get("hook") or "",
                 "recommended_series": series_name,
+                "briefing_date": video.get("briefing_date") or "",
             }
         )
 
@@ -1437,7 +1609,7 @@ async def build_youtube_workspace(
 
     recording_decision = _build_recording_queue(
         strategy=strategy,
-        videos_from_briefing=videos_from_briefing,
+        pipeline_items=pipeline_board,
         series_health=series_health,
         pattern_scores={
             "practical_avg": practical_avg,
@@ -1473,10 +1645,10 @@ async def build_youtube_workspace(
         )
     if pipeline.get("thumb_ready", 0) == 0:
         next_actions.append("Escolher pelo menos 1 video do pipeline e fechar thumbnail hoje.")
-    if pipeline.get("ready_to_record", 0) == 0 and videos_from_briefing:
+    if pipeline.get("ready_to_record", 0) == 0 and pipeline_board:
         next_actions.append("Subir 1 pauta para pronto_gravar antes de gerar novas ideias.")
-    if videos_from_briefing:
-        next_actions.append(f"Priorizar '{videos_from_briefing[0].get('title', 'proxima pauta')}' no proximo ciclo.")
+    if next_recording:
+        next_actions.append(f"Priorizar '{next_recording.get('title', 'proxima pauta')}' no proximo ciclo.")
     if react_series:
         next_actions.append(f"Na {react_series}, priorizar bug, interface ou arquitetura real antes de tutorial generico.")
     if radar_series:
@@ -1513,6 +1685,8 @@ async def build_youtube_workspace(
         "playbook": _build_playbook_snapshot(strategy),
         "channel_audit": channel_audit,
         "pipeline": pipeline,
+        "pipeline_board": pipeline_board,
+        "briefings_feed": briefings_feed,
         "strategy_hygiene": strategy_hygiene,
         "series_health": series_health,
         "series_lanes": series_lanes,

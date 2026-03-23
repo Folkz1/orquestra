@@ -12,6 +12,14 @@ function getThumbUrl(video) {
   return null
 }
 
+function getBriefingVideoUrl(video) {
+  const videoIndex = video?.video_index ?? video?.index ?? 0
+  if (video?.briefing_id) {
+    return `${API_URL}/api/youtube/briefings/${encodeURIComponent(video.briefing_id)}/videos/${videoIndex}`
+  }
+  return `${API_URL}/api/youtube/briefings/latest/videos/${videoIndex}`
+}
+
 const COLUMNS = [
   { key: 'ideia', label: 'Ideias', color: 'border-zinc-600', bg: 'bg-zinc-800/30' },
   { key: 'thumbnail_pronta', label: 'Thumb Pronta', color: 'border-blue-500/40', bg: 'bg-blue-900/10' },
@@ -139,9 +147,9 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
     const form = new FormData()
     form.append('status', next)
     try {
-      const res = await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: form })
+      const res = await fetch(getBriefingVideoUrl(video), { method: 'PATCH', body: form })
       const data = await res.json()
-      if (data.ok) onStatusChange(index, data.video)
+      if (data.ok) onStatusChange(video, data.video)
     } catch (e) { console.error(e) }
     setChanging(false)
   }
@@ -393,13 +401,13 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
                 const form = new FormData()
                 form.append('roteiro', JSON.stringify(editingRoteiro || {}))
                 try {
-                  const res = await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, {
+                  const res = await fetch(getBriefingVideoUrl(video), {
                     method: 'PATCH',
                     body: form
                   })
                   const data = await res.json()
                   if (data.ok) {
-                    onStatusChange(index, data.video)
+                    onStatusChange(video, data.video)
                     alert('Roteiro salvo com sucesso!')
                   }
                 } catch (e) {
@@ -601,8 +609,8 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
                       // Salvar youtube_video_id e status no briefing
                       const form = new FormData()
                       form.append('status', 'publicado')
-                      await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: form })
-                      onStatusChange(index, { ...video, status: 'publicado', youtube_video_id: uploadState.videoId })
+                      await fetch(getBriefingVideoUrl(video), { method: 'PATCH', body: form })
+                      onStatusChange(video, { ...video, status: 'publicado', youtube_video_id: uploadState.videoId })
                     } catch (e) {
                       setUploadState(s => ({ ...s, step: 'error', error: e.message }))
                     }
@@ -622,8 +630,8 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
                   setUploadState(s => ({ ...s, step: 'published', progress: 'Video publicado!' }))
                   const form = new FormData()
                   form.append('status', 'publicado')
-                  await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: form })
-                  onStatusChange(index, { ...video, status: 'publicado', youtube_video_id: uploadState.videoId })
+                  await fetch(getBriefingVideoUrl(video), { method: 'PATCH', body: form })
+                  onStatusChange(video, { ...video, status: 'publicado', youtube_video_id: uploadState.videoId })
                 } catch (e) {
                   setUploadState(s => ({ ...s, step: 'error', error: e.message }))
                 }
@@ -675,7 +683,7 @@ function VideoDetailDiego({ video, index, briefingDate, onStatusChange, onClose 
                     // Salvar youtube_video_id no briefing
                     const patchForm = new FormData()
                     patchForm.append('youtube_video_id', vid)
-                    fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: patchForm }).catch(() => {})
+                    fetch(getBriefingVideoUrl(video), { method: 'PATCH', body: patchForm }).catch(() => {})
                   } else {
                     setUploadState(s => ({ ...s, step: 'error', error: 'Resposta sem video_id' }))
                   }
@@ -945,9 +953,9 @@ function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
     const form = new FormData()
     form.append('status', next)
     try {
-      const res = await fetch(`${API_URL}/api/youtube/briefings/latest/videos/${index}`, { method: 'PATCH', body: form })
+      const res = await fetch(getBriefingVideoUrl(video), { method: 'PATCH', body: form })
       const data = await res.json()
-      if (data.ok) onStatusChange(index, data.video)
+      if (data.ok) onStatusChange(video, data.video)
     } catch (e) { console.error(e) }
     setChanging(false)
   }
@@ -990,51 +998,48 @@ function KanbanCard({ video, index, briefingDate, onStatusChange, onClick }) {
 
 /* ─── Main Kanban Page ────────────────────────────────────── */
 
-export default function YouTubeKanban() {
-  const [briefings, setBriefings] = useState([])
+export default function YouTubeKanban({ embedded = false }) {
   const [loading, setLoading] = useState(true)
   const [activeVideo, setActiveVideo] = useState(null)
   const [workspace, setWorkspace] = useState(null)
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${API_URL}/api/youtube/briefings?full=true&limit=10`)
-        .then(res => res.json())
-        .catch(() => []),
-      getYouTubeWorkspace().catch(() => null),
-    ])
-      .then(([allBriefings, workspaceData]) => {
-        // Combine all briefings into one list
-        const combined = Array.isArray(allBriefings)
-          ? allBriefings.map(b => b.briefing).filter(Boolean)
-          : []
-        setBriefings(combined)
-        if (workspaceData?.status === 'ok') {
-          setWorkspace(workspaceData.data || null)
-        }
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    loadWorkspace()
   }, [])
 
-  function handleStatusChange(videoIndex, updatedVideo) {
-    setBriefings(prev => prev.map((b, bi) => {
-      if (bi !== 0) return b
-      const videos = [...(b.videos || [])]
-      videos[videoIndex] = { ...videos[videoIndex], ...updatedVideo }
-      return { ...b, videos }
-    }))
-    if (activeVideo && activeVideo.index === videoIndex) {
-      setActiveVideo(prev => ({ ...prev, video: { ...prev.video, ...updatedVideo } }))
+  async function loadWorkspace({ silent = false } = {}) {
+    if (!silent) setLoading(true)
+    try {
+      const workspaceData = await getYouTubeWorkspace().catch(() => null)
+      if (workspaceData?.status === 'ok') {
+        setWorkspace(workspaceData.data || null)
+      }
+    } finally {
+      if (!silent) setLoading(false)
     }
   }
 
-  const allVideos = []
-  briefings.forEach((b, bi) => {
-    (b.videos || []).forEach((v, vi) => {
-      allVideos.push({ video: v, index: vi, briefingIndex: bi, date: b.date })
+  function handleStatusChange(sourceVideo, updatedVideo) {
+    setWorkspace((current) => {
+      if (!current) return current
+      const board = Array.isArray(current.pipeline_board) ? current.pipeline_board : []
+      return {
+        ...current,
+        pipeline_board: board.map((item) => {
+          if (item.briefing_id !== sourceVideo.briefing_id || item.video_index !== sourceVideo.video_index) return item
+          return { ...item, ...updatedVideo }
+        }),
+      }
     })
-  })
+    setActiveVideo((current) => {
+      if (!current) return current
+      if (current.briefing_id !== sourceVideo.briefing_id || current.video_index !== sourceVideo.video_index) return current
+      return { ...current, ...updatedVideo }
+    })
+    loadWorkspace({ silent: true })
+  }
+
+  const allVideos = Array.isArray(workspace?.pipeline_board) ? workspace.pipeline_board : []
 
   if (loading) {
     return (
@@ -1047,9 +1052,9 @@ export default function YouTubeKanban() {
   if (activeVideo) {
     return (
       <VideoDetailDiego
-        video={activeVideo.video}
-        index={activeVideo.index}
-        briefingDate={activeVideo.date}
+        video={activeVideo}
+        index={activeVideo.video_index}
+        briefingDate={activeVideo.briefing_date}
         onStatusChange={handleStatusChange}
         onClose={() => setActiveVideo(null)}
       />
@@ -1058,16 +1063,18 @@ export default function YouTubeKanban() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-zinc-100">YouTube Workspace</h1>
-          <p className="text-xs text-zinc-500 mt-1">{allVideos.length} videos no pipeline</p>
+      {!embedded && (
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-zinc-100">YouTube Workspace</h1>
+            <p className="text-xs text-zinc-500 mt-1">{allVideos.length} videos canonicos no pipeline</p>
+          </div>
+          <a href="/youtube-briefing" target="_blank" rel="noopener noreferrer"
+            className="text-xs bg-red-500/15 text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/25 transition-colors">
+            Abrir Briefing Andriely
+          </a>
         </div>
-        <a href="/youtube-briefing" target="_blank" rel="noopener noreferrer"
-          className="text-xs bg-red-500/15 text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/25 transition-colors">
-          Abrir Briefing Andriely
-        </a>
-      </div>
+      )}
 
       {workspace && (
         <>
@@ -1230,7 +1237,7 @@ export default function YouTubeKanban() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 min-h-[60vh]">
         {COLUMNS.map(col => {
-          const videos = allVideos.filter(v => (v.video.status || 'ideia') === col.key)
+          const videos = allVideos.filter(v => (v.status || 'ideia') === col.key)
           return (
             <div key={col.key} className={`rounded-xl border ${col.color} ${col.bg} p-3`}>
               <div className="flex items-center justify-between mb-3">
@@ -1240,10 +1247,10 @@ export default function YouTubeKanban() {
               <div className="space-y-3">
                 {videos.map((v) => (
                   <KanbanCard
-                    key={`${v.date}-${v.index}`}
-                    video={v.video}
-                    index={v.index}
-                    briefingDate={v.date}
+                    key={`${v.briefing_id || 'briefing'}-${v.video_index}`}
+                    video={v}
+                    index={v.video_index}
+                    briefingDate={v.briefing_date}
                     onStatusChange={handleStatusChange}
                     onClick={() => setActiveVideo(v)}
                   />

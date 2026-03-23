@@ -601,7 +601,7 @@ function SeriesCard({
   )
 }
 
-export default function YouTubeStrategy() {
+export default function YouTubeStrategy({ embedded = false }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -886,35 +886,60 @@ export default function YouTubeStrategy() {
 
   return (
     <div className="space-y-6 pb-28">
-      <div className="flex flex-col gap-4 rounded-3xl border border-zinc-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.14),_transparent_42%),linear-gradient(135deg,_rgba(24,24,27,0.95),_rgba(9,9,11,0.96))] p-6 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-red-300/80">YouTube Strategy DB</div>
-          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Central de inteligencia do canal</h1>
-          <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-            Esta tela salva direto em <span className="font-mono text-zinc-200">projects.credentials.youtube_strategy</span>.
-            Agora ela precisa te ajudar a decidir o proximo video, defender essa decisao com dados reais e manter a estrategia organizada no banco.
-          </p>
+      {!embedded ? (
+        <div className="flex flex-col gap-4 rounded-3xl border border-zinc-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.14),_transparent_42%),linear-gradient(135deg,_rgba(24,24,27,0.95),_rgba(9,9,11,0.96))] p-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-red-300/80">YouTube Strategy DB</div>
+            <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Central de inteligencia do canal</h1>
+            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+              Esta tela salva direto em <span className="font-mono text-zinc-200">projects.credentials.youtube_strategy</span>.
+              Agora ela precisa te ajudar a decidir o proximo video, defender essa decisao com dados reais e manter a estrategia organizada no banco.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusPill dirty={isDirty} />
+            <button className={ghostButtonClass} onClick={handleNormalize}>
+              Normalizar
+            </button>
+            <button className={ghostButtonClass} onClick={handleReset} disabled={!isDirty}>
+              Descartar
+            </button>
+            <button className={ghostButtonClass} onClick={loadData}>
+              Recarregar
+            </button>
+            <button
+              className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Salvando...' : 'Salvar estrategia'}
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <StatusPill dirty={isDirty} />
-          <button className={ghostButtonClass} onClick={handleNormalize}>
-            Normalizar
-          </button>
-          <button className={ghostButtonClass} onClick={handleReset} disabled={!isDirty}>
-            Descartar
-          </button>
-          <button className={ghostButtonClass} onClick={loadData}>
-            Recarregar
-          </button>
-          <button
-            className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? 'Salvando...' : 'Salvar estrategia'}
-          </button>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/65 px-4 py-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Inteligencia + Estrategia</div>
+            <div className="mt-1 text-sm text-zinc-300">Decisao editorial, fila de gravacao e editor do banco na mesma superficie.</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill dirty={isDirty} />
+            <button className={ghostButtonClass} onClick={handleNormalize}>
+              Normalizar
+            </button>
+            <button className={ghostButtonClass} onClick={handleReset} disabled={!isDirty}>
+              Descartar
+            </button>
+            <button
+              className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div> : null}
       {notice ? <div className="rounded-2xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">{notice}</div> : null}
