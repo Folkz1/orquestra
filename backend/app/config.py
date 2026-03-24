@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     TIKTOK_CLIENT_SECRET: str = ""
     TIKTOK_OAUTH_REDIRECT_URI: str = ""
 
+    # Stripe (Community Payments)
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_ID: str = ""  # Price ID for R$67/month community subscription
+    COMMUNITY_SUCCESS_URL: str = "https://guyyfolkz.mbest.site/playbook?enrolled=true"
+    COMMUNITY_CANCEL_URL: str = "https://guyyfolkz.mbest.site/comunidade"
+
     # Daily briefing
     BRIEFING_HOUR: int = 7
 

@@ -20,6 +20,7 @@ import WhatsAppChat from './pages/WhatsAppChat'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 import PlaybookPlatform from './pages/PlaybookPlatform'
+import CommunityLanding from './pages/CommunityLanding'
 import SocialPublish from './pages/SocialPublish'
 import Subscriptions from './pages/Subscriptions'
 import ClientePage from './pages/ClientePage'
@@ -46,6 +47,10 @@ function AppRoutes({ onLogout }) {
 
   if (location.pathname === '/youtube-briefing') {
     return <YouTubeBriefing />
+  }
+
+  if (location.pathname === '/comunidade') {
+    return <CommunityLanding />
   }
 
   if (location.pathname.startsWith('/playbook')) {

@@ -1,0 +1,52 @@
+{
+  "module": {
+    "slug": "cto-virtual",
+    "title": "Como Criar seu CTO Virtual com Claude Code",
+    "description": "Do zero ao seu primeiro agente autonomo que gerencia projetos, clientes e deploy. O mesmo setup que administra 8+ projetos em producao.",
+    "tier": "pro",
+    "icon": "robot",
+    "order_num": 1
+  },
+  "steps": [
+    {
+      "slug": "setup-claude-code",
+      "title": "Instalacao e Setup do Claude Code",
+      "step_type": "theory",
+      "order_num": 1,
+      "duration_min": 15,
+      "content": "## O que voce vai configurar\n\nClaude Code e o CLI oficial da Anthropic que transforma o Claude em um desenvolvedor autonomo no seu terminal. Diferente do chat web, aqui ele tem acesso real ao seu sistema de arquivos, terminal e ferramentas.\n\n### Passo a passo\n\n1. **Instalar**: `npm install -g @anthropic-ai/claude-code`\n2. **Autenticar**: `claude` (abre o browser, conecta sua conta Anthropic)\n3. **Testar**: `claude \"lista os arquivos nesta pasta\"`\n\n### CLAUDE.md — O cerebro do seu agente\n\nCrie um arquivo `CLAUDE.md` na raiz do seu projeto. Esse arquivo e lido automaticamente pelo Claude Code e define:\n- Quem ele e (identidade, nome, papel)\n- Quais projetos administra\n- Regras de ouro (quando confirmar, quando executar)\n- Convencoes de codigo\n\nExemplo minimo:\n```markdown\n# Meu Agente\nVoce e o assistente tecnico do [seu nome].\nAdministra os projetos: [lista]\nSempre testar antes de commitar.\n```\n\n### Dica de ouro\nO CLAUDE.md e hierarquico: voce pode ter um global (`~/.claude/CLAUDE.md`) e um por projeto. O Claude combina ambos automaticamente."
+    },
+    {
+      "slug": "primeira-skill",
+      "title": "Criando sua Primeira Skill",
+      "step_type": "practice",
+      "order_num": 2,
+      "duration_min": 20,
+      "content": "## Skills: comandos customizados\n\nSkills sao arquivos Markdown em `.claude/skills/` que o Claude Code carrega como comandos. Quando voce digita `/minha-skill`, ele executa as instrucoes do arquivo.\n\n### Estrutura basica\n\n```\n.claude/\n  skills/\n    deploy/\n      SKILL.md    <- instrucoes de deploy\n    whatsapp/\n      SKILL.md    <- instrucoes de WhatsApp\n```\n\n### Exemplo: skill de deploy\n\n```markdown\n# /deploy [projeto]\n\nFaz deploy de um projeto no EasyPanel.\n\n## Passos\n1. Rodar testes\n2. Commitar mudancas\n3. Push pro GitHub\n4. Disparar webhook de deploy\n5. Validar health check\n```\n\n### Exercicio\n\nCrie uma skill `/status` que:\n1. Le o BACKLOG.md do projeto\n2. Lista as 3 tarefas mais urgentes\n3. Mostra o ultimo commit\n4. Resume em 3 linhas\n\nSalve em `.claude/skills/status/SKILL.md` e teste com `/status`."
+    },
+    {
+      "slug": "hooks-automacao",
+      "title": "Hooks: Automacao Invisivel",
+      "step_type": "theory",
+      "order_num": 3,
+      "duration_min": 15,
+      "content": "## Hooks executam codigo em eventos\n\nHooks sao scripts que rodam automaticamente quando algo acontece no Claude Code. Exemplos:\n\n| Evento | Quando roda | Uso tipico |\n|--------|-------------|------------|\n| PreToolUse | Antes de executar uma tool | Bloquear comandos perigosos |\n| PostToolUse | Depois de executar | Logging, sync |\n| SessionStart | Ao iniciar sessao | Carregar contexto |\n| UserPromptSubmit | Quando Diego envia msg | Detectar correcoes, auto-melhoria |\n\n### Configuracao\n\nEm `.claude/settings.json`:\n```json\n{\n  \"hooks\": {\n    \"UserPromptSubmit\": [{\n      \"type\": \"command\",\n      \"command\": \"bash .claude/hooks/detect-corrections.sh\"\n    }]\n  }\n}\n```\n\n### Exemplo real: auto-melhoria\n\nUm hook que detecta quando voce corrige o agente e salva o feedback automaticamente. Na proxima sessao, ele nao repete o erro.\n\nIsso e o que faz a diferenca entre um chatbot e um CTO virtual: ele aprende com voce."
+    },
+    {
+      "slug": "orquestracao-projetos",
+      "title": "Orquestrando Multiplos Projetos",
+      "step_type": "practice",
+      "order_num": 4,
+      "duration_min": 25,
+      "content": "## O problema dos multiplos projetos\n\nQuando voce tem 3+ projetos, precisa de:\n1. **Priorizacao** — qual atacar primeiro?\n2. **Contexto** — o que ja foi feito em cada um?\n3. **Autonomia** — ele pode executar sozinho?\n\n### BACKLOG.md — sua fila unica\n\nUm arquivo central que lista TODAS as tarefas de TODOS os projetos:\n\n```markdown\n## P0 (Critico)\n- [superbot] Fix gateway timeout — PEDIDO CLIENTE\n\n## ALTA\n- [licitaai] Implementar onboarding flow\n- [orquestra] Adicionar graficos no dashboard\n\n## MEDIA\n- [crm] Refatorar auth middleware\n```\n\n### Scoring automatico\n\nCada tarefa recebe um score baseado em:\n- Prioridade base (P0=100, ALTA=50, MEDIA=25)\n- Pedido de cliente: +80\n- Receita direta: +40\n- Tamanho pequeno: +25\n- Seguranca: +15\n\nO agente pega a task de maior score e executa.\n\n### Exercicio\n\nCrie seu BACKLOG.md com 5 tarefas reais dos seus projetos. Classifique por prioridade e estime o tamanho (P/M/G)."
+    },
+    {
+      "slug": "deploy-autonomo",
+      "title": "Deploy Autonomo: Do Commit ao Producao",
+      "step_type": "challenge",
+      "order_num": 5,
+      "duration_min": 30,
+      "content": "## Desafio final: pipeline completo\n\nMonte um pipeline onde seu agente:\n1. Recebe uma tarefa do BACKLOG\n2. Analisa impacto (quais arquivos mudam)\n3. Implementa a mudanca\n4. Roda testes\n5. Commita e faz push\n6. Dispara deploy\n7. Valida em producao\n8. Reporta o resultado\n\n### Stack recomendada\n\n- **Hosting**: EasyPanel (Docker, facil, R$10-30/mes por VPS)\n- **CI/CD**: GitHub Actions (build Docker image no push)\n- **Deploy**: Webhook do EasyPanel (POST simples)\n- **Monitoramento**: Health check endpoint + Telegram\n\n### Checklist do desafio\n\n- [ ] CLAUDE.md configurado com seu estilo\n- [ ] 3+ skills criadas (deploy, status, outra)\n- [ ] 1 hook de auto-melhoria ativo\n- [ ] BACKLOG.md com 5+ tarefas reais\n- [ ] Pipeline deploy funcionando (commit → producao)\n- [ ] Agente executou 1 tarefa sozinho com sucesso\n\nQuando completar, voce tem um CTO virtual funcional. O mesmo setup que administra 8 projetos em producao gerando R$15k+/mes."
+    }
+  ]
+}

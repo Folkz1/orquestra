@@ -600,3 +600,9 @@ export function getChartTasks() {
 export function getChartMessages() {
   return request('/api/dashboard/charts/messages');
 }
+
+// ─── Stripe ─────────────────────────────────────────────────────────────
+
+export function createCheckoutSession(data) {
+  return request('/api/stripe/checkout', { method: 'POST', body: JSON.stringify(data) });
+}
