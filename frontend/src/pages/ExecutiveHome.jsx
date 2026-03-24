@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ResponsiveContainer, LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import ActivityFeed from '../components/ActivityFeed'
+import AgentCard from '../components/AgentCard'
+import ChartCard from '../components/ChartCard'
 import StatCard from '../components/StatCard'
-import { getBriefs, getContacts, getProjects, getProposals, getTasks } from '../api'
+import { getBriefs, getContacts, getProjects, getProposals, getTasks, getAgentStatuses, getChartMrr, getChartTasks, getChartMessages } from '../api'
 import {
   formatCompactNumber,
   formatCurrency,
@@ -12,6 +15,10 @@ import {
   parseMoney,
   proposalLabel,
 } from '../lib/formatters'
+
+const CHART_GRID = { strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.06)' }
+const CHART_TICK = { fill: '#71717a', fontSize: 11 }
+const CHART_TOOLTIP = { background: '#10141b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: '#e4e4e7' }
 
 function WorkspaceLink({ to, title, description, meta }) {
   return (
@@ -30,6 +37,10 @@ export default function ExecutiveHome() {
   const [proposals, setProposals] = useState([])
   const [projects, setProjects] = useState([])
   const [briefs, setBriefs] = useState([])
+  const [agents, setAgents] = useState([])
+  const [chartMrr, setChartMrr] = useState([])
+  const [chartTasks, setChartTasks] = useState([])
+  const [chartMessages, setChartMessages] = useState([])
 
   useEffect(() => {
     let active = true
@@ -40,7 +51,11 @@ export default function ExecutiveHome() {
       getProposals(),
       getProjects(),
       getBriefs(),
-    ]).then(([contactsRes, tasksRes, proposalsRes, projectsRes, briefsRes]) => {
+      getAgentStatuses(),
+      getChartMrr(),
+      getChartTasks(),
+      getChartMessages(),
+    ]).then(([contactsRes, tasksRes, proposalsRes, projectsRes, briefsRes, agentsRes, mrrRes, tasksChartRes, msgsRes]) => {
       if (!active) return
 
       setContacts(Array.isArray(contactsRes.value) ? contactsRes.value : [])
@@ -48,6 +63,10 @@ export default function ExecutiveHome() {
       setProposals(Array.isArray(proposalsRes.value) ? proposalsRes.value : [])
       setProjects(Array.isArray(projectsRes.value) ? projectsRes.value : [])
       setBriefs(Array.isArray(briefsRes.value) ? briefsRes.value : [])
+      setAgents(Array.isArray(agentsRes.value) ? agentsRes.value : [])
+      setChartMrr(Array.isArray(mrrRes.value?.months) ? mrrRes.value.months : [])
+      setChartTasks(Array.isArray(tasksChartRes.value?.weeks) ? tasksChartRes.value.weeks : [])
+      setChartMessages(Array.isArray(msgsRes.value?.days) ? msgsRes.value.days : [])
       setLoading(false)
     })
 
@@ -162,6 +181,69 @@ export default function ExecutiveHome() {
         <StatCard label="Tasks" value={loading ? '...' : formatCompactNumber(metrics.tasks)} footnote="Pendentes" accent="blue" />
         <StatCard label="Propostas" value={loading ? '...' : formatCompactNumber(metrics.proposals)} footnote="Em aberto" accent="amber" />
         <StatCard label="Urgentes" value={loading ? '...' : formatCompactNumber(metrics.urgent)} footnote="Alta prioridade" accent="rose" />
+      </section>
+
+      {/* Agent Status Board */}
+      <section className="surface-panel p-5">
+        <div className="mb-4">
+          <p className="eyebrow">Infraestrutura</p>
+          <h2 className="mt-2 text-lg font-semibold text-white">Agentes</h2>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {agents.map((agent) => (
+            <AgentCard
+              key={agent.name}
+              name={agent.name}
+              status={agent.status}
+              lastExecution={agent.last_execution}
+              tasksToday={agent.tasks_completed_today}
+              nextRun={agent.next_run}
+            />
+          ))}
+          {agents.length === 0 && !loading && (
+            <p className="col-span-full text-sm text-zinc-500">Sem dados de agentes.</p>
+          )}
+        </div>
+      </section>
+
+      {/* Charts */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <ChartCard title="MRR Trend" subtitle="Receita" isEmpty={chartMrr.length === 0}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartMrr}>
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="month" tick={CHART_TICK} tickLine={false} axisLine={false} />
+              <YAxis tick={CHART_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v / 100).toLocaleString('pt-BR')}`} />
+              <Tooltip contentStyle={CHART_TOOLTIP} formatter={(v) => [`R$ ${(v / 100).toLocaleString('pt-BR')}`, 'MRR']} />
+              <Line type="monotone" dataKey="amount_cents" stroke="#8bd450" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Velocidade de Tasks" subtitle="Produtividade" isEmpty={chartTasks.length === 0}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartTasks}>
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="week_start" tick={CHART_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => v.slice(5)} />
+              <YAxis tick={CHART_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={CHART_TOOLTIP} formatter={(v) => [v, 'Concluidas']} labelFormatter={(l) => `Semana ${l.slice(5)}`} />
+              <Bar dataKey="completed" fill="#5ea6ff" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Volume de Mensagens" subtitle="Comunicacao" isEmpty={chartMessages.length === 0}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartMessages}>
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="date" tick={CHART_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => v.slice(8)} />
+              <YAxis tick={CHART_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={CHART_TOOLTIP} formatter={(v, name) => [v, name === 'incoming' ? 'Recebidas' : name === 'outgoing' ? 'Enviadas' : 'Total']} labelFormatter={(l) => `Dia ${l.slice(8)}/${l.slice(5, 7)}`} />
+              <Area type="monotone" dataKey="incoming" stroke="#67d7d0" fill="rgba(103,215,208,0.12)" strokeWidth={2} />
+              <Area type="monotone" dataKey="outgoing" stroke="#f7b955" fill="rgba(247,185,85,0.08)" strokeWidth={1.5} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartCard>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">

@@ -783,3 +783,41 @@ class SubscriptionAlertResult(BaseModel):
     checked: int
     alerts_sent: int
     pending_subscriptions: list[str]
+
+
+# ─── Dashboard Schemas ──────────────────────────────────────────────────
+
+
+class AgentHeartbeatReport(BaseModel):
+    agent_name: str = Field(..., max_length=50)
+    status: str = Field(..., pattern=r"^(active|paused|idle|error)$")
+    last_execution: Optional[datetime] = None
+    tasks_completed_today: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentStatusResponse(BaseModel):
+    name: str
+    status: str
+    last_execution: Optional[datetime] = None
+    tasks_completed_today: int = 0
+    next_run: Optional[datetime] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MrrDataPoint(BaseModel):
+    month: str
+    amount_cents: int
+    amount_brl: float
+
+
+class TaskVelocityDataPoint(BaseModel):
+    week_start: str
+    completed: int
+
+
+class MessageVolumeDataPoint(BaseModel):
+    date: str
+    count: int
+    incoming: int = 0
+    outgoing: int = 0

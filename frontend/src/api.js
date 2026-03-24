@@ -582,3 +582,21 @@ export function registerSubscriptionPayment(subId, data) {
 export function triggerSubscriptionAlerts() {
   return request('/api/subscriptions/alerts/check', { method: 'POST' });
 }
+
+// ─── Dashboard ──────────────────────────────────────────────────────────
+
+export function getAgentStatuses() {
+  return request('/api/dashboard/agents');
+}
+
+export function getChartMrr() {
+  return request('/api/dashboard/charts/mrr');
+}
+
+export function getChartTasks() {
+  return request('/api/dashboard/charts/tasks');
+}
+
+export function getChartMessages() {
+  return request('/api/dashboard/charts/messages');
+}
