@@ -17,7 +17,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Message, ProjectTask, SubscriptionPayment
+from app.models import Contact, Message, ProjectTask, SubscriptionPayment
 from app.schemas import AgentHeartbeatReport, AgentStatusResponse
 
 router = APIRouter()
@@ -187,3 +187,56 @@ async def chart_messages(db: AsyncSession = Depends(get_db)):
         for row in rows
     ]
     return {"days": days}
+
+
+# ─── Voice Agent Proxy Endpoints ──────────────────────────────────────────
+# ElevenLabs webhook tools can't do path params, only query params.
+# These endpoints proxy to existing APIs using query params.
+
+
+@router.get("/voice/conversation")
+async def voice_read_conversation(
+    contact_id: str = "",
+    limit: int = 30,
+    db: AsyncSession = Depends(get_db),
+):
+    """Read full conversation for a contact — proxy for ElevenLabs voice agent."""
+    if not contact_id:
+        return {"error": "contact_id required"}
+
+    from uuid import UUID
+    try:
+        cid = UUID(contact_id)
+    except ValueError:
+        return {"error": "invalid contact_id format"}
+
+    stmt = (
+        select(Message)
+        .where(Message.contact_id == cid)
+        .order_by(Message.timestamp.desc())
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    messages = []
+    for m in reversed(rows):
+        msg = {
+            "direction": m.direction,
+            "type": m.message_type,
+            "content": m.content or "",
+            "timestamp": m.timestamp.isoformat() if m.timestamp else "",
+        }
+        if m.transcription:
+            msg["transcription"] = m.transcription
+        messages.append(msg)
+
+    # Get contact name
+    contact = (await db.execute(select(Contact).where(Contact.id == cid))).scalar_one_or_none()
+    contact_name = contact.name or contact.push_name if contact else "Desconhecido"
+
+    return {
+        "contact_name": contact_name,
+        "contact_id": contact_id,
+        "total_messages": len(messages),
+        "messages": messages,
+    }
