@@ -178,6 +178,7 @@ export default function CommunityLanding() {
       <footer className="border-t border-white/6 px-4 py-8 text-center text-xs text-zinc-500">
         <p>GuyFolkz Academy. Construido com Claude Code + Orquestra.</p>
         <div className="mt-2 flex justify-center gap-4">
+          <Link to="/membros" className="hover:text-zinc-300">Area de membros</Link>
           <Link to="/playbook" className="hover:text-zinc-300">Conteudo gratuito</Link>
           <a href="https://youtube.com/@guyfolkz" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300">YouTube</a>
         </div>
