@@ -242,6 +242,34 @@ async def get_progress(phone: str, db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.get("/leaderboard")
+async def get_leaderboard(db: AsyncSession = Depends(get_db)):
+    """Top members ranked by completed steps."""
+    result = await db.execute(text("""
+        SELECT e.name, e.tier, e.phone,
+               COUNT(pp.id) AS completed_steps,
+               e.enrolled_at
+        FROM playbook_enrollments e
+        LEFT JOIN playbook_progress pp ON pp.enrollment_id = e.id
+        GROUP BY e.id
+        ORDER BY completed_steps DESC, e.enrolled_at ASC
+        LIMIT 20
+    """))
+    rows = result.mappings().all()
+    leaders = []
+    for i, r in enumerate(rows):
+        phone = r["phone"] or ""
+        masked = phone[:3] + "****" + phone[-2:] if len(phone) > 5 else "***"
+        leaders.append({
+            "rank": i + 1,
+            "name": r["name"] or "Membro",
+            "phone_masked": masked,
+            "tier": r["tier"],
+            "completed_steps": int(r["completed_steps"]),
+        })
+    return leaders
+
+
 # ── Admin Routes (Diego) ────────────────────────────
 
 @router.get("/admin/modules")
