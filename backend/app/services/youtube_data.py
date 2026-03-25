@@ -558,6 +558,36 @@ async def update_video_metadata(
     )
 
 
+async def add_video_to_playlist(access_token: str, playlist_id: str, video_id: str) -> dict[str, Any]:
+    """Add a video to a YouTube playlist via playlistItems.insert."""
+    return await _google_json_request(
+        "POST",
+        f"{YOUTUBE_API_BASE_URL}/playlistItems",
+        access_token,
+        params={"part": "snippet"},
+        json_body={
+            "snippet": {
+                "playlistId": playlist_id,
+                "resourceId": {"kind": "youtube#video", "videoId": video_id},
+            }
+        },
+    )
+
+
+async def list_playlists(access_token: str, channel_id: str) -> list[dict[str, Any]]:
+    """List all playlists for a channel."""
+    data = await _google_json_request(
+        "GET",
+        f"{YOUTUBE_API_BASE_URL}/playlists",
+        access_token,
+        params={"part": "snippet", "channelId": channel_id, "maxResults": 50},
+    )
+    return [
+        {"id": item["id"], "title": item["snippet"]["title"]}
+        for item in data.get("items", [])
+    ]
+
+
 async def publish_video(access_token: str, video_id: str) -> dict[str, Any]:
     return await _update_video_resource(
         access_token,

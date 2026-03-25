@@ -48,6 +48,8 @@ from app.services.youtube_data import (
     get_project_by_name,
     get_video_detail,
     list_channel_videos,
+    add_video_to_playlist,
+    list_playlists,
     publish_video,
     resolve_oauth_client_config,
     save_youtube_oauth_credentials,
@@ -1022,4 +1024,40 @@ async def youtube_get_video(
     except Exception as exc:
         message = str(exc)
         logger.error("[YOUTUBE] Video detail failed video_id=%s: %s", video_id, message)
+        return _error(message, _error_status_code(message))
+
+
+@router.get("/playlists")
+async def youtube_list_playlists(
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        channel_id = youtube_credentials.get("channel_id", "")
+        playlists = await list_playlists(access_token, channel_id)
+        return _ok({"items": playlists, "total": len(playlists)})
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] List playlists failed: %s", message)
+        return _error(message, _error_status_code(message))
+
+
+@router.post("/playlist/{playlist_id}/video/{video_id}")
+async def youtube_add_to_playlist(
+    playlist_id: str,
+    video_id: str,
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    resolved_project_name = _resolve_project_name(project_name)
+    try:
+        access_token, _youtube_credentials = await get_project_access_token(db, resolved_project_name)
+        result = await add_video_to_playlist(access_token, playlist_id, video_id)
+        logger.info("[YOUTUBE] Added video_id=%s to playlist=%s", video_id, playlist_id)
+        return _ok({"playlist_id": playlist_id, "video_id": video_id, "item_id": result.get("id", "")})
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[YOUTUBE] Add to playlist failed video_id=%s playlist=%s: %s", video_id, playlist_id, message)
         return _error(message, _error_status_code(message))
