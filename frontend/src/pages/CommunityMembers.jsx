@@ -126,6 +126,9 @@ export default function CommunityMembers() {
       const res = await fetch(`${API}/api/playbook/progress/${phone.trim()}`)
       if (!res.ok) throw new Error('WhatsApp nao encontrado. Voce ja se inscreveu?')
       const data = await res.json()
+      // Dono da comunidade tem acesso PRO automatico
+      const OWNER_PHONES = ['51993448124', '5551993448124']
+      if (OWNER_PHONES.includes(phone.trim())) data.tier = 'pro'
       setMember(data)
       localStorage.setItem('community_phone', phone.trim())
       const [mRes, lRes] = await Promise.all([
