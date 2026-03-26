@@ -12,6 +12,7 @@ import Recordings from './pages/Recordings'
 import Recorder from './pages/Recorder'
 import Settings from './pages/Settings'
 import Kanban from './pages/Kanban'
+import AutoResearchApprovals from './pages/AutoResearchApprovals'
 import ProposalView from './pages/ProposalView'
 import ScheduledMessages from './pages/ScheduledMessages'
 import ClientPortal from './pages/ClientPortal'
@@ -93,6 +94,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/recordings" element={<Recordings />} />
         <Route path="/kanban" element={<Navigate to="/tarefas" replace />} />
         <Route path="/tarefas" element={<Kanban />} />
+        <Route path="/aprovacoes" element={<AutoResearchApprovals />} />
         <Route path="/youtube-kanban" element={<Navigate to="/youtube?tab=kanban" replace />} />
         <Route path="/youtube-analytics" element={<Navigate to="/youtube?tab=analytics" replace />} />
         <Route path="/youtube" element={<YouTubeWorkspacePage />} />

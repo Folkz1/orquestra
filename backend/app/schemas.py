@@ -513,6 +513,7 @@ class TaskCreate(BaseModel):
     priority: str = Field(default="medium", pattern="^(high|medium|low)$")
     source: str = Field(default="manual", pattern="^(manual|backlog|auto)$")
     assigned_to: str = Field(default="claude", pattern="^(claude|diego)$")
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskUpdate(BaseModel):
@@ -543,6 +544,27 @@ class TaskResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AutoResearchDecisionRequest(BaseModel):
+    decision: str = Field(
+        ...,
+        pattern="^(pending|approved|rejected|needs_client_confirmation)$",
+    )
+    note: Optional[str] = None
+    approval_checklist: Optional[list[dict[str, Any]]] = None
+    client_checklist: Optional[list[dict[str, Any]]] = None
+    client_confirmation_status: Optional[str] = Field(
+        None,
+        pattern="^(not_needed|pending|confirmed)$",
+    )
+
+
+class AutoResearchApplyResultRequest(BaseModel):
+    apply_status: str = Field(..., pattern="^(applied|apply_failed)$")
+    note: Optional[str] = None
+    error: Optional[str] = None
+    applied_files: list[str] = Field(default_factory=list)
 
 
 # ─── Proposal Schemas ───────────────────────────────────────────────────

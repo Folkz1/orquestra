@@ -257,6 +257,31 @@ export function getTaskStats() {
   return request('/api/tasks/stats');
 }
 
+export function getAutoResearchTasks(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+      query.append(key, String(value));
+    }
+  });
+  const qs = query.toString();
+  return request(`/api/tasks/autoresearch${qs ? '?' + qs : ''}`);
+}
+
+export function decideAutoResearchTask(id, data) {
+  return request(`/api/tasks/${id}/autoresearch/decision`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function reportAutoResearchApply(id, data) {
+  return request(`/api/tasks/${id}/autoresearch/apply-result`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // Proposals
 export function getProposals(params = {}) {
   const query = new URLSearchParams();
