@@ -1061,3 +1061,16 @@ async def youtube_add_to_playlist(
         message = str(exc)
         logger.error("[YOUTUBE] Add to playlist failed video_id=%s playlist=%s: %s", video_id, playlist_id, message)
         return _error(message, _error_status_code(message))
+
+
+@router.get("/access-token")
+async def youtube_get_access_token(
+    project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a fresh YouTube access token for direct API calls (e.g., large file uploads)."""
+    try:
+        access_token, _ = await get_project_access_token(db, project_name)
+        return _ok({"access_token": access_token})
+    except Exception as exc:
+        return _error(str(exc), 500)
