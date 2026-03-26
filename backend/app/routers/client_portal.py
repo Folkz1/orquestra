@@ -386,6 +386,7 @@ async def _build_payload(link: ClientPortalLink, db: AsyncSession) -> dict[str, 
     tasks_data = [
         {
             "title": task.title,
+            "description": task.description or "",
             "status": task.status,
             "priority": task.priority,
             "created_at": _iso(task.created_at),
@@ -576,7 +577,22 @@ h1{{margin:16px 0 10px;font-size:clamp(38px,5.5vw,64px);line-height:.96;letter-s
 .checkpoint h2{{margin:10px 0 8px;font-size:26px;letter-spacing:-.03em}} .checkpoint p{{margin:0;color:#e2e8f0;line-height:1.75}} .checkpoint-meta{{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}} .checkpoint-note{{margin-top:16px;color:#dbeafe;font-weight:600}}
 .section{{overflow:hidden}} .section summary{{list-style:none;cursor:pointer;padding:20px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:18px;font-weight:700;letter-spacing:-.02em}} .section summary::-webkit-details-marker{{display:none}} .section-body{{padding:0 22px 22px}}
 .board{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}} .column{{padding:14px;border-radius:18px;background:rgba(6,12,24,.65);border:1px solid rgba(255,255,255,.06)}} .column h3{{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:#cbd5e1}}
-.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}} .task-card,.proposal-card,.record-card,.timeline-item{{padding:14px}} .task-card+.task-card,.proposal-card+.proposal-card,.record-card+.record-card{{margin-top:10px}}
+.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}} .proposal-card,.record-card,.timeline-item{{padding:14px}} .proposal-card+.proposal-card,.record-card+.record-card{{margin-top:10px}}
+.task-card{{padding:0;border-radius:20px;overflow:hidden;transition:border-color .25s ease}} .task-card[open]{{border-color:rgba(125,211,252,.22)}}
+.task-header{{padding:16px 18px;cursor:pointer;list-style:none;display:block}} .task-header::-webkit-details-marker{{display:none}} .task-card:not(details) .task-header{{cursor:default}}
+.task-title-row{{margin:0 0 10px}} .task-title-row h4{{margin:0;font-size:15px;line-height:1.45;font-weight:600}}
+.task-meta-row{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+.meta-date{{font-size:11px;color:var(--muted)}}
+.expand-hint{{margin-left:auto;font-size:10px;color:rgba(125,211,252,.6);text-transform:uppercase;letter-spacing:.1em;transition:color .2s}} .task-card[open] .expand-hint{{color:rgba(125,211,252,.9)}}
+.task-card+.task-card{{margin-top:10px}}
+.prio-high{{background:linear-gradient(135deg, rgba(239,68,68,.22), rgba(245,158,11,.12));color:#fca5a5;border-color:rgba(239,68,68,.2)}}
+.prio-medium{{background:linear-gradient(135deg, rgba(59,130,246,.18), rgba(56,189,248,.08));color:#93c5fd;border-color:rgba(59,130,246,.18)}}
+.prio-low{{background:rgba(148,163,184,.12);color:#cbd5e1}}
+.task-desc{{padding:0 18px 18px;border-top:1px solid rgba(255,255,255,.06);margin-top:0;animation:descReveal .3s ease}}
+@keyframes descReveal{{from{{opacity:0;transform:translateY(-6px)}}to{{opacity:1;transform:translateY(0)}}}}
+.task-section-title{{margin:16px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:#38bdf8;font-weight:700;padding-bottom:4px;border-bottom:1px solid rgba(56,189,248,.15)}}
+.task-bullets{{margin:6px 0 12px;padding-left:16px;list-style:none}} .task-bullets li{{position:relative;padding:4px 0 4px 12px;font-size:13px;color:#e2e8f0;line-height:1.65}} .task-bullets li::before{{content:'';position:absolute;left:0;top:12px;width:4px;height:4px;border-radius:999px;background:var(--accent)}} .task-bullets li strong{{color:#f0f9ff;font-weight:600}}
+.task-body-text{{margin:6px 0;font-size:13px;color:#cbd5e1;line-height:1.7}}
 .top{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}} .top h4{{margin:0;font-size:15px;line-height:1.45}} .meta{{margin:8px 0 0;font-size:12px;line-height:1.6}} .timeline-item em{{display:block;margin-bottom:8px;font-style:normal;font-size:12px;font-weight:700;color:#bfdbfe}} .timeline-item h4{{margin:0 0 6px;font-size:15px}} .timeline-item p,.proposal-card p,.record-card p{{margin:0;color:var(--muted);line-height:1.7;font-size:14px}} .value{{margin-top:12px;color:#dbeafe;font-weight:700}}
 .empty{{padding:20px;border-radius:18px;text-align:center;color:var(--muted);border:1px dashed rgba(255,255,255,.12);background:rgba(2,6,23,.38)}}
 .badge{{padding:7px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap}} .backlog,.draft,.idle{{background:rgba(148,163,184,.14);color:#cbd5e1}} .in_progress,.sent,.feedback{{background:rgba(59,130,246,.18);color:#bfdbfe}} .review,.requested,.approval{{background:rgba(245,158,11,.18);color:#fde68a}} .done,.accepted,.completed,.test{{background:rgba(16,185,129,.18);color:#a7f3d0}} .viewed{{background:rgba(168,85,247,.18);color:#e9d5ff}} .rejected{{background:rgba(239,68,68,.18);color:#fecaca}}
@@ -586,18 +602,74 @@ footer{{margin-top:18px;text-align:center;color:rgba(148,163,184,.8);font-size:1
 """
 
 
+def _format_description(desc: str) -> str:
+    """Parse structured description into rich HTML sections."""
+    if not desc or not desc.strip():
+        return ""
+    lines = desc.strip().split("\n")
+    html_parts = []
+    in_list = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            continue
+        if stripped.endswith(":") and not stripped.startswith("- ") and len(stripped) > 2:
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            html_parts.append(f"<h5 class='task-section-title'>{_escape(stripped[:-1])}</h5>")
+        elif stripped.startswith("- "):
+            if not in_list:
+                html_parts.append("<ul class='task-bullets'>")
+                in_list = True
+            bullet_text = stripped[2:]
+            if ":" in bullet_text and bullet_text.index(":") < 40:
+                key, val = bullet_text.split(":", 1)
+                html_parts.append(f"<li><strong>{_escape(key.strip())}</strong>: {_escape(val.strip())}</li>")
+            else:
+                html_parts.append(f"<li>{_escape(bullet_text)}</li>")
+        else:
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            html_parts.append(f"<p class='task-body-text'>{_escape(stripped)}</p>")
+    if in_list:
+        html_parts.append("</ul>")
+    return "".join(html_parts)
+
+
+def _priority_badge(priority: str) -> str:
+    cls_map = {"high": "prio-high", "medium": "prio-medium", "low": "prio-low"}
+    label_map = {"high": "Alta", "medium": "Media", "low": "Baixa"}
+    cls = cls_map.get(priority, "prio-low")
+    label = label_map.get(priority, priority)
+    return f"<span class='badge {cls}'>{_escape(label)}</span>"
+
+
 def _task_card_html(task: dict[str, Any]) -> str:
     created = _escape(_fmt(datetime.fromisoformat(task["created_at"])))
+    desc_html = _format_description(task.get("description", ""))
+    has_desc = bool(desc_html)
+    tag = "details" if has_desc else "div"
+    inner_tag = "summary" if has_desc else "div"
     parts = [
-        "<article class='task-card'>",
-        f"<div class='top'><h4>{_escape(task['title'])}</h4>{_badge(TASK_LABELS.get(task['status'], task['status']), task['status'])}</div>",
-        f"<p class='meta'>Prioridade: {_escape(task['priority'])}</p>",
-        f"<p class='meta'>Criada em {created}</p>",
+        f"<{tag} class='task-card'>",
+        f"<{inner_tag} class='task-header'>",
+        f"<div class='task-title-row'><h4>{_escape(task['title'])}</h4></div>",
+        f"<div class='task-meta-row'>{_priority_badge(task['priority'])}{_badge(TASK_LABELS.get(task['status'], task['status']), task['status'])}<span class='meta-date'>{created}</span>",
     ]
     if task["completed_at"]:
         completed = _escape(_fmt(datetime.fromisoformat(task["completed_at"])))
-        parts.append(f"<p class='meta'>Concluida em {completed}</p>")
-    parts.append("</article>")
+        parts.append(f"<span class='meta-date'>Concluida {completed}</span>")
+    if has_desc:
+        parts.append("<span class='expand-hint'>Clique para detalhes</span>")
+    parts.append(f"</div></{inner_tag}>")
+    if has_desc:
+        parts.append(f"<div class='task-desc'>{desc_html}</div>")
+    parts.append(f"</{tag}>")
     return "".join(parts)
 
 
