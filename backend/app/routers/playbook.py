@@ -188,6 +188,22 @@ async def enroll(data: EnrollIn, db: AsyncSession = Depends(get_db)):
     return {"id": str(row["id"]), "tier": row["tier"], "status": "enrolled"}
 
 
+@router.post("/upgrade")
+async def upgrade_tier(data: dict, db: AsyncSession = Depends(get_db)):
+    """Upgrade enrollment tier (admin only — protected by auth middleware)."""
+    phone = data.get("phone")
+    tier = data.get("tier", "pro")
+    result = await db.execute(
+        text("UPDATE playbook_enrollments SET tier = :tier WHERE phone = :phone RETURNING id, phone, tier"),
+        {"tier": tier, "phone": phone}
+    )
+    row = result.mappings().first()
+    await db.commit()
+    if not row:
+        raise HTTPException(404, "Enrollment nao encontrado")
+    return {"id": str(row["id"]), "phone": row["phone"], "tier": row["tier"], "status": "upgraded"}
+
+
 @router.post("/progress")
 async def mark_progress(data: ProgressIn, db: AsyncSession = Depends(get_db)):
     """Mark a step as completed for a student."""
