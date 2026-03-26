@@ -717,8 +717,12 @@ def _portal_html(payload: dict[str, Any]) -> str:
     sections = []
     if "tasks" in payload["visible_sections"]:
         columns = []
+        _prio_order = {"high": 0, "medium": 1, "low": 2}
         for key, label in [("backlog", "Backlog"), ("in_progress", "Em andamento"), ("review", "Em revisao"), ("done", "Concluido")]:
-            items = [task for task in payload["tasks"] if task["status"] == key or (key == "backlog" and task["status"] == "todo")]
+            items = sorted(
+                [task for task in payload["tasks"] if task["status"] == key or (key == "backlog" and task["status"] == "todo")],
+                key=lambda t: _prio_order.get(t.get("priority", "low"), 9),
+            )
             cards = "".join(_task_card_html(task) for task in items) or "<div class='empty'>Nenhuma tarefa nesta etapa.</div>"
             columns.append(f"<div class='column'><h3>{_escape(label)}</h3>{cards}</div>")
         sections.append(
