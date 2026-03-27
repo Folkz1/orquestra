@@ -28,6 +28,7 @@ import Subscriptions from './pages/Subscriptions'
 import ClientePage from './pages/ClientePage'
 import ClienteEntregasPage from './pages/ClienteEntregasPage'
 import { isStandalonePWA } from './lib/native'
+import Blog from './pages/Blog'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
@@ -109,6 +110,8 @@ function AppRoutes({ onLogout }) {
         <Route path="/social" element={<SocialPublish />} />
         <Route path="/assinaturas" element={<Subscriptions />} />
         <Route path="/jarbas" element={<JarbasChat />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:slug" element={<Blog />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

@@ -778,3 +778,22 @@ class NewsletterEdition(Base):
     metadata_json = Column(JSONB, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug = Column(String(300), nullable=False, unique=True)
+    title = Column(String(500), nullable=False)
+    subtitle = Column(String(500), nullable=True)
+    content_md = Column(Text, nullable=False)
+    cover_image_url = Column(Text, nullable=True)
+    youtube_video_id = Column(String(50), nullable=True)
+    video_type = Column(String(20), server_default="short")
+    tags = Column(ARRAY(String), server_default="{}")
+    status = Column(String(20), server_default="published")
+    views = Column(Integer, server_default="0")
+    reading_time_min = Column(Integer, server_default="3")
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    published_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=True)
