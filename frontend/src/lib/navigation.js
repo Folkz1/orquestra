@@ -26,6 +26,7 @@ export const desktopNavSections = [
       { to: '/youtube', label: 'YouTube', description: 'Pipeline editorial e analytics' },
       { to: '/social', label: 'Social', description: 'Publicar em Instagram, TikTok e YouTube' },
       { to: '/blog', label: 'Blog', description: 'Experimentos e artigos por video' },
+      { to: '/community', label: 'Comunidade', description: 'Feed, cursos e recursos exclusivos' },
     ],
   },
   {
@@ -65,6 +66,7 @@ export function getNavMeta(pathname) {
   if (pathname.startsWith('/youtube')) return flatItems.find((item) => item.to === '/youtube')
   if (pathname.startsWith('/social')) return flatItems.find((item) => item.to === '/social')
   if (pathname.startsWith('/blog')) return flatItems.find((item) => item.to === '/blog')
+  if (pathname.startsWith('/community')) return flatItems.find((item) => item.to === '/community')
   if (pathname.startsWith('/tarefas')) return flatItems.find((item) => item.to === '/tarefas')
   if (pathname.startsWith('/aprovacoes')) return flatItems.find((item) => item.to === '/aprovacoes')
   if (pathname.startsWith('/gravador')) return flatItems.find((item) => item.to === '/gravador')

@@ -72,8 +72,8 @@ class Settings(BaseSettings):
     # Stripe (Community Payments)
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
-    STRIPE_PRICE_ID: str = ""  # Price ID for R$67/month community subscription
-    COMMUNITY_SUCCESS_URL: str = "https://guyyfolkz.mbest.site/playbook?enrolled=true"
+    STRIPE_PRICE_ID: str = "price_1TFq8KBTNDZbAlO2k4JiAJUh"  # R$70/month community subscription
+    COMMUNITY_SUCCESS_URL: str = "https://guyyfolkz.mbest.site/community?enrolled=true"
     COMMUNITY_CANCEL_URL: str = "https://guyyfolkz.mbest.site/comunidade"
 
     # Daily briefing

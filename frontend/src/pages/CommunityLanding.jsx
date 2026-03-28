@@ -3,21 +3,21 @@ import { Link } from 'react-router-dom'
 import { createCheckoutSession } from '../api'
 
 const MODULES = [
-  { title: 'Como criar seu CTO Virtual', desc: 'Setup Claude Code, skills, hooks e autonomia total.', free: false },
-  { title: 'Orquestrando Multiplos Projetos', desc: 'Backlog scoring, heartbeat daemon, execucao autonoma.', free: false },
-  { title: 'Automacao WhatsApp B2B', desc: 'Evolution API, fluxos, debounce, transcrição de audio.', free: false },
-  { title: 'Dashboard de Controle com IA', desc: 'React + FastAPI + graficos + agent status board.', free: false },
-  { title: 'Proposta que Fecha Sozinha', desc: 'Portal publico, tracking, analytics, follow-up.', free: false },
-  { title: 'De Freelancer a R$100k/mes', desc: 'Motor 100K: priorizacao, clientes, recorrencia.', free: false },
+  { title: 'Stack Claude Code (Harness)', desc: 'Setup completo: skills, hooks, harness deterministico, deploy pipeline.', free: false },
+  { title: 'Agent Lab', desc: 'ChatLab + 17 tools + test scenarios automatizados pra validar agentes.', free: false },
+  { title: 'Remotion Pipeline', desc: 'Producao de video com codigo: React, render farm, upload automatico.', free: false },
+  { title: 'Automacao WhatsApp B2B', desc: 'Evolution API, fluxos, debounce, agentes com tools reais.', free: false },
+  { title: 'Dashboard + Orquestra', desc: 'React + FastAPI + graficos + central de inteligencia pessoal.', free: false },
+  { title: 'De Freelancer a Motor 100K', desc: 'Priorizacao por receita, clientes, recorrencia, escala.', free: false },
 ]
 
 const BENEFITS = [
-  'Acesso a todos os modulos do curso',
-  'Templates de skills e agentes prontos',
-  'Comunidade privada no Telegram',
-  'Calls ao vivo quinzenais com Diego',
+  'Acesso a todos os modulos e playbooks',
+  'Templates prontos: Agent Lab + Remotion + Skills',
+  'Comunidade exclusiva com feed e recursos',
+  'Contato direto com Diego',
   'Acesso antecipado a ferramentas novas',
-  'Suporte direto para implementar',
+  'Tudo que Diego descobrir e validar na pratica',
 ]
 
 export default function CommunityLanding() {
@@ -61,7 +61,7 @@ export default function CommunityLanding() {
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <a href="#assinar" className="rounded-2xl bg-[#8bd450] px-8 py-3 text-sm font-semibold text-black transition-transform hover:scale-105">
-              Assinar por R$67/mes
+              Assinar por R$70/mes
             </a>
             <Link to="/playbook" className="rounded-2xl border border-white/10 px-8 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5">
               Ver conteudo gratuito
@@ -129,7 +129,7 @@ export default function CommunityLanding() {
           <div className="rounded-3xl border border-[#8bd450]/20 bg-[#10141b] p-8">
             <p className="font-mono text-xs uppercase tracking-widest text-[#8bd450]">Comunidade GuyFolkz</p>
             <div className="mt-4 flex items-end gap-2">
-              <span className="text-4xl font-bold">R$67</span>
+              <span className="text-4xl font-bold">R$70</span>
               <span className="mb-1 text-sm text-zinc-400">/mes</span>
             </div>
             <p className="mt-2 text-sm text-zinc-400">Cancele quando quiser. Sem fidelidade.</p>

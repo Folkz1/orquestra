@@ -29,6 +29,7 @@ import ClientePage from './pages/ClientePage'
 import ClienteEntregasPage from './pages/ClienteEntregasPage'
 import { isStandalonePWA } from './lib/native'
 import Blog from './pages/Blog'
+import Community from './pages/Community'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
@@ -50,6 +51,10 @@ function AppRoutes({ onLogout }) {
 
   if (location.pathname === '/youtube-briefing') {
     return <YouTubeBriefing />
+  }
+
+  if (location.pathname === '/community') {
+    return <Community />
   }
 
   if (location.pathname === '/comunidade') {
@@ -134,6 +139,7 @@ export default function App() {
           <Route path="/proposta/:slug" element={<ProposalView />} />
           <Route path="/cliente/:slug/entregas" element={<ClienteEntregasPage />} />
           <Route path="/cliente/:slug" element={<ClientePage />} />
+          <Route path="/community" element={<Community />} />
           <Route path="/playbook/*" element={<PlaybookPlatform />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />
         </Routes>

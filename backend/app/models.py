@@ -797,3 +797,107 @@ class BlogPost(Base):
     reading_time_min = Column(Integer, server_default="3")
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     published_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=True)
+
+
+# ─── Community (Skool-style) ─────────────────────────────────────────────
+
+
+class CommunityPost(Base):
+    __tablename__ = "community_posts"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    author_enrollment_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("playbook_enrollments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    author_name = Column(String(200), nullable=False)
+    author_role = Column(String(50), server_default="member", nullable=False)
+    content_md = Column(Text, nullable=False)
+    post_type = Column(String(50), server_default="discussion", nullable=False)
+    likes_count = Column(Integer, server_default="0", nullable=False)
+    comments_count = Column(Integer, server_default="0", nullable=False)
+    pinned = Column(Boolean, server_default="false", nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    comments = relationship(
+        "CommunityComment", back_populates="post",
+        lazy="selectin", cascade="all, delete-orphan",
+    )
+
+    def __repr__(self):
+        return f"<CommunityPost {self.id} by {self.author_name}>"
+
+
+class CommunityComment(Base):
+    __tablename__ = "community_comments"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    post_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("community_posts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    author_enrollment_id = Column(UUID(as_uuid=True), nullable=True)
+    author_name = Column(String(200), nullable=False)
+    content_md = Column(Text, nullable=False)
+    likes_count = Column(Integer, server_default="0", nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    post = relationship("CommunityPost", back_populates="comments")
+
+    def __repr__(self):
+        return f"<CommunityComment {self.id} by {self.author_name}>"
+
+
+class CommunityLike(Base):
+    __tablename__ = "community_likes"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    enrollment_id = Column(UUID(as_uuid=True), nullable=False)
+    post_id = Column(UUID(as_uuid=True), nullable=True)
+    comment_id = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self):
+        return f"<CommunityLike {self.enrollment_id} post={self.post_id}>"
+
+
+class CommunityResource(Base):
+    __tablename__ = "community_resources"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    resource_type = Column(String(50), nullable=True)
+    download_url = Column(Text, nullable=True)
+    tier = Column(String(20), server_default="pro", nullable=False)
+    downloads_count = Column(Integer, server_default="0", nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self):
+        return f"<CommunityResource {self.title}>"

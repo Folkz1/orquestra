@@ -117,6 +117,16 @@ async def stripe_webhook(request: Request):
         if phone:
             await _enroll_pro_member(phone, name, customer_email, customer_id)
 
+    elif event_type == "invoice.payment_failed":
+        invoice = event["data"]["object"]
+        customer_id = invoice.get("customer", "")
+        customer_email = invoice.get("customer_email", "")
+        attempt_count = invoice.get("attempt_count", 0)
+        logger.warning(
+            "[STRIPE] Payment failed: customer=%s email=%s attempt=%d",
+            customer_id, customer_email, attempt_count,
+        )
+
     elif event_type == "customer.subscription.deleted":
         # Downgrade on cancellation
         sub = event["data"]["object"]

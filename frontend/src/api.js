@@ -631,3 +631,53 @@ export function getChartMessages() {
 export function createCheckoutSession(data) {
   return request('/api/stripe/checkout', { method: 'POST', body: JSON.stringify(data) });
 }
+
+// ─── Community ────────────────────────────────────────────────────────────────
+// NOTE: Community auth is SEPARATE from Orquestra admin auth.
+// These functions use the standard request() helper for reference,
+// but the Community.jsx page manages its own token ('community_token' in localStorage)
+// and sends it as Authorization: Bearer only for /api/community/* endpoints.
+
+export function communityLogin(email) {
+  return request('/api/community/auth/login', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+export function communityVerify(email, code) {
+  return request('/api/community/auth/verify', { method: 'POST', body: JSON.stringify({ email, code }) });
+}
+
+export function getCommunityFeed(limit = 20, offset = 0) {
+  return request(`/api/community/feed?limit=${limit}&offset=${offset}`);
+}
+
+export function createCommunityPost(data) {
+  return request('/api/community/post', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function likeCommunityPost(postId) {
+  return request(`/api/community/post/${postId}/like`, { method: 'POST' });
+}
+
+export function getPostComments(postId) {
+  return request(`/api/community/post/${postId}/comments`);
+}
+
+export function createComment(postId, data) {
+  return request(`/api/community/post/${postId}/comment`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function getCommunityMembers() {
+  return request('/api/community/members');
+}
+
+export function getCommunityResources() {
+  return request('/api/community/resources');
+}
+
+export function downloadResource(resourceId) {
+  return request(`/api/community/resource/${resourceId}/download`, { method: 'POST' });
+}
+
+export function getCommunityMe() {
+  return request('/api/community/me');
+}
