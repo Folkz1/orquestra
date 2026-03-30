@@ -176,31 +176,35 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 async def health_check():
+    import asyncio
     from app.database import async_session, engine
-    from sqlalchemy import text
 
-    db_ok = False
+    # Pool stats don't need a connection - always available
     pool_info = {}
     try:
-        async with async_session() as session:
-            await session.execute(text("SELECT 1"))
-            db_ok = True
         pool = engine.pool
-        try:
-            pool_info = {
-                "pool_size": pool.size(),
-                "checked_in": pool.checkedin(),
-                "checked_out": pool.checkedout(),
-                "overflow": pool.overflow(),
-            }
-        except Exception:
-            pool_info = {"error": "pool stats unavailable"}
+        pool_info = {
+            "pool_size": pool.size(),
+            "checked_in": pool.checkedin(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+        }
+    except Exception:
+        pool_info = {"error": "pool stats unavailable"}
+
+    # DB ping with short timeout - don't compete with busy pool for too long
+    db_ok = False
+    try:
+        from sqlalchemy import text
+        async with async_session() as session:
+            await asyncio.wait_for(session.execute(text("SELECT 1")), timeout=3)
+            db_ok = True
     except Exception:
         pass
 
-    status_val = "ok" if db_ok else "degraded"
+    # Return 200 even if DB is degraded - process is alive, Docker should not restart
     return {
-        "status": status_val,
+        "status": "ok" if db_ok else "degraded",
         "service": "orquestra",
         "version": "1.0.1",
         "db": db_ok,

@@ -15,11 +15,11 @@ from app.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=10,
+    max_overflow=15,
     pool_pre_ping=True,
     pool_recycle=120,      # Recycle connections every 2 min (EasyPanel restarts drop them)
-    pool_timeout=20,       # Fail fast if no connection available in 20s
+    pool_timeout=10,       # Fail fast if no connection available in 10s
     connect_args={
         "server_settings": {"application_name": "orquestra-backend"},
         "command_timeout": 30,
