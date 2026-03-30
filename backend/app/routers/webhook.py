@@ -645,11 +645,12 @@ async def evolution_webhook(
                 await _send_owner_reply("Deu um erro aqui para processar isso. Me manda de novo em uma frase que eu resolvo agora.")
                 return {"status": "owner_command_error"}
 
-    # Auto-associate project (no_autoflush prevents stale-connection crash
-    # when contact was modified earlier in the same session)
+    # Auto-associate project inside a SAVEPOINT so failures don't poison
+    # the main transaction (prevents PendingRollbackError downstream)
     try:
-        with db.no_autoflush:
-            project_id = await _auto_associate_project(db, contact, content)
+        async with db.begin_nested():
+            with db.no_autoflush:
+                project_id = await _auto_associate_project(db, contact, content)
     except Exception as exc:
         logger.warning("[WEBHOOK] Auto-associate project failed: %s", exc)
         project_id = contact.project_id
