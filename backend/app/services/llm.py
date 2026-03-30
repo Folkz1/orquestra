@@ -80,6 +80,10 @@ async def chat_completion(
                     body = exc.response.text[:500]
                 except Exception:
                     pass
+                # 403 = key limit exceeded, no point retrying
+                if exc.response.status_code == 403:
+                    logger.error("[LLM] OpenRouter 403 (key limit exceeded). body=%s", body)
+                    raise
             if attempt < MAX_RETRIES - 1:
                 wait = INITIAL_BACKOFF * (2 ** attempt)
                 logger.warning(

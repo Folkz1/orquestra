@@ -258,6 +258,17 @@ async def transcribe_audio(file_path: str) -> str:
             if use_compressed:
                 _cleanup_temp_file(compressed_path)
             return result
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 403:
+                logger.warning(
+                    "[TRANSCRIBER] OpenRouter 403 (key limit). Skipping to Groq chunking..."
+                )
+            else:
+                logger.warning(
+                    "[TRANSCRIBER] OpenRouter HTTP %d for %.1fMB file. Falling back to chunking...",
+                    exc.response.status_code,
+                    compressed_size / (1024 * 1024),
+                )
         except Exception as exc:
             logger.warning(
                 "[TRANSCRIBER] OpenRouter failed for %.1fMB file: %s. Falling back to chunking...",
