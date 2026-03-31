@@ -106,9 +106,9 @@ class Contact(Base):
     # Relationships
     project = relationship("Project", back_populates="contacts")
     messages = relationship(
-        "Message", back_populates="contact", lazy="selectin", cascade="all, delete-orphan"
+        "Message", back_populates="contact", lazy="noload", cascade="all, delete-orphan"
     )
-    delivery_reports = relationship("DeliveryReport", back_populates="contact", lazy="selectin")
+    delivery_reports = relationship("DeliveryReport", back_populates="contact", lazy="noload")
 
     def __repr__(self):
         return f"<Contact {self.phone}>"

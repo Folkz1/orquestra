@@ -468,6 +468,43 @@ async def evolution_webhook(
     else:
         ts = datetime.now(timezone.utc)
 
+    # --- DB operations: wrapped to prevent 500s from killing the worker ---
+    try:
+        return await _process_message(
+            db, background_tasks, payload, phone, group, push_name,
+            simplified_type, raw_type, content, mimetype, duration,
+            evolution_msg_id, from_me, ts,
+        )
+    except Exception as exc:
+        logger.error("[WEBHOOK] Unhandled DB error, rolling back: %s", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return {"status": "error", "detail": "db_error"}
+
+
+async def _process_message(
+    db: AsyncSession,
+    background_tasks: BackgroundTasks,
+    payload: dict,
+    phone: str,
+    group: bool,
+    push_name: str | None,
+    simplified_type: str,
+    raw_type: str,
+    content: str | None,
+    mimetype: str | None,
+    duration: int | None,
+    evolution_msg_id: str,
+    from_me: bool,
+    ts: datetime,
+):
+    """Core message processing - extracted so the caller can catch DB errors."""
+    instance_name = payload.get("instance", "unknown")
+    server_url = payload.get("server_url", "unknown")
+    remote_jid = payload.get("data", {}).get("key", {}).get("remoteJid", "")
+
     # Upsert contact
     contact = await _upsert_contact(db, phone, push_name, group)
 
