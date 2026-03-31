@@ -34,7 +34,6 @@ export const desktopNavSections = [
     label: 'Operacao',
     items: [
       { to: '/assinaturas', label: 'Assinaturas', description: 'MRR e pagamentos recorrentes de clientes' },
-      { to: '/aprovacoes', label: 'Aprovacoes', description: 'Inbox de diffs e decisoes do AutoResearch' },
       { to: '/mensagens-agendadas', label: 'Agendamentos', description: 'Mensagens futuras e retries' },
       { to: '/client-portal', label: 'Portal Cliente', description: 'Links de acompanhamento externo' },
       { to: '/settings', label: 'Config', description: 'Ajustes, automacoes e integracoes' },
@@ -68,7 +67,6 @@ export function getNavMeta(pathname) {
   if (pathname.startsWith('/blog')) return flatItems.find((item) => item.to === '/blog')
   if (pathname.startsWith('/community')) return flatItems.find((item) => item.to === '/community')
   if (pathname.startsWith('/tarefas')) return flatItems.find((item) => item.to === '/tarefas')
-  if (pathname.startsWith('/aprovacoes')) return flatItems.find((item) => item.to === '/aprovacoes')
   if (pathname.startsWith('/gravador')) return flatItems.find((item) => item.to === '/gravador')
   if (pathname.startsWith('/assinaturas')) return flatItems.find((item) => item.to === '/assinaturas')
   if (pathname.startsWith('/jarbas')) return flatItems.find((item) => item.to === '/jarbas')
