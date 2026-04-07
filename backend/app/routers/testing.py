@@ -1,10 +1,7 @@
 """
 Orquestra - Testing Router
 """
-import os
 import secrets
-import urllib.request
-import json
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -194,18 +191,20 @@ async def submit_session(session_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 async def _notify_diego(session: TestSession, db: AsyncSession) -> None:
-    """Envia resumo do teste para Diego via Evolution API."""
-    # Busca resultados
+    """Envia resumo do teste para Diego via WhatsApp."""
+    import os
+    from app.services.whatsapp import send_whatsapp_message
+
     stmt = select(TestResult).where(TestResult.session_id == session.id)
     results = (await db.execute(stmt)).scalars().all()
 
-    total = len(session.plan.steps)
+    total = len(session.plan.steps) if session.plan and session.plan.steps else 0
     passou = sum(1 for r in results if r.status == "pass")
     falhou = [r for r in results if r.status == "fail"]
 
     lines = [
         f"{'✅' if not falhou else '⚠️'} Teste concluído — {session.plan.projeto} / {session.plan.nome}",
-        f"Andriely finalizou: {passou}/{total} passos ok",
+        f"Resultado: {passou}/{total} passos ok",
     ]
 
     if falhou:
@@ -216,31 +215,13 @@ async def _notify_diego(session: TestSession, db: AsyncSession) -> None:
             comentario = f": {r.comentario}" if r.comentario else ""
             lines.append(f"• {titulo}{comentario}")
 
-    frontend_url = os.getenv("FRONTEND_URL", "https://orquestra.app")
+    frontend_url = os.getenv("FRONTEND_URL", "https://guyyfolkz.mbest.site")
     lines.append(f"\nVer relatório: {frontend_url}/projetos?tab=testes&session={session.id}")
 
     message = "\n".join(lines)
 
-    evolution_url = os.getenv("EVOLUTION_API_URL", "")
-    evolution_key = os.getenv("EVOLUTION_API_KEY", "")
-    evolution_instance = os.getenv("EVOLUTION_INSTANCE", "")
-    diego_whatsapp = os.getenv("DIEGO_WHATSAPP", "")
-
-    if not all([evolution_url, evolution_key, evolution_instance, diego_whatsapp]):
+    diego_whatsapp = os.getenv("DIEGO_WHATSAPP", "") or os.getenv("OWNER_WHATSAPP", "")
+    if not diego_whatsapp:
         return
 
-    payload = json.dumps({
-        "number": diego_whatsapp,
-        "text": message,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        f"{evolution_url}/message/sendText/{evolution_instance}",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "apikey": evolution_key,
-        },
-        method="POST",
-    )
-    urllib.request.urlopen(req, timeout=10)
+    await send_whatsapp_message(diego_whatsapp, message)
