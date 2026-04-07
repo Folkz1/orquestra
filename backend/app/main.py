@@ -155,6 +155,8 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/api/stripe/checkout")
         or path == "/api/blog/public"
         or path.startswith("/api/community/")
+        or path.startswith("/api/test-sessions/by-token/")
+        or (path.startswith("/api/test-sessions/") and (path.endswith("/results") or path.endswith("/submit")))
     ):
         return await call_next(request)
 
@@ -243,7 +245,7 @@ async def debug_db():
 
 # -- Include Routers --
 
-from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals, scheduled_messages, proactive, credentials, client_portal, delivery_reports, ws, playbook, social_publish, subscriptions, cliente, newsletter, dashboard, stripe_checkout, blog, community  # noqa: E402
+from app.routers import webhook, contacts, messages, recordings, projects, briefs, memory, youtube, sync, notion, tasks, assistant, proposals, scheduled_messages, proactive, credentials, client_portal, delivery_reports, ws, playbook, social_publish, subscriptions, cliente, newsletter, dashboard, stripe_checkout, blog, community, testing  # noqa: E402
 
 app.include_router(webhook.router, prefix="/api/webhook", tags=["Webhook"])
 app.include_router(contacts.router, prefix="/api/contacts", tags=["Contacts"])
@@ -273,3 +275,4 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 app.include_router(stripe_checkout.router, prefix="/api/stripe", tags=["Stripe"])
 app.include_router(blog.router, prefix="/api/blog", tags=["Blog"])
 app.include_router(community.router, prefix="/api/community", tags=["Community"])
+app.include_router(testing.router, prefix="/api", tags=["testing"])
