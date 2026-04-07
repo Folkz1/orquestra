@@ -68,7 +68,7 @@ export default function TesterPage() {
           <div className="text-4xl mb-4">🎉</div>
           <h2 className="text-xl font-semibold text-white mb-2">Relatório enviado!</h2>
           <p className="text-gray-400">
-            Obrigada, {session?.tester_nome || 'Testadora'}! Diego foi notificado com o resumo dos testes.
+            Obrigada, {session?.tester_nome || 'Andriely'}! Diego foi notificado com o resumo dos testes.
           </p>
         </div>
       </div>
