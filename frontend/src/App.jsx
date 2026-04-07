@@ -20,6 +20,7 @@ import WhatsAppChat from './pages/WhatsAppChat'
 import YouTubeBriefing from './pages/YouTubeBriefing'
 import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 import PlaybookPlatform from './pages/PlaybookPlatform'
+import TesterPage from './pages/TesterPage'
 import CommunityLanding from './pages/CommunityLanding'
 import CommunityMembers from './pages/CommunityMembers'
 import SocialPublish from './pages/SocialPublish'
@@ -71,6 +72,11 @@ function AppRoutes({ onLogout }) {
   // Newsletter é página pública — renderiza sem Layout mesmo logado
   if (location.pathname === '/newsletter') {
     return <NewsletterPage />
+  }
+
+  // Tester é página pública — acessível sem auth, sem Layout
+  if (location.pathname === '/tester') {
+    return <TesterPage />
   }
 
   // Chat is ALWAYS fullscreen (no sidebar) — dedicated messaging experience
@@ -139,6 +145,7 @@ export default function App() {
           <Route path="/cliente/:slug" element={<ClientePage />} />
           <Route path="/community" element={<Community />} />
           <Route path="/playbook/*" element={<PlaybookPlatform />} />
+          <Route path="/tester" element={<TesterPage />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />
         </Routes>
       )}
