@@ -901,3 +901,67 @@ class CommunityResource(Base):
 
     def __repr__(self):
         return f"<CommunityResource {self.title}>"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Human Testing System
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Tester(Base):
+    __tablename__ = "testers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    nome = Column(String(255), nullable=False)
+    whatsapp = Column(String(50), nullable=False)
+    token = Column(String(128), nullable=False, unique=True)
+    ativo = Column(Boolean(), server_default=text("true"), nullable=False)
+    criado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+    sessions = relationship("TestSession", back_populates="tester", lazy="noload")
+
+
+class TestPlan(Base):
+    __tablename__ = "test_plans"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    projeto = Column(String(100), nullable=False)
+    nome = Column(String(255), nullable=False)
+    descricao = Column(Text(), nullable=True)
+    perfil = Column(String(100), nullable=False)
+    steps = Column(JSONB, server_default=text("'[]'::jsonb"), nullable=False)
+    criado_por = Column(String(100), nullable=True)
+    criado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+    sessions = relationship("TestSession", back_populates="plan", lazy="noload")
+
+
+class TestSession(Base):
+    __tablename__ = "test_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("test_plans.id", ondelete="CASCADE"), nullable=False)
+    tester_id = Column(UUID(as_uuid=True), ForeignKey("testers.id", ondelete="SET NULL"), nullable=True)
+    status = Column(String(20), server_default=text("'pendente'"), nullable=False)
+    link_token = Column(String(128), nullable=False, unique=True)
+    enviado_em = Column(TIMESTAMP(timezone=True), nullable=True)
+    iniciado_em = Column(TIMESTAMP(timezone=True), nullable=True)
+    concluido_em = Column(TIMESTAMP(timezone=True), nullable=True)
+    criado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+    plan = relationship("TestPlan", back_populates="sessions", lazy="selectin")
+    tester = relationship("Tester", back_populates="sessions", lazy="selectin")
+    results = relationship("TestResult", back_populates="session", lazy="selectin", cascade="all, delete-orphan")
+
+
+class TestResult(Base):
+    __tablename__ = "test_results"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    session_id = Column(UUID(as_uuid=True), ForeignKey("test_sessions.id", ondelete="CASCADE"), nullable=False)
+    step_id = Column(String(50), nullable=False)
+    status = Column(String(10), nullable=False)  # pass | fail | skip
+    comentario = Column(Text(), nullable=True)
+    screenshot_url = Column(String(500), nullable=True)
+    criado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+    session = relationship("TestSession", back_populates="results", lazy="noload")

@@ -842,4 +842,97 @@ class MessageVolumeDataPoint(BaseModel):
     date: str
     count: int
     incoming: int = 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Human Testing System
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TesterCreate(BaseModel):
+    nome: str
+    whatsapp: str
+    token: str
+
+
+class TesterResponse(BaseModel):
+    id: UUID
+    nome: str
+    whatsapp: str
+    token: str
+    ativo: bool
+    criado_em: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TestPlanCreate(BaseModel):
+    projeto: str
+    nome: str
+    descricao: str | None = None
+    perfil: str
+    steps: list[dict[str, Any]]
+    criado_por: str | None = None
+
+
+class TestPlanResponse(BaseModel):
+    id: UUID
+    projeto: str
+    nome: str
+    descricao: str | None
+    perfil: str
+    steps: list[dict[str, Any]]
+    criado_por: str | None
+    criado_em: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TestSessionCreate(BaseModel):
+    plan_id: UUID
+    tester_id: UUID | None = None
+
+
+class TestResultResponse(BaseModel):
+    id: UUID
+    step_id: str
+    status: str
+    comentario: str | None
+    screenshot_url: str | None
+    criado_em: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TestSessionPublic(BaseModel):
+    """Schema retornado para a testadora (sem auth)"""
+    id: UUID
+    status: str
+    link_token: str
+    plan: TestPlanResponse
+    tester_nome: str | None = None
+    results: list[TestResultResponse] = []
+
+    model_config = {"from_attributes": True}
+
+
+class TestSessionResponse(BaseModel):
+    id: UUID
+    plan_id: UUID
+    tester_id: UUID | None
+    status: str
+    link_token: str
+    enviado_em: datetime | None
+    iniciado_em: datetime | None
+    concluido_em: datetime | None
+    criado_em: datetime
+    plan: TestPlanResponse | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class TestResultCreate(BaseModel):
+    step_id: str
+    status: str  # pass | fail | skip
+    comentario: str | None = None
+    screenshot_url: str | None = None
     outgoing: int = 0
