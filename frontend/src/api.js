@@ -681,3 +681,56 @@ export function downloadResource(resourceId) {
 export function getCommunityMe() {
   return request('/api/community/me');
 }
+
+// ── Human Testing ────────────────────────────────────────────────────────────
+
+export function getTestPlans(projeto) {
+  const qs = projeto ? `?projeto=${encodeURIComponent(projeto)}` : ''
+  return request(`/api/test-plans${qs}`)
+}
+
+export function createTestPlan(data) {
+  return request('/api/test-plans', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function createTestSession(data) {
+  return request('/api/test-sessions', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function getTestSessions(projeto) {
+  const qs = projeto ? `?projeto=${encodeURIComponent(projeto)}` : ''
+  return request(`/api/test-sessions${qs}`)
+}
+
+// Public functions (no auth token) — used by the tester
+export function getSessionByToken(token) {
+  const base = import.meta.env.VITE_API_URL || ''
+  return fetch(`${base}/api/test-sessions/by-token/${token}`)
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    })
+}
+
+export function saveStepResult(sessionId, data) {
+  const base = import.meta.env.VITE_API_URL || ''
+  return fetch(`${base}/api/test-sessions/${sessionId}/results`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  })
+}
+
+export function submitTestSession(sessionId) {
+  const base = import.meta.env.VITE_API_URL || ''
+  return fetch(`${base}/api/test-sessions/${sessionId}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  })
+}
