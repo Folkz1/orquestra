@@ -131,6 +131,18 @@ export default function CommunityMembers() {
       if (OWNER_PHONES.includes(phone.trim())) data.tier = 'pro'
       setMember(data)
       localStorage.setItem('community_phone', phone.trim())
+      // Bridge: get community JWT for feed interaction
+      try {
+        const jwtRes = await fetch(`${API}/api/community/auth/login-phone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phone.trim() }),
+        })
+        if (jwtRes.ok) {
+          const jwtData = await jwtRes.json()
+          localStorage.setItem('community_token', jwtData.token)
+        }
+      } catch {}
       const [mRes, lRes] = await Promise.all([
         fetch(`${API}/api/playbook/modules`),
         fetch(`${API}/api/playbook/leaderboard`),
@@ -612,72 +624,7 @@ export default function CommunityMembers() {
 
         {/* ── COMUNIDADE TAB ── */}
         {tab === 'comunidade' && (
-          <div className="space-y-4 max-w-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Feed da Comunidade</h2>
-              <a
-                href="https://t.me/+COMMUNITY_LINK"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-xl bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 text-xs text-blue-400 hover:bg-blue-500/20 transition-colors"
-              >
-                ✈️ Abrir Telegram
-              </a>
-            </div>
-
-            <div className="space-y-3">
-              {COMMUNITY_POSTS.map(post => (
-                <div
-                  key={post.id}
-                  className={`rounded-2xl border p-4 ${
-                    post.pinned ? 'border-[#8bd450]/30 bg-[#8bd450]/5' : 'border-white/8 bg-white/3'
-                  }`}
-                >
-                  {post.pinned && (
-                    <p className="text-[10px] text-[#8bd450] mb-2 font-medium">📌 FIXADO</p>
-                  )}
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#8bd450]/20 text-base">
-                      {post.avatar}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold">{post.author}</p>
-                      <p className="text-[10px] text-zinc-500">{post.time}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-zinc-300 leading-relaxed">{post.content}</p>
-                  <div className="mt-3 flex items-center gap-4">
-                    <button
-                      onClick={() => toggleLike(post.id)}
-                      className={`flex items-center gap-1.5 text-xs transition-colors ${
-                        likedPosts.includes(post.id) ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                    >
-                      <span>{likedPosts.includes(post.id) ? '❤️' : '🤍'}</span>
-                      <span>{post.likes + (likedPosts.includes(post.id) ? 1 : 0)}</span>
-                    </button>
-                    <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                      <span>💬</span>
-                      <span>{post.replies} respostas</span>
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-center">
-              <p className="text-sm font-semibold text-blue-400">Continue a conversa no Telegram</p>
-              <p className="mt-1 text-xs text-zinc-400">O grupo privado e onde as discussoes acontecem em tempo real.</p>
-              <a
-                href="https://t.me/+COMMUNITY_LINK"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-block rounded-xl bg-blue-500 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-400"
-              >
-                Entrar no grupo
-              </a>
-            </div>
-          </div>
+          <LiveFeedTab phone={phone} />
         )}
 
         {/* ── RANKING TAB ── */}
@@ -729,6 +676,196 @@ export default function CommunityMembers() {
       </main>
 
       <script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
+    </div>
+  )
+}
+
+
+// ─── Live Feed Tab (API-backed) ─────────────────────────────────────────────
+
+function LiveFeedTab({ phone }) {
+  const [posts, setPosts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [newPost, setNewPost] = useState('')
+  const [postType, setPostType] = useState('discussion')
+  const [posting, setPosting] = useState(false)
+
+  const communityToken = localStorage.getItem('community_token')
+
+  async function communityFetch(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) }
+    if (communityToken) headers['Authorization'] = `Bearer ${communityToken}`
+    const res = await fetch(`${API}${path}`, { ...opts, headers })
+    if (!res.ok) throw new Error(`${res.status}`)
+    return res.json()
+  }
+
+  async function loadFeed() {
+    try {
+      const data = await communityFetch('/api/community/feed?limit=30')
+      setPosts(data.posts || data || [])
+    } catch {
+      setPosts(COMMUNITY_POSTS.map(p => ({
+        id: p.id, author_name: p.author, author_role: 'admin',
+        content_md: p.content, post_type: 'announcement',
+        likes_count: p.likes, comments_count: p.replies || 0,
+        liked_by_me: false, pinned: p.pinned || false,
+        created_at: new Date().toISOString(),
+      })))
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadFeed() }, [])
+
+  async function handleCreatePost(e) {
+    e.preventDefault()
+    if (!newPost.trim() || !communityToken) return
+    setPosting(true)
+    try {
+      await communityFetch('/api/community/post', {
+        method: 'POST',
+        body: JSON.stringify({ content_md: newPost.trim(), post_type: postType }),
+      })
+      setNewPost('')
+      setPostType('discussion')
+      loadFeed()
+    } catch {}
+    setPosting(false)
+  }
+
+  async function handleLike(postId) {
+    if (!communityToken) return
+    try {
+      await communityFetch(`/api/community/post/${postId}/like`, { method: 'POST' })
+      setPosts(prev => prev.map(p =>
+        p.id === postId
+          ? { ...p, liked_by_me: !p.liked_by_me, likes_count: p.likes_count + (p.liked_by_me ? -1 : 1) }
+          : p
+      ))
+    } catch {}
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return ''
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `${mins}m`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h`
+    return `${Math.floor(hours / 24)}d`
+  }
+
+  const POST_TYPES = {
+    discussion: { label: 'Discussao', color: 'text-blue-400 bg-blue-400/10' },
+    resource: { label: 'Recurso', color: 'text-green-400 bg-green-400/10' },
+    announcement: { label: 'Anuncio', color: 'text-yellow-400 bg-yellow-400/10' },
+    question: { label: 'Pergunta', color: 'text-purple-400 bg-purple-400/10' },
+  }
+
+  if (loading) return <div className="text-center text-zinc-500 py-8">Carregando feed...</div>
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <h2 className="text-lg font-bold">Feed da Comunidade</h2>
+
+      {/* Create post */}
+      {communityToken ? (
+        <form onSubmit={handleCreatePost} className="rounded-2xl border border-white/8 bg-white/3 p-4 space-y-3">
+          <textarea
+            value={newPost}
+            onChange={e => setNewPost(e.target.value)}
+            placeholder="Compartilhe algo com a comunidade..."
+            rows={3}
+            className="w-full bg-transparent border border-white/10 rounded-xl p-3 text-sm text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-[#8bd450]/40"
+          />
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              {Object.entries(POST_TYPES).map(([key, cfg]) => (
+                <button
+                  key={key} type="button"
+                  onClick={() => setPostType(key)}
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                    postType === key ? cfg.color + ' ring-1 ring-current' : 'text-zinc-500 bg-white/5'
+                  }`}
+                >
+                  {cfg.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="submit"
+              disabled={posting || !newPost.trim()}
+              className="rounded-xl bg-[#8bd450] px-4 py-1.5 text-xs font-semibold text-black hover:bg-[#7cc340] disabled:opacity-40 transition-colors"
+            >
+              {posting ? 'Publicando...' : 'Publicar'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="rounded-2xl border border-white/8 bg-white/3 p-4 text-center text-xs text-zinc-500">
+          Faca login para publicar na comunidade
+        </div>
+      )}
+
+      {/* Posts */}
+      <div className="space-y-3">
+        {posts.map(post => {
+          const typeCfg = POST_TYPES[post.post_type] || POST_TYPES.discussion
+          return (
+            <div key={post.id} className={`rounded-2xl border p-4 ${
+              post.pinned ? 'border-[#8bd450]/30 bg-[#8bd450]/5' : 'border-white/8 bg-white/3'
+            }`}>
+              {post.pinned && (
+                <p className="text-[10px] text-[#8bd450] mb-2 font-medium">FIXADO</p>
+              )}
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                  post.author_role === 'admin' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
+                }`}>
+                  {(post.author_name || '?').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold">{post.author_name || 'Membro'}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
+                      post.author_role === 'admin' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'
+                    }`}>
+                      {post.author_role === 'admin' ? 'Admin' : 'Membro'}
+                    </span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${typeCfg.color}`}>
+                      {typeCfg.label}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500">{timeAgo(post.created_at)}</p>
+                </div>
+              </div>
+              <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{post.content_md}</p>
+              <div className="mt-3 flex items-center gap-4 pt-2 border-t border-white/5">
+                <button
+                  onClick={() => handleLike(post.id)}
+                  className={`flex items-center gap-1.5 text-xs transition-colors ${
+                    post.liked_by_me ? 'text-red-400' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <span>{post.liked_by_me ? '\u2764\ufe0f' : '\u{1f90d}'}</span>
+                  <span>{post.likes_count || 0}</span>
+                </button>
+                <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <span>\ud83d\udcac</span>
+                  <span>{post.comments_count || 0}</span>
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {posts.length === 0 && (
+        <div className="rounded-2xl border border-white/8 bg-white/3 p-8 text-center">
+          <p className="text-sm text-zinc-400">Nenhum post ainda. Seja o primeiro!</p>
+        </div>
+      )}
     </div>
   )
 }

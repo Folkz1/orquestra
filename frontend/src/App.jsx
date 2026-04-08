@@ -55,7 +55,7 @@ function AppRoutes({ onLogout }) {
   }
 
   if (location.pathname === '/community') {
-    return <Community />
+    return <Navigate to="/membros" replace />
   }
 
   if (location.pathname === '/comunidade') {

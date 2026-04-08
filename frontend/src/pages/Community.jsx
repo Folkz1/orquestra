@@ -106,45 +106,45 @@ const COURSES = [
 
 const MOCK_FEED = [
   {
-    id: 1, type: 'announcement', author: 'Diego', role: 'admin',
-    content: 'Bem-vindos a comunidade GuyFolkz! Aqui compartilho tudo que uso no dia a dia para gerar receita com IA e automacao. Comecem pelo modulo Stack Claude Code.',
-    created_at: new Date(Date.now() - 3600000).toISOString(), likes: 24, comments_count: 8, liked: false,
+    id: 1, post_type: 'announcement', author_name: 'Diego', author_role: 'admin',
+    content_md: 'Bem-vindos a comunidade GuyFolkz! Aqui compartilho tudo que uso no dia a dia para gerar receita com IA e automacao. Comecem pelo modulo Stack Claude Code.',
+    created_at: new Date(Date.now() - 3600000).toISOString(), likes_count: 24, comments_count: 8, liked_by_me: false,
   },
   {
-    id: 2, type: 'resource', author: 'Diego', role: 'admin',
-    content: 'Novo template de CLAUDE.md disponivel na aba Recursos. Esse e o mesmo que uso em todos os meus projetos. Baixa e adapta pro teu contexto.',
-    created_at: new Date(Date.now() - 86400000).toISOString(), likes: 18, comments_count: 5, liked: false,
+    id: 2, post_type: 'resource', author_name: 'Diego', author_role: 'admin',
+    content_md: 'Novo template de CLAUDE.md disponivel na aba Recursos. Esse e o mesmo que uso em todos os meus projetos. Baixa e adapta pro teu contexto.',
+    created_at: new Date(Date.now() - 86400000).toISOString(), likes_count: 18, comments_count: 5, liked_by_me: false,
   },
   {
-    id: 3, type: 'discussion', author: 'Thales', role: 'member',
-    content: 'Acabei de configurar meu primeiro orchestrator seguindo o modulo 2. A sensacao de ver o agente rodando sozinho e surreal. Alguem mais ja testou com mais de 3 projetos simultaneos?',
-    created_at: new Date(Date.now() - 172800000).toISOString(), likes: 11, comments_count: 3, liked: false,
+    id: 3, post_type: 'discussion', author_name: 'Thales', author_role: 'member',
+    content_md: 'Acabei de configurar meu primeiro orchestrator seguindo o modulo 2. A sensacao de ver o agente rodando sozinho e surreal. Alguem mais ja testou com mais de 3 projetos simultaneos?',
+    created_at: new Date(Date.now() - 172800000).toISOString(), likes_count: 11, comments_count: 3, liked_by_me: false,
   },
   {
-    id: 4, type: 'question', author: 'Marcos', role: 'member',
-    content: 'Estou com duvida sobre o heartbeat daemon. Ele roda em background no Windows tambem ou precisa de WSL? Meu setup e Windows 11 + PowerShell.',
-    created_at: new Date(Date.now() - 259200000).toISOString(), likes: 5, comments_count: 2, liked: false,
+    id: 4, post_type: 'question', author_name: 'Marcos', author_role: 'member',
+    content_md: 'Estou com duvida sobre o heartbeat daemon. Ele roda em background no Windows tambem ou precisa de WSL? Meu setup e Windows 11 + PowerShell.',
+    created_at: new Date(Date.now() - 259200000).toISOString(), likes_count: 5, comments_count: 2, liked_by_me: false,
   },
 ]
 
 const MOCK_MEMBERS = [
-  { id: 1, name: 'Diego', role: 'admin', joined: '2025-01-15', posts: 142, color: '#FF3333' },
-  { id: 2, name: 'Thales', role: 'member', joined: '2025-02-10', posts: 28, color: '#5ea6ff' },
-  { id: 3, name: 'Marcos', role: 'member', joined: '2025-02-18', posts: 15, color: '#8bd450' },
-  { id: 4, name: 'Rafael', role: 'member', joined: '2025-03-01', posts: 9, color: '#c084fc' },
-  { id: 5, name: 'Lucas', role: 'member', joined: '2025-03-05', posts: 7, color: '#f5c842' },
-  { id: 6, name: 'Ana', role: 'member', joined: '2025-03-10', posts: 4, color: '#67d7d0' },
-  { id: 7, name: 'Pedro', role: 'member', joined: '2025-03-12', posts: 3, color: '#ff6b6b' },
-  { id: 8, name: 'Carla', role: 'member', joined: '2025-03-15', posts: 2, color: '#ffa94d' },
+  { enrollment_id: 1, name: 'Diego', role: 'admin', enrolled_at: '2025-01-15', post_count: 142, color: '#FF3333' },
+  { enrollment_id: 2, name: 'Thales', role: 'member', enrolled_at: '2025-02-10', post_count: 28, color: '#5ea6ff' },
+  { enrollment_id: 3, name: 'Marcos', role: 'member', enrolled_at: '2025-02-18', post_count: 15, color: '#8bd450' },
+  { enrollment_id: 4, name: 'Rafael', role: 'member', enrolled_at: '2025-03-01', post_count: 9, color: '#c084fc' },
+  { enrollment_id: 5, name: 'Lucas', role: 'member', enrolled_at: '2025-03-05', post_count: 7, color: '#f5c842' },
+  { enrollment_id: 6, name: 'Ana', role: 'member', enrolled_at: '2025-03-10', post_count: 4, color: '#67d7d0' },
+  { enrollment_id: 7, name: 'Pedro', role: 'member', enrolled_at: '2025-03-12', post_count: 3, color: '#ff6b6b' },
+  { enrollment_id: 8, name: 'Carla', role: 'member', enrolled_at: '2025-03-15', post_count: 2, color: '#ffa94d' },
 ]
 
 const MOCK_RESOURCES = [
-  { id: 1, title: 'Template CLAUDE.md Pro', description: 'O mesmo CLAUDE.md usado em 8+ projetos ativos gerando R$15k+ MRR.', type: 'template', downloads: 87 },
-  { id: 2, title: 'Playbook Motor 100K', description: 'Priorizacao por impacto financeiro, scoring de backlog e execucao autonoma.', type: 'playbook', downloads: 54 },
-  { id: 3, title: 'Script Heartbeat Daemon', description: 'Daemon que monitora agentes, envia alertas e dispara acoes automaticas.', type: 'tool', downloads: 41 },
-  { id: 4, title: 'React Series Completa', description: 'Todos os 4 videos da serie React sobre Claude Code, do zero ao avancado.', type: 'video', downloads: 112 },
-  { id: 5, title: 'Skills Pack Jarbas', description: 'Pack com 15 skills prontas: delegar, proposta, deploy, validar e mais.', type: 'template', downloads: 63 },
-  { id: 6, title: 'Pipeline de Video Remotion', description: 'Setup completo para gerar shorts e long-form programaticamente.', type: 'tool', downloads: 29 },
+  { id: 1, title: 'Template CLAUDE.md Pro', description: 'O mesmo CLAUDE.md usado em 8+ projetos ativos gerando R$15k+ MRR.', resource_type: 'template', downloads_count: 87 },
+  { id: 2, title: 'Playbook Motor 100K', description: 'Priorizacao por impacto financeiro, scoring de backlog e execucao autonoma.', resource_type: 'playbook', downloads_count: 54 },
+  { id: 3, title: 'Script Heartbeat Daemon', description: 'Daemon que monitora agentes, envia alertas e dispara acoes automaticas.', resource_type: 'tool', downloads_count: 41 },
+  { id: 4, title: 'React Series Completa', description: 'Todos os 4 videos da serie React sobre Claude Code, do zero ao avancado.', resource_type: 'video', downloads_count: 112 },
+  { id: 5, title: 'Skills Pack Jarbas', description: 'Pack com 15 skills prontas: delegar, proposta, deploy, validar e mais.', resource_type: 'template', downloads_count: 63 },
+  { id: 6, title: 'Pipeline de Video Remotion', description: 'Setup completo para gerar shorts e long-form programaticamente.', resource_type: 'tool', downloads_count: 29 },
 ]
 
 const MOCK_LEADERBOARD = [
@@ -399,7 +399,7 @@ function CreatePostBox({ onPost, isLoggedIn }) {
     try {
       await communityRequest('/api/community/post', {
         method: 'POST',
-        body: JSON.stringify({ content: content.trim(), type }),
+        body: JSON.stringify({ content_md: content.trim(), post_type: type }),
       })
       setContent('')
       setType('discussion')
@@ -484,8 +484,8 @@ function PostCard({ post, isLoggedIn, onLike, onRefresh }) {
   const [loadingComments, setLoadingComments] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [submittingComment, setSubmittingComment] = useState(false)
-  const [liked, setLiked] = useState(post.liked)
-  const [likeCount, setLikeCount] = useState(post.likes)
+  const [liked, setLiked] = useState(post.liked_by_me)
+  const [likeCount, setLikeCount] = useState(post.likes_count)
 
   async function toggleComments() {
     if (showComments) {
@@ -519,7 +519,7 @@ function PostCard({ post, isLoggedIn, onLike, onRefresh }) {
     try {
       await communityRequest(`/api/community/post/${post.id}/comment`, {
         method: 'POST',
-        body: JSON.stringify({ content: commentText.trim() }),
+        body: JSON.stringify({ content_md: commentText.trim() }),
       })
       setCommentText('')
       // Reload comments
@@ -529,7 +529,7 @@ function PostCard({ post, isLoggedIn, onLike, onRefresh }) {
     setSubmittingComment(false)
   }
 
-  const memberColor = post.role === 'admin' ? '#FF3333' : '#5ea6ff'
+  const memberColor = post.author_role === 'admin' ? '#FF3333' : '#5ea6ff'
 
   return (
     <div style={{
@@ -538,12 +538,12 @@ function PostCard({ post, isLoggedIn, onLike, onRefresh }) {
     }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <InitialAvatar name={post.author} color={memberColor} size={36} />
+        <InitialAvatar name={post.author_name} color={memberColor} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{post.author}</span>
-            <RoleBadge role={post.role} />
-            <PostTypeBadge type={post.type} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{post.author_name}</span>
+            <RoleBadge role={post.author_role} />
+            <PostTypeBadge type={post.post_type} />
           </div>
           <span style={{ fontSize: 11, color: '#71717a' }}>{timeAgo(post.created_at)}</span>
         </div>
@@ -554,7 +554,7 @@ function PostCard({ post, isLoggedIn, onLike, onRefresh }) {
         fontSize: 14, color: '#d4d4d8', lineHeight: 1.6,
         whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0,
       }}>
-        {post.content}
+        {post.content_md}
       </p>
 
       {/* Actions */}
@@ -611,14 +611,14 @@ function PostCard({ post, isLoggedIn, onLike, onRefresh }) {
                   padding: '8px 10px', background: 'rgba(255,255,255,0.02)',
                   borderRadius: 10,
                 }}>
-                  <InitialAvatar name={c.author} color={c.role === 'admin' ? '#FF3333' : '#5ea6ff'} size={28} />
+                  <InitialAvatar name={c.author_name} color={c.author_role === 'admin' ? '#FF3333' : '#5ea6ff'} size={28} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{c.author}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{c.author_name}</span>
                       <span style={{ fontSize: 10, color: '#71717a' }}>{timeAgo(c.created_at)}</span>
                     </div>
                     <p style={{ fontSize: 13, color: '#d4d4d8', margin: '2px 0 0', lineHeight: 1.5 }}>
-                      {c.content}
+                      {c.content_md}
                     </p>
                   </div>
                 </div>
@@ -865,7 +865,7 @@ function MembrosTab() {
     }}>
       {members.map(member => (
         <div
-          key={member.id}
+          key={member.enrollment_id || member.id}
           style={{
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: 14, padding: 20, textAlign: 'center',
@@ -878,12 +878,12 @@ function MembrosTab() {
           <RoleBadge role={member.role} />
           <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 12 }}>
             <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: 0 }}>{member.posts}</p>
+              <p style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: 0 }}>{member.post_count ?? member.posts}</p>
               <p style={{ fontSize: 10, color: '#71717a', margin: 0 }}>posts</p>
             </div>
             <div style={{ textAlign: 'center' }}>
               <p style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: 0 }}>
-                {new Date(member.joined).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })}
+                {new Date(member.enrolled_at || member.joined).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })}
               </p>
               <p style={{ fontSize: 10, color: '#71717a', margin: 0 }}>entrou</p>
             </div>
@@ -932,7 +932,7 @@ function RecursosTab({ isLoggedIn }) {
       gap: 12,
     }}>
       {resources.map(resource => {
-        const typeCfg = RESOURCE_TYPES[resource.type] || RESOURCE_TYPES.template
+        const typeCfg = RESOURCE_TYPES[resource.resource_type || resource.type] || RESOURCE_TYPES.template
         return (
           <div
             key={resource.id}
@@ -951,7 +951,7 @@ function RecursosTab({ isLoggedIn }) {
                 {typeCfg.label}
               </span>
               <span style={{ fontSize: 11, color: '#71717a', marginLeft: 'auto' }}>
-                {resource.downloads} downloads
+                {resource.downloads_count ?? resource.downloads} downloads
               </span>
             </div>
             <h3 style={{ fontSize: 15, fontWeight: 600, color: '#fff', margin: '0 0 6px' }}>

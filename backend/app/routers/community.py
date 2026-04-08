@@ -237,8 +237,22 @@ async def auth_login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         "tier": row.tier,
     }
 
-    # MVP: log the code instead of sending email
-    logger.info("[COMMUNITY] *** AUTH CODE for %s: %s ***", email, code)
+    # Enviar codigo via WhatsApp se tiver telefone
+    phone = pending_data.get("phone") if "pending_data" in dir() else row.phone
+    if row.phone:
+        try:
+            from app.services.whatsapp import send_whatsapp_message
+            import asyncio
+            await send_whatsapp_message(
+                row.phone,
+                f"Seu codigo de acesso GuyFolkz: *{code}*\n\nVale por 10 minutos.",
+            )
+            logger.info("[COMMUNITY] Auth code sent via WhatsApp to %s", email)
+        except Exception as exc:
+            logger.warning("[COMMUNITY] Failed to send WhatsApp code to %s: %s — code logged", email, exc)
+            logger.info("[COMMUNITY] *** AUTH CODE for %s: %s ***", email, code)
+    else:
+        logger.info("[COMMUNITY] No phone for %s, code logged: %s", email, code)
 
     return {"status": "code_sent"}
 
@@ -275,6 +289,41 @@ async def auth_verify(req: VerifyRequest):
         token=token,
         enrollment_id=enrollment_id,
         name=name,
+        role=role,
+    )
+
+
+class PhoneLoginRequest(BaseModel):
+    phone: str = Field(..., min_length=8, max_length=20)
+
+
+@router.post("/auth/login-phone", response_model=TokenResponse)
+async def auth_login_phone(req: PhoneLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Issue JWT directly for a phone number that exists in playbook_enrollments as pro.
+    Used by CommunityMembers.jsx to bridge WhatsApp-based auth to community JWT.
+    """
+    phone = req.phone.strip()
+
+    result = await db.execute(
+        text("SELECT id, name, email, tier, phone FROM playbook_enrollments WHERE phone = :phone LIMIT 1"),
+        {"phone": phone},
+    )
+    row = result.first()
+
+    if not row or row.tier != "pro":
+        raise HTTPException(status_code=403, detail="Phone not found or not pro member")
+
+    enrollment_id = str(row.id)
+    email = row.email or ""
+    role = _determine_role(row.tier, row.phone)
+    token = _make_jwt(enrollment_id, email, role)
+
+    logger.info("[COMMUNITY] Phone login: %s (role=%s)", phone, role)
+
+    return TokenResponse(
+        token=token,
+        enrollment_id=enrollment_id,
+        name=row.name or "Membro",
         role=role,
     )
 

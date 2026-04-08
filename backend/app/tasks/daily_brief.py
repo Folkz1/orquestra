@@ -119,6 +119,20 @@ def start_scheduler():
 
     # ---- ATIVOS ----
 
+    # Wiki rebuild - daily at 4am UTC (1am BRT) - regenera knowledge graph
+    from app.routers.wiki import _generate_wiki
+    scheduler.add_job(
+        _generate_wiki,
+        "cron",
+        hour=4,
+        minute=0,
+        id="wiki_rebuild",
+        replace_existing=True,
+        timezone="UTC",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+
     # Scheduled messages - check every minute (funcional, envia msgs agendadas)
     scheduler.add_job(
         process_scheduled_messages,
@@ -146,7 +160,7 @@ def start_scheduler():
 
     scheduler.start()
     logger.info(
-        "[SCHEDULER] Started. ATIVOS: scheduled_messages (1min), subscription_alerts (dia 15). PAUSADOS: daily_brief, youtube, digests, proactive.",
+        "[SCHEDULER] Started. ATIVOS: wiki_rebuild (4h UTC), scheduled_messages (1min), subscription_alerts (dia 15). PAUSADOS: daily_brief, youtube, digests, proactive.",
     )
 
 
