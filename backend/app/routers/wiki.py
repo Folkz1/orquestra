@@ -147,7 +147,7 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
             messages = _fetch_messages(contact_id, limit=30)
             text_msgs = [
                 m for m in messages
-                if (m.get("content") or m.get("transcription")) and m.get("message_type") in ("text", "audio", None, "")
+                if m.get("content") or m.get("transcription")
             ]
             if text_msgs:
                 lines += ["", "## Conversas WhatsApp (ultimas 30)"]
