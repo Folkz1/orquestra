@@ -136,6 +136,7 @@ async def auth_middleware(request: Request, call_next):
     if (
         path in EXEMPT_PATHS
         or path.startswith("/api/webhook")
+        or path.startswith("/api/wiki/")
         or path.startswith("/api/youtube/briefings/latest/videos")
         or path.startswith("/api/youtube/thumbnails/")
         or path.startswith("/api/youtube/oauth/")
