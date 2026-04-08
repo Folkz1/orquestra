@@ -87,6 +87,11 @@ def _write(path: Path, content: str):
 
 # ─── Helpers de filtragem ─────────────────────────────────────────────────────
 
+_NOMES_INVALIDOS = {
+    "sem nome", "sem-nome", ".", "sr :)", "teste manual",
+    "teste", "test", "sem nome", "grupo fiel ia",
+}
+
 def _is_nome_valido(name: str | None) -> bool:
     """Filtra contatos sem nome real: numeros puros, sem-nome, nomes arabicos, etc."""
     if not name:
@@ -94,14 +99,14 @@ def _is_nome_valido(name: str | None) -> bool:
     name = name.strip()
     if len(name) < 3:
         return False
-    if name.lower() in ("sem nome", "sem-nome", ".", "sr :)", "teste manual"):
+    if name.lower() in _NOMES_INVALIDOS:
         return False
     # Numero puro (ex: "5551993448124")
     if name.replace("+", "").replace(" ", "").replace("-", "").isdigit():
         return False
-    # Caracteres nao-latinos majoritarios (arabico, etc)
+    # Caracteres nao-latinos majoritarios (arabico, emojis especiais, etc)
     latin_chars = sum(1 for c in name if ord(c) < 1000)
-    if latin_chars < len(name) * 0.5:
+    if latin_chars < len(name) * 0.6:
         return False
     return True
 
@@ -489,6 +494,16 @@ def _generate_wiki(only: str | None = None):
     projects = projects_raw if isinstance(projects_raw, list) else projects_raw.get("data", projects_raw.get("items", []))
 
     logger.info("wiki: %d contatos, %d gravacoes, %d projetos", len(contacts), len(recordings), len(projects))
+
+    # Limpar arquivos orfaos de geracoes anteriores (contacts e projects podem mudar)
+    if not only or only == "contacts":
+        contacts_dir = WIKI_DIR / "contacts"
+        if contacts_dir.exists():
+            valid_slugs = {_slug(c.get("name", "")) for c in contacts}
+            for f in contacts_dir.glob("*.md"):
+                if f.stem not in valid_slugs:
+                    f.unlink()
+                    logger.info("wiki: removido contato orfao %s", f.name)
 
     contact_names, recording_titles, project_names = [], [], []
 
