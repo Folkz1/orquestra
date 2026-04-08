@@ -579,6 +579,51 @@ async def wiki_graph():
     return {"nodes": nodes, "edges": edges}
 
 
+@router.get("/node/{node_type}/{slug}")
+async def wiki_node(node_type: str, slug: str):
+    """Retorna conteudo do .md de um node do wiki para exibicao no painel lateral."""
+    if node_type not in ("contacts", "projects", "recordings"):
+        raise HTTPException(status_code=400, detail="node_type invalido")
+    md_path = WIKI_DIR / node_type / f"{slug}.md"
+    if not md_path.exists():
+        raise HTTPException(status_code=404, detail="Node nao encontrado")
+
+    content = md_path.read_text(encoding="utf-8", errors="replace")
+
+    # Extrair secoes estruturadas para o frontend
+    sections: list[dict] = []
+    current_title = ""
+    current_lines: list[str] = []
+
+    for line in content.splitlines():
+        if line.startswith("## "):
+            if current_title:
+                sections.append({"title": current_title, "content": "\n".join(current_lines).strip()})
+            current_title = line[3:].strip()
+            current_lines = []
+        elif line.startswith("# "):
+            continue  # titulo principal ja esta no node
+        else:
+            current_lines.append(line)
+
+    if current_title:
+        sections.append({"title": current_title, "content": "\n".join(current_lines).strip()})
+
+    # Extrair subtitulo (linha >) para contexto rapido
+    subtitle = ""
+    for line in content.splitlines():
+        if line.startswith("> ") and not subtitle:
+            subtitle = line[2:].strip()
+
+    return {
+        "slug": slug,
+        "type": node_type,
+        "content": content,
+        "subtitle": subtitle,
+        "sections": sections,
+    }
+
+
 @router.get("/status", dependencies=[Depends(_require_wiki_key)])
 async def wiki_status():
     """Retorna as ultimas entradas do log de geracao."""

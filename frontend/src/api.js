@@ -728,6 +728,10 @@ export function getWikiGraph() {
   return request('/api/wiki/graph')
 }
 
+export function getWikiNode(nodeType, slug) {
+  return request(`/api/wiki/node/${nodeType}/${slug}`)
+}
+
 export function submitTestSession(sessionId) {
   const base = import.meta.env.VITE_API_URL || ''
   return fetch(`${base}/api/test-sessions/${sessionId}/submit`, {

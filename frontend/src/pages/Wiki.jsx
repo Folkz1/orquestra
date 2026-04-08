@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
-import { getWikiGraph } from '../api'
+import { getWikiGraph, getWikiNode } from '../api'
 
 const TYPE_COLORS = {
   contacts:   '#22c55e',  // lime   — pessoas
@@ -20,6 +20,45 @@ const TYPE_RADIUS = {
   recordings: 6,
 }
 
+// Renderiza secoes do .md no painel lateral
+function WikiNodeContent({ nodeType, slug }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!nodeType || !slug) return
+    setLoading(true)
+    setData(null)
+    getWikiNode(nodeType, slug)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [nodeType, slug])
+
+  if (loading) return <p className="text-white/30 text-xs italic">Carregando...</p>
+  if (!data || !data.sections?.length) return null
+
+  // Secoes que queremos mostrar no painel (filtrar secoes de rodape)
+  const SKIP = ['---', '']
+  const sections = data.sections.filter(s => s.title && !SKIP.includes(s.title) && s.content)
+
+  return (
+    <div className="space-y-3 mt-1">
+      {data.subtitle && (
+        <p className="text-white/35 text-xs leading-relaxed">{data.subtitle}</p>
+      )}
+      {sections.map((sec, i) => (
+        <div key={i}>
+          <p className="text-xs text-white/30 uppercase tracking-wider mb-1">{sec.title}</p>
+          <div className="text-xs text-white/60 leading-relaxed whitespace-pre-wrap">
+            {sec.content}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function Wiki() {
   const svgRef        = useRef(null)
   const containerRef  = useRef(null)
@@ -29,6 +68,7 @@ export default function Wiki() {
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
   const [filter, setFilter]     = useState('all')  // all | contacts | projects | recordings
+  const [activeTab, setActiveTab] = useState('conexoes')  // conexoes | conteudo
 
   // Fetch dados do backend
   useEffect(() => {
@@ -60,6 +100,11 @@ export default function Wiki() {
       if (simRef.current) simRef.current.stop()
     }
   }, [graph, filter])
+
+  // Resetar aba ao trocar de node
+  useEffect(() => {
+    if (selected) setActiveTab('conexoes')
+  }, [selected?.id])
 
   // Contar conexões do node selecionado
   const selectedEdges = selected && graph
@@ -152,12 +197,12 @@ export default function Wiki() {
 
         {/* Painel lateral — node selecionado */}
         {selected && (
-          <div className="w-72 flex flex-col gap-3 rounded-xl border border-white/8 bg-black/30 p-4 overflow-y-auto">
+          <div className="w-80 flex flex-col gap-0 rounded-xl border border-white/8 bg-black/30 overflow-hidden">
             {/* Header do node */}
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+            <div className="p-4 pb-3 border-b border-white/8">
+              <div className="flex items-start justify-between gap-2 mb-2">
                 <span
-                  className="inline-block px-2 py-0.5 rounded text-xs font-medium mb-2"
+                  className="inline-block px-2 py-0.5 rounded text-xs font-medium"
                   style={{
                     background: TYPE_COLORS[selected.type] + '20',
                     color: TYPE_COLORS[selected.type],
@@ -166,49 +211,78 @@ export default function Wiki() {
                 >
                   {TYPE_LABELS[selected.type] || selected.type}
                 </span>
-                <h2 className="text-white font-medium text-sm leading-snug">{selected.label}</h2>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="text-white/30 hover:text-white/60 text-lg leading-none flex-shrink-0"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                onClick={() => setSelected(null)}
-                className="text-white/30 hover:text-white/60 text-lg leading-none flex-shrink-0 mt-1"
-              >
-                ×
-              </button>
+              <h2 className="text-white font-medium text-sm leading-snug">{selected.label}</h2>
             </div>
 
-            {/* Stat de conexões */}
-            <div className="rounded-lg bg-white/4 px-3 py-2 text-xs text-white/50">
-              <span className="text-white/80 font-medium text-base">{selectedEdges.length}</span>
-              {' '}conexões diretas
+            {/* Abas */}
+            <div className="flex border-b border-white/8">
+              {[
+                { id: 'conexoes', label: `Conexões (${selectedEdges.length})` },
+                { id: 'conteudo', label: 'Detalhes' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                    activeTab === tab.id
+                      ? 'text-white border-b-2 border-lime-500'
+                      : 'text-white/40 hover:text-white/60'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
-            {/* Lista de conexões */}
-            {selectedEdges.length > 0 && (
-              <div>
-                <p className="text-xs text-white/30 uppercase tracking-wider mb-2">Conectado a</p>
-                <div className="space-y-1">
-                  {selectedEdges.map((edge, i) => {
-                    const other = getConnectedNode(edge)
-                    if (!other) return null
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => setSelected(other)}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-left transition-colors group"
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ background: TYPE_COLORS[other.type] }}
-                        />
-                        <span className="text-xs text-white/60 group-hover:text-white/90 truncate">
-                          {other.label}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+            {/* Conteúdo das abas */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {activeTab === 'conexoes' && (
+                <>
+                  <div className="rounded-lg bg-white/4 px-3 py-2 text-xs text-white/50 mb-3">
+                    <span className="text-white/80 font-medium text-base">{selectedEdges.length}</span>
+                    {' '}conexões diretas
+                  </div>
+
+                  {selectedEdges.length > 0 && (
+                    <div>
+                      <p className="text-xs text-white/30 uppercase tracking-wider mb-2">Conectado a</p>
+                      <div className="space-y-1">
+                        {selectedEdges.map((edge, i) => {
+                          const other = getConnectedNode(edge)
+                          if (!other) return null
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => setSelected(other)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-left transition-colors group"
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ background: TYPE_COLORS[other.type] }}
+                              />
+                              <span className="text-xs text-white/60 group-hover:text-white/90 truncate">
+                                {other.label}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {activeTab === 'conteudo' && (
+                <WikiNodeContent nodeType={selected.type} slug={selected.id} />
+              )}
+            </div>
           </div>
         )}
       </div>
