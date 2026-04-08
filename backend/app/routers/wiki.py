@@ -85,6 +85,83 @@ def _write(path: Path, content: str):
     logger.info("wiki: wrote %s", path.relative_to(WIKI_DIR))
 
 
+# ─── Helpers de filtragem ─────────────────────────────────────────────────────
+
+def _is_nome_valido(name: str | None) -> bool:
+    """Filtra contatos sem nome real: numeros puros, sem-nome, nomes arabicos, etc."""
+    if not name:
+        return False
+    name = name.strip()
+    if len(name) < 3:
+        return False
+    if name.lower() in ("sem nome", "sem-nome", ".", "sr :)", "teste manual"):
+        return False
+    # Numero puro (ex: "5551993448124")
+    if name.replace("+", "").replace(" ", "").replace("-", "").isdigit():
+        return False
+    # Caracteres nao-latinos majoritarios (arabico, etc)
+    latin_chars = sum(1 for c in name if ord(c) < 1000)
+    if latin_chars < len(name) * 0.5:
+        return False
+    return True
+
+
+def _is_cliente_ativo(c: dict) -> bool:
+    """Retorna True se o contato deve aparecer no wiki (cliente/parceiro real)."""
+    if c.get("ignored"):
+        return False
+    if c.get("is_group"):
+        return False
+    if not _is_nome_valido(c.get("name")):
+        return False
+    # Tem mensagens, notas ou engagement
+    has_activity = (
+        c.get("last_message_at") is not None
+        or (c.get("engagement_score") or 0) > 0
+        or bool(c.get("notes"))
+        or bool(c.get("monthly_revenue"))
+    )
+    return has_activity
+
+
+# Cache de propostas para evitar fetch por contato
+_proposals_cache: list[dict] = []
+
+def _load_proposals_cache() -> list[dict]:
+    global _proposals_cache
+    if _proposals_cache:
+        return _proposals_cache
+    try:
+        raw = _fetch("/api/proposals?limit=200")
+        _proposals_cache = raw if isinstance(raw, list) else raw.get("items", raw.get("data", []))
+    except Exception as e:
+        logger.warning("wiki: erro ao buscar propostas: %s", e)
+        _proposals_cache = []
+    return _proposals_cache
+
+
+def _fetch_proposals_for(contact_id: str, phone: str) -> list[dict]:
+    all_props = _load_proposals_cache()
+    return [
+        p for p in all_props
+        if p.get("contact_id") == contact_id
+        or (phone and phone != "?" and p.get("client_phone") == phone)
+    ]
+
+
+def _fetch_tasks_for_project(project_id: str) -> list[dict]:
+    if not project_id:
+        return []
+    try:
+        raw = _fetch(f"/api/tasks?project_id={project_id}&limit=10")
+        tasks = raw if isinstance(raw, list) else raw.get("items", raw.get("data", []))
+        # So tarefas abertas
+        return [t for t in tasks if t.get("status") not in ("done",)]
+    except Exception as e:
+        logger.warning("wiki: erro ao buscar tasks projeto %s: %s", project_id, e)
+        return []
+
+
 # ─── Geradores ────────────────────────────────────────────────────────────────
 
 def _fetch_messages(contact_id: str, limit: int = 100) -> list[dict]:
@@ -147,36 +224,69 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
     names = []
     contact_names = [c.get("name", "") for c in contacts if c.get("name")]
 
+    # Mapa projeto-id para nome (para buscar tasks)
+    project_by_name = {p.get("name", ""): p for p in projects}
+
     def recs_for(name):
         nl = name.lower()
         return [r for r in recordings if nl in (r.get("title") or "").lower() or nl in (r.get("summary") or "").lower()]
 
     for c in contacts:
-        name = c.get("name") or "Sem Nome"
-        if name.startswith("_DELETAR"):
-            continue
+        name       = c.get("name") or "Sem Nome"
         phone      = c.get("phone") or "?"
         created    = _fmt_date(c.get("created_at"))
         tags       = c.get("tags") or []
         notes      = c.get("notes") or ""
         contact_id = c.get("id") or ""
+        pipeline   = c.get("pipeline_stage") or "lead"
+        revenue    = c.get("monthly_revenue") or c.get("total_revenue") or ""
+        next_action = c.get("next_action") or ""
+        last_msg_at = _fmt_date(c.get("last_message_at"))
 
         related_projects   = [p.get("name") for p in projects if name.lower() in (p.get("name") or "").lower()]
         related_recordings = recs_for(name)
 
         lines = [
             f"# {name}", "",
-            f"> Contato WhatsApp | Adicionado em {created}", "",
-            "## Dados",
+            f"> Contato WhatsApp | Adicionado em {created} | Ultima msg: {last_msg_at}", "",
+            "## Status Comercial",
+            f"- **Pipeline:** `{pipeline}`",
             f"- **Telefone:** `{phone}`",
             f"- **Tags:** {', '.join(tags) if tags else 'nenhuma'}",
         ]
+        if revenue:
+            lines.append(f"- **Receita mensal:** {revenue}")
+        if next_action:
+            lines.append(f"- **Proximo passo:** {next_action}")
+
         if notes:
             lines += ["", "## Notas", notes]
+
+        # Propostas
+        proposals = _fetch_proposals_for(contact_id, phone)
+        if proposals:
+            lines += ["", "## Propostas"]
+            for p in proposals[:8]:
+                status = p.get("status", "?")
+                value  = p.get("total_value") or "?"
+                title  = p.get("title") or "?"
+                date   = _fmt_date(p.get("created_at"))
+                lines.append(f"- `[{status}]` **{title}** — R$ {value} ({date})")
+
         if related_projects:
             lines += ["", "## Projetos Relacionados"]
-            for p in related_projects:
-                lines.append(f"- {_wikilink(p)}")
+            for pname in related_projects:
+                lines.append(f"- {_wikilink(pname)}")
+                # Tasks abertas do projeto
+                proj_obj = project_by_name.get(pname, {})
+                proj_id  = proj_obj.get("id") or ""
+                tasks = _fetch_tasks_for_project(proj_id)
+                for t in tasks[:5]:
+                    prio   = t.get("priority", "")
+                    status = t.get("status", "")
+                    title  = t.get("title", "")
+                    lines.append(f"  - `[{status}]` {title}" + (f" _{prio}_" if prio else ""))
+
         if related_recordings:
             lines += ["", "## Calls e Gravacoes"]
             for r in related_recordings[:10]:
@@ -199,7 +309,7 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
                 if conv_summary:
                     lines += ["", "## Historico WhatsApp (resumo)", conv_summary]
 
-                # Ultimas 10 mensagens literais (mais recentes primeiro na API)
+                # Ultimas 10 mensagens literais
                 lines += ["", f"## Mensagens Recentes ({min(10, len(text_msgs))} de {len(text_msgs)})"]
                 for m in text_msgs[:10]:
                     direction = "→" if m.get("direction") == "outgoing" else "←"
@@ -208,9 +318,6 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
                     if content:
                         lines.append(f"- `{ts}` {direction} {content}")
 
-        summary = c.get("last_message") or c.get("summary") or ""
-        if summary:
-            lines += ["", "## Ultimo Contato", f"> {summary[:300]}"]
         lines += ["", "---", f"*Atualizado em {_now()} pelo wiki da Orquestra*"]
 
         _write(WIKI_DIR / "contacts" / f"{_slug(name)}.md", "\n".join(lines))
@@ -355,12 +462,15 @@ def _append_log(n_contacts, n_recordings, n_projects):
 # ─── Funcao principal de geracao ──────────────────────────────────────────────
 
 def _generate_wiki(only: str | None = None):
+    global _proposals_cache
+    _proposals_cache = []  # limpar cache a cada geracao
     logger.info("wiki: iniciando geracao (only=%s)", only)
 
-    # Buscar dados
-    contacts_raw = _fetch("/api/contacts?limit=200")
-    contacts = contacts_raw if isinstance(contacts_raw, list) else contacts_raw.get("data", contacts_raw.get("items", []))
-    contacts = [c for c in contacts if not (c.get("name") or "").startswith("_DELETAR")]
+    # Buscar contatos e filtrar apenas clientes ativos reais
+    contacts_raw = _fetch("/api/contacts?limit=200&is_group=false")
+    all_contacts = contacts_raw if isinstance(contacts_raw, list) else contacts_raw.get("data", contacts_raw.get("items", []))
+    contacts = [c for c in all_contacts if _is_cliente_ativo(c)]
+    logger.info("wiki: %d/%d contatos passaram no filtro de clientes ativos", len(contacts), len(all_contacts))
 
     recordings = []
     page = 1

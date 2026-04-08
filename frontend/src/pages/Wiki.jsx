@@ -246,24 +246,37 @@ function renderForceGraph(svgEl, containerEl, nodes, edges, onSelect) {
     .filter(e => nodeById.has(e.source) && nodeById.has(e.target))
     .map(e => ({ source: e.source, target: e.target }))
 
-  // Simulation
+  // Simulation — repulsao maior para espaçar bem 100+ nos
   const simulation = d3.forceSimulation(simNodes)
     .force('link', d3.forceLink(simEdges)
       .id(d => d.id)
-      .distance(60)
-      .strength(0.4)
+      .distance(90)
+      .strength(0.5)
     )
-    .force('charge', d3.forceManyBody().strength(-120))
+    .force('charge', d3.forceManyBody().strength(-280))
     .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('collision', d3.forceCollide().radius(d => (TYPE_RADIUS[d.type] || 7) + 4))
+    .force('collision', d3.forceCollide().radius(d => (TYPE_RADIUS[d.type] || 7) + 8))
 
-  // Edges (linhas)
+  // Edges (linhas) — mais visiveis
   const link = g.append('g')
     .selectAll('line')
     .data(simEdges)
     .join('line')
-    .attr('stroke', 'rgba(255,255,255,0.08)')
-    .attr('stroke-width', 1)
+    .attr('stroke', 'rgba(255,255,255,0.22)')
+    .attr('stroke-width', 1.2)
+
+  // Tooltip flutuante para labels de todos os nos
+  const tooltip = d3.select(containerEl).append('div')
+    .style('position', 'absolute')
+    .style('pointer-events', 'none')
+    .style('background', 'rgba(0,0,0,0.85)')
+    .style('color', 'rgba(255,255,255,0.9)')
+    .style('font-size', '11px')
+    .style('padding', '3px 7px')
+    .style('border-radius', '5px')
+    .style('white-space', 'nowrap')
+    .style('display', 'none')
+    .style('z-index', '10')
 
   // Nodes (círculos)
   const node = g.append('g')
@@ -275,17 +288,32 @@ function renderForceGraph(svgEl, containerEl, nodes, edges, onSelect) {
     .attr('fill-opacity', 0.85)
     .attr('stroke', d => TYPE_COLORS[d.type] || '#888')
     .attr('stroke-width', 1.5)
-    .attr('stroke-opacity', 0.4)
+    .attr('stroke-opacity', 0.5)
     .style('cursor', 'pointer')
+    .on('mouseenter', (event, d) => {
+      tooltip
+        .text(d.label)
+        .style('display', 'block')
+        .style('left', (event.offsetX + 12) + 'px')
+        .style('top',  (event.offsetY - 6) + 'px')
+    })
+    .on('mousemove', (event) => {
+      tooltip
+        .style('left', (event.offsetX + 12) + 'px')
+        .style('top',  (event.offsetY - 6) + 'px')
+    })
+    .on('mouseleave', () => tooltip.style('display', 'none'))
     .on('click', (event, d) => {
       event.stopPropagation()
+      tooltip.style('display', 'none')
       onSelect(d)
-      // Highlight: escurecer os outros
       node.attr('fill-opacity', n => n.id === d.id ? 1 : 0.2)
       link.attr('stroke', e =>
         e.source.id === d.id || e.target.id === d.id
-          ? 'rgba(255,255,255,0.35)'
-          : 'rgba(255,255,255,0.04)'
+          ? 'rgba(255,255,255,0.6)'
+          : 'rgba(255,255,255,0.05)'
+      ).attr('stroke-width', e =>
+        e.source.id === d.id || e.target.id === d.id ? 2 : 1
       )
     })
     .call(
@@ -301,23 +329,24 @@ function renderForceGraph(svgEl, containerEl, nodes, edges, onSelect) {
         })
     )
 
-  // Labels (só para projetos e nodes com poucas conexões)
+  // Labels fixos apenas para projetos (sempre visiveis)
   const label = g.append('g')
     .selectAll('text')
     .data(simNodes.filter(n => n.type === 'projects'))
     .join('text')
-    .text(d => d.label.length > 20 ? d.label.slice(0, 18) + '…' : d.label)
-    .attr('font-size', 9)
-    .attr('fill', 'rgba(255,255,255,0.55)')
+    .text(d => d.label.length > 22 ? d.label.slice(0, 20) + '…' : d.label)
+    .attr('font-size', 10)
+    .attr('font-weight', '500')
+    .attr('fill', 'rgba(255,255,255,0.75)')
     .attr('text-anchor', 'middle')
-    .attr('dy', d => -(TYPE_RADIUS[d.type] || 7) - 4)
+    .attr('dy', d => -(TYPE_RADIUS[d.type] || 7) - 5)
     .style('pointer-events', 'none')
 
   // Deselect ao clicar no fundo
   svg.on('click', () => {
     onSelect(null)
     node.attr('fill-opacity', 0.85)
-    link.attr('stroke', 'rgba(255,255,255,0.08)')
+    link.attr('stroke', 'rgba(255,255,255,0.22)').attr('stroke-width', 1.2)
   })
 
   // Tick
