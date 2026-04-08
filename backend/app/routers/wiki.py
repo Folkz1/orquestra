@@ -86,6 +86,17 @@ def _write(path: Path, content: str):
 
 # ─── Geradores ────────────────────────────────────────────────────────────────
 
+def _fetch_messages(contact_id: str, limit: int = 30) -> list[dict]:
+    """Busca ultimas mensagens WhatsApp de um contato."""
+    try:
+        raw = _fetch(f"/api/messages?contact_id={contact_id}&limit={limit}")
+        msgs = raw if isinstance(raw, list) else raw.get("items", raw.get("messages", raw.get("data", [])))
+        return msgs or []
+    except Exception as e:
+        logger.warning("wiki: erro ao buscar msgs do contato %s: %s", contact_id, e)
+        return []
+
+
 def _build_contacts(contacts, recordings, projects) -> list[str]:
     names = []
     contact_names = [c.get("name", "") for c in contacts if c.get("name")]
@@ -98,12 +109,13 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
         name = c.get("name") or "Sem Nome"
         if name.startswith("_DELETAR"):
             continue
-        phone   = c.get("phone") or "?"
-        created = _fmt_date(c.get("created_at"))
-        tags    = c.get("tags") or []
-        notes   = c.get("notes") or ""
+        phone      = c.get("phone") or "?"
+        created    = _fmt_date(c.get("created_at"))
+        tags       = c.get("tags") or []
+        notes      = c.get("notes") or ""
+        contact_id = c.get("id") or ""
 
-        related_projects  = [p.get("name") for p in projects if name.lower() in (p.get("name") or "").lower()]
+        related_projects   = [p.get("name") for p in projects if name.lower() in (p.get("name") or "").lower()]
         related_recordings = recs_for(name)
 
         lines = [
@@ -129,6 +141,24 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
                     lines.append(f"  - Decisao: {d}")
                 for a in (r.get("action_items") or [])[:2]:
                     lines.append(f"  - Action: {a}")
+
+        # Mensagens WhatsApp
+        if contact_id:
+            messages = _fetch_messages(contact_id, limit=30)
+            text_msgs = [
+                m for m in messages
+                if (m.get("content") or m.get("transcription")) and m.get("message_type") in ("text", "audio", None, "")
+            ]
+            if text_msgs:
+                lines += ["", "## Conversas WhatsApp (ultimas 30)"]
+                for m in text_msgs[:30]:
+                    direction = "→" if m.get("direction") == "outbound" else "←"
+                    ts = _fmt_date(m.get("timestamp") or m.get("created_at"))
+                    content = m.get("content") or m.get("transcription") or ""
+                    content = content.strip().replace("\n", " ")[:200]
+                    if content:
+                        lines.append(f"- `{ts}` {direction} {content}")
+
         summary = c.get("last_message") or c.get("summary") or ""
         if summary:
             lines += ["", "## Ultimo Contato", f"> {summary[:300]}"]
