@@ -12,6 +12,7 @@ GET  /api/wiki/status   → log das ultimas geracoes (WIKI_SECRET_KEY)
 import re
 import json
 import logging
+import asyncio
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,7 +87,7 @@ def _write(path: Path, content: str):
 
 # ─── Geradores ────────────────────────────────────────────────────────────────
 
-def _fetch_messages(contact_id: str, limit: int = 30) -> list[dict]:
+def _fetch_messages(contact_id: str, limit: int = 100) -> list[dict]:
     """Busca ultimas mensagens WhatsApp de um contato."""
     try:
         raw = _fetch(f"/api/messages?contact_id={contact_id}&limit={limit}")
@@ -95,6 +96,51 @@ def _fetch_messages(contact_id: str, limit: int = 30) -> list[dict]:
     except Exception as e:
         logger.warning("wiki: erro ao buscar msgs do contato %s: %s", contact_id, e)
         return []
+
+
+async def _summarize_conversation(contact_name: str, messages: list[dict]) -> str:
+    """Gera resumo do historico completo de conversa usando LLM."""
+    try:
+        from app.services.llm import chat_completion
+
+        # Montar transcript completo (mais antigo -> mais recente, invertido pois API retorna recente primeiro)
+        transcript_lines = []
+        for m in reversed(messages):
+            content = (m.get("content") or m.get("transcription") or "").strip()
+            if not content:
+                continue
+            direction = "Diego" if m.get("direction") == "outgoing" else contact_name
+            ts = (m.get("timestamp") or m.get("created_at") or "")[:10]
+            transcript_lines.append(f"[{ts}] {direction}: {content[:300]}")
+
+        if not transcript_lines:
+            return ""
+
+        transcript = "\n".join(transcript_lines[-80:])  # max 80 msgs para o prompt
+
+        prompt = f"""Analise essa conversa de WhatsApp entre Diego (empreendedor de automacao B2B) e {contact_name}.
+
+Resumo em 3-5 paragrafos curtos:
+1. Quem e esse contato e qual o contexto do relacionamento
+2. Principais topicos ja discutidos
+3. Status atual / o que esta pendente
+4. Tom da relacao (cliente, parceiro, prospect, etc)
+
+Seja direto e factual. Nao invente informacao que nao esta na conversa.
+
+CONVERSA:
+{transcript}"""
+
+        result = await chat_completion(
+            [{"role": "user", "content": prompt}],
+            model=settings.MODEL_CHAT_CHEAP,
+            max_tokens=600,
+            temperature=0.2,
+        )
+        return result.strip()
+    except Exception as e:
+        logger.warning("wiki: erro ao sumarizar conversa de %s: %s", contact_name, e)
+        return ""
 
 
 def _build_contacts(contacts, recordings, projects) -> list[str]:
@@ -144,18 +190,21 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
 
         # Mensagens WhatsApp
         if contact_id:
-            messages = _fetch_messages(contact_id, limit=30)
-            text_msgs = [
-                m for m in messages
-                if m.get("content") or m.get("transcription")
-            ]
+            messages = _fetch_messages(contact_id, limit=100)
+            text_msgs = [m for m in messages if m.get("content") or m.get("transcription")]
+
             if text_msgs:
-                lines += ["", "## Conversas WhatsApp (ultimas 30)"]
-                for m in text_msgs[:30]:
-                    direction = "→" if m.get("direction") == "outbound" else "←"
-                    ts = _fmt_date(m.get("timestamp") or m.get("created_at"))
-                    content = m.get("content") or m.get("transcription") or ""
-                    content = content.strip().replace("\n", " ")[:200]
+                # Resumo do historico completo via LLM
+                conv_summary = asyncio.run(_summarize_conversation(name, text_msgs))
+                if conv_summary:
+                    lines += ["", "## Historico WhatsApp (resumo)", conv_summary]
+
+                # Ultimas 10 mensagens literais (mais recentes primeiro na API)
+                lines += ["", f"## Mensagens Recentes ({min(10, len(text_msgs))} de {len(text_msgs)})"]
+                for m in text_msgs[:10]:
+                    direction = "→" if m.get("direction") == "outgoing" else "←"
+                    ts = (m.get("timestamp") or m.get("created_at") or "")[:10]
+                    content = (m.get("content") or m.get("transcription") or "").strip().replace("\n", " ")[:200]
                     if content:
                         lines.append(f"- `{ts}` {direction} {content}")
 
