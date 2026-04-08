@@ -229,7 +229,8 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
     names = []
     contact_names = [c.get("name", "") for c in contacts if c.get("name")]
 
-    # Mapa projeto-id para nome (para buscar tasks)
+    # Mapas para lookup rapido
+    project_by_id   = {p.get("id", ""): p for p in projects}
     project_by_name = {p.get("name", ""): p for p in projects}
 
     def recs_for(name):
@@ -244,25 +245,54 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
         notes      = c.get("notes") or ""
         contact_id = c.get("id") or ""
         pipeline   = c.get("pipeline_stage") or "lead"
-        revenue    = c.get("monthly_revenue") or c.get("total_revenue") or ""
+        revenue_m  = c.get("monthly_revenue") or ""
+        revenue_t  = c.get("total_revenue") or ""
         next_action = c.get("next_action") or ""
+        next_action_date = _fmt_date(c.get("next_action_date"))
         last_msg_at = _fmt_date(c.get("last_message_at"))
+        company    = c.get("company") or ""
+        email      = c.get("email") or ""
+        unread     = c.get("unread_count") or 0
+        acquired   = _fmt_date(c.get("acquired_at"))
+        support_ends = _fmt_date(c.get("support_ends_at"))
+        engagement = c.get("engagement_score") or 0
 
-        related_projects   = [p.get("name") for p in projects if name.lower() in (p.get("name") or "").lower()]
+        # Projeto via project_id direto (prioritario)
+        contact_project_id = c.get("project_id")
+        related_projects = []
+        if contact_project_id and contact_project_id in project_by_id:
+            related_projects = [project_by_id[contact_project_id].get("name")]
+        # Fallback: substring match
+        if not related_projects:
+            related_projects = [p.get("name") for p in projects if name.lower() in (p.get("name") or "").lower()]
+
         related_recordings = recs_for(name)
 
         lines = [
             f"# {name}", "",
-            f"> Contato WhatsApp | Adicionado em {created} | Ultima msg: {last_msg_at}", "",
+            f"> Contato WhatsApp | Pipeline: `{pipeline}` | Ultima msg: {last_msg_at}", "",
             "## Status Comercial",
             f"- **Pipeline:** `{pipeline}`",
             f"- **Telefone:** `{phone}`",
             f"- **Tags:** {', '.join(tags) if tags else 'nenhuma'}",
+            f"- **Engagement:** {engagement}/100",
         ]
-        if revenue:
-            lines.append(f"- **Receita mensal:** {revenue}")
+        if company:
+            lines.append(f"- **Empresa:** {company}")
+        if email:
+            lines.append(f"- **Email:** `{email}`")
+        if revenue_m:
+            lines.append(f"- **Receita mensal:** {revenue_m}")
+        if revenue_t:
+            lines.append(f"- **Receita total:** {revenue_t}")
+        if acquired and acquired != "?":
+            lines.append(f"- **Cliente desde:** {acquired}")
+        if support_ends and support_ends != "?":
+            lines.append(f"- **Suporte ate:** {support_ends}")
         if next_action:
-            lines.append(f"- **Proximo passo:** {next_action}")
+            lines.append(f"- **Proximo passo:** {next_action}" + (f" (ate {next_action_date})" if next_action_date != "?" else ""))
+        if unread > 0:
+            lines.append(f"- **Mensagens nao lidas:** {unread}")
 
         if notes:
             lines += ["", "## Notas", notes]
@@ -322,6 +352,34 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
                     content = (m.get("content") or m.get("transcription") or "").strip().replace("\n", " ")[:200]
                     if content:
                         lines.append(f"- `{ts}` {direction} {content}")
+
+        # Memoria rica dos agentes Jarbas Lab (ingerida via POST /api/wiki/memory)
+        memory_dir = WIKI_DIR / "memory"
+        if memory_dir.exists():
+            # Buscar pasta de memoria que melhor corresponde ao contato
+            contact_slug = _slug(name)
+            matched_dir = None
+            for mem_folder in memory_dir.iterdir():
+                if not mem_folder.is_dir():
+                    continue
+                # Match: slug do contato no nome da pasta ou vice-versa
+                if contact_slug in mem_folder.name or mem_folder.name.split("-")[0] in contact_slug:
+                    matched_dir = mem_folder
+                    break
+
+            if matched_dir:
+                MEMORY_SECTIONS = {
+                    "context": "Contexto Operacional",
+                    "decisions": "Decisoes Historicas",
+                    "pending": "Action Items Pendentes",
+                    "calls": "Calls Registradas",
+                }
+                for fname, section_title in MEMORY_SECTIONS.items():
+                    fpath = matched_dir / f"{fname}.md"
+                    if fpath.exists():
+                        content = fpath.read_text(encoding="utf-8", errors="replace").strip()
+                        if content:
+                            lines += ["", f"## {section_title}", content[:3000]]
 
         lines += ["", "---", f"*Atualizado em {_now()} pelo wiki da Orquestra*"]
 
@@ -405,23 +463,104 @@ def _build_projects(projects, contacts, recordings) -> list[str]:
             continue
         seen.add(name)
 
+        proj_id     = p.get("id") or ""
         status      = p.get("status") or "?"
         description = p.get("description") or ""
         created     = _fmt_date(p.get("created_at"))
-        stack       = p.get("stack") or p.get("tech_stack") or ""
-        mentioned   = find_contacts(name + " " + description)
+        keywords    = p.get("keywords") or []
+        creds       = p.get("credentials") or {}
+        stats       = p.get("stats") or {}
+
+        # Stack real vem dentro de credentials
+        stack       = creds.get("stack") or p.get("stack") or p.get("tech_stack") or ""
+        github      = creds.get("github") or {}
+        urls        = creds.get("urls") or {}
+        easypanel   = creds.get("easypanel") or {}
+
+        # Dono do projeto (match reverso via project_id no contato)
+        owners = [c for c in contacts if c.get("project_id") == proj_id]
+        owner_names = [c.get("name") for c in owners]
+
+        # Contatos mencionados no nome/descricao (fallback)
+        mentioned = find_contacts(name + " " + description)
+        # Unir donos + mencionados sem duplicata
+        all_contacts = list(dict.fromkeys(owner_names + mentioned))
+
         related_recs = recs_for(name)
 
+        # Tasks e propostas do projeto
+        tasks = _fetch_tasks_for_project(proj_id)
+        owner_phones = [c.get("phone") for c in owners if c.get("phone")]
+        proposals = [
+            pr for pr in _load_proposals_cache()
+            if pr.get("client_phone") in owner_phones
+            or any(pr.get("contact_id") == o.get("id") for o in owners)
+        ]
+
         lines = [f"# {name}", "", f"> Projeto | Status: `{status}` | Criado em: {created}", ""]
+
         if description:
             lines += ["## Descricao", description, ""]
+
         if stack:
             lines += ["## Stack", f"`{stack}`", ""]
-        if mentioned:
-            lines += ["## Contatos Relacionados"]
-            for c in mentioned:
-                lines.append(f"- {_wikilink(c)}")
+
+        if keywords:
+            lines += ["## Keywords", ", ".join(f"`{k}`" for k in keywords), ""]
+
+        # URLs e infra (sem secrets)
+        url_lines = []
+        for label, url in urls.items():
+            if url:
+                url_lines.append(f"- **{label}:** `{url}`")
+        if github.get("repo"):
+            url_lines.append(f"- **GitHub:** `{github['repo']}` (branch: `{github.get('branch', 'main')}`)")
+        if easypanel.get("project"):
+            url_lines.append(f"- **EasyPanel:** projeto `{easypanel['project']}` em `{easypanel.get('ip', '?')}`")
+        if url_lines:
+            lines += ["## URLs e Infra"] + url_lines + [""]
+
+        # Stats do projeto
+        total_msgs = stats.get("total_messages", 0)
+        total_recs = stats.get("total_recordings", 0)
+        last_activity = _fmt_date(stats.get("last_activity"))
+        if total_msgs or total_recs:
+            lines += [
+                "## Metricas",
+                f"- **Mensagens:** {total_msgs}",
+                f"- **Gravacoes:** {total_recs}",
+                f"- **Ultima atividade:** {last_activity}",
+                "",
+            ]
+
+        # Dono/contatos
+        if all_contacts:
+            lines += ["## Dono e Contatos"]
+            for cn in all_contacts:
+                lines.append(f"- {_wikilink(cn)}")
             lines.append("")
+
+        # Propostas
+        if proposals:
+            lines += ["## Propostas"]
+            for pr in proposals[:8]:
+                pr_status = pr.get("status", "?")
+                pr_value  = pr.get("total_value") or "?"
+                pr_title  = pr.get("title") or "?"
+                pr_date   = _fmt_date(pr.get("created_at"))
+                lines.append(f"- `[{pr_status}]` **{pr_title}** — R$ {pr_value} ({pr_date})")
+            lines.append("")
+
+        # Tasks abertas
+        if tasks:
+            lines += ["## Tasks Abertas"]
+            for t in tasks[:10]:
+                t_prio   = t.get("priority", "")
+                t_status = t.get("status", "")
+                t_title  = t.get("title", "")
+                lines.append(f"- `[{t_status}]` {t_title}" + (f" _{t_prio}_" if t_prio else ""))
+            lines.append("")
+
         if related_recs:
             lines += ["## Calls e Gravacoes"]
             for r in related_recs[:8]:
@@ -429,6 +568,7 @@ def _build_projects(projects, contacts, recordings) -> list[str]:
                 date = _fmt_date(r.get("recorded_at") or r.get("created_at"))
                 lines.append(f"- {_wikilink(t)} — {date}")
             lines.append("")
+
         lines += ["---", f"*Atualizado em {_now()} pelo wiki da Orquestra*"]
 
         _write(WIKI_DIR / "projects" / f"{_slug(name)}.md", "\n".join(lines))
@@ -622,6 +762,43 @@ async def wiki_node(node_type: str, slug: str):
         "subtitle": subtitle,
         "sections": sections,
     }
+
+
+@router.post("/memory", dependencies=[Depends(_require_wiki_key)])
+async def ingest_memory(data: dict):
+    """Recebe dados de memoria dos agentes Jarbas Lab para enriquecer a wiki.
+
+    Body JSON:
+    {
+        "contact_slug": "emilio-superbot",
+        "files": {
+            "context": "conteudo do context.md...",
+            "decisions": "conteudo do decisions.md...",
+            "pending": "conteudo do pending.md...",
+            "calls": "conteudo do calls.md...",
+            "profile": "conteudo do profile.md..."
+        }
+    }
+    """
+    slug = data.get("contact_slug")
+    files = data.get("files", {})
+    if not slug or not files:
+        raise HTTPException(status_code=400, detail="contact_slug e files sao obrigatorios")
+
+    memory_dir = WIKI_DIR / "memory" / slug
+    memory_dir.mkdir(parents=True, exist_ok=True)
+
+    saved = []
+    for fname, content in files.items():
+        if not content:
+            continue
+        safe_name = re.sub(r"[^\w-]", "", fname)
+        path = memory_dir / f"{safe_name}.md"
+        path.write_text(content, encoding="utf-8")
+        saved.append(safe_name)
+        logger.info("wiki: memory saved %s/%s.md", slug, safe_name)
+
+    return {"status": "ok", "slug": slug, "files_saved": saved}
 
 
 @router.get("/status", dependencies=[Depends(_require_wiki_key)])
