@@ -1063,6 +1063,140 @@ async def youtube_add_to_playlist(
         return _error(message, _error_status_code(message))
 
 
+class UpdateDescriptionsRequest(BaseModel):
+    description_suffix: str = Field(..., description="Texto a adicionar no final da descricao de todos os videos longos")
+    min_duration_seconds: int = Field(default=300, description="Duracao minima para ser considerado 'longo' (default 5min)")
+    project_name: str = Field(default="GuyFolkz")
+    dry_run: bool = Field(default=True, description="Se True, retorna preview sem alterar nada")
+
+
+@router.post("/update-descriptions")
+async def update_video_descriptions(
+    req: UpdateDescriptionsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Adiciona texto no final da descricao de todos os videos longos do canal via YouTube Data API v3.
+    Usa dry_run=True por padrao para preview antes de alterar.
+    """
+    try:
+        access_token, youtube_credentials = await get_project_access_token(db, req.project_name)
+        channel_id = youtube_credentials.get("channel_id", "")
+    except Exception as exc:
+        return _error(f"Nao foi possivel obter credenciais YouTube: {exc}", 503)
+
+    if not channel_id:
+        return _error("channel_id nao configurado nas credenciais", 400)
+
+    # Listar todos os videos do canal (paginado)
+    all_videos = []
+    page_token = None
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            params: dict = {
+                "part": "snippet,contentDetails",
+                "channelId": channel_id,
+                "maxResults": 50,
+                "order": "date",
+                "type": "video",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            resp = await client.get(
+                "https://www.googleapis.com/youtube/v3/search",
+                params=params,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if not resp.is_success:
+                return _error(f"YouTube search error: {resp.text[:300]}", 400)
+            data = resp.json()
+            for item in data.get("items", []):
+                vid_id = item.get("id", {}).get("videoId")
+                if vid_id:
+                    all_videos.append(vid_id)
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+
+    if not all_videos:
+        return _ok({"message": "Nenhum video encontrado", "updated": 0})
+
+    # Buscar detalhes (snippet + contentDetails) em lotes de 50
+    videos_to_update = []
+    async with httpx.AsyncClient(timeout=30) as client:
+        for i in range(0, len(all_videos), 50):
+            batch = all_videos[i:i + 50]
+            resp = await client.get(
+                "https://www.googleapis.com/youtube/v3/videos",
+                params={"part": "snippet,contentDetails", "id": ",".join(batch)},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if not resp.is_success:
+                continue
+            for item in resp.json().get("items", []):
+                duration_str = (item.get("contentDetails") or {}).get("duration", "PT0S")
+                # Parse ISO 8601 duration (ex: PT12M30S)
+                import re as _re
+                h = int((_re.search(r'(\d+)H', duration_str) or type('', (), {'group': lambda self, n: 0})()).group(1) or 0)
+                m = int((_re.search(r'(\d+)M', duration_str) or type('', (), {'group': lambda self, n: 0})()).group(1) or 0)
+                s = int((_re.search(r'(\d+)S', duration_str) or type('', (), {'group': lambda self, n: 0})()).group(1) or 0)
+                total_seconds = h * 3600 + m * 60 + s
+                if total_seconds >= req.min_duration_seconds:
+                    snippet = item.get("snippet", {})
+                    current_desc = snippet.get("description", "")
+                    # Evitar duplicar o suffix
+                    if req.description_suffix.strip() not in current_desc:
+                        videos_to_update.append({
+                            "id": item["id"],
+                            "title": snippet.get("title", ""),
+                            "current_description": current_desc,
+                            "new_description": current_desc.rstrip() + "\n\n" + req.description_suffix,
+                            "category_id": snippet.get("categoryId", "22"),
+                            "duration_seconds": total_seconds,
+                        })
+
+    if req.dry_run:
+        return _ok({
+            "dry_run": True,
+            "total_long_videos": len(videos_to_update),
+            "videos": [{"id": v["id"], "title": v["title"], "duration_s": v["duration_seconds"]} for v in videos_to_update],
+            "suffix_preview": req.description_suffix[:200],
+        })
+
+    # Atualizar cada video
+    updated = []
+    errors = []
+    async with httpx.AsyncClient(timeout=30) as client:
+        for v in videos_to_update:
+            payload = {
+                "id": v["id"],
+                "snippet": {
+                    "title": v["title"],
+                    "description": v["new_description"],
+                    "categoryId": v["category_id"],
+                },
+            }
+            resp = await client.put(
+                "https://www.googleapis.com/youtube/v3/videos",
+                params={"part": "snippet"},
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                content=__import__("json").dumps(payload),
+            )
+            if resp.is_success:
+                updated.append({"id": v["id"], "title": v["title"]})
+                logger.info("[YOUTUBE] Updated description: %s", v["title"])
+            else:
+                errors.append({"id": v["id"], "error": resp.text[:200]})
+                logger.warning("[YOUTUBE] Failed to update %s: %s", v["id"], resp.text[:200])
+
+    return _ok({
+        "dry_run": False,
+        "updated_count": len(updated),
+        "error_count": len(errors),
+        "updated": updated,
+        "errors": errors,
+    })
+
+
 @router.get("/access-token")
 async def youtube_get_access_token(
     project_name: str = Query(default=settings.YOUTUBE_PROJECT_NAME),

@@ -65,6 +65,22 @@ async def create_checkout_session(req: CheckoutRequest):
             },
             customer_email=req.email or None,
         )
+        # Notificar Diego via WhatsApp sobre novo lead
+        if settings.OWNER_WHATSAPP:
+            try:
+                from app.services.whatsapp import send_whatsapp_message
+                msg = (
+                    f"*🎯 Novo lead na comunidade!*\n\n"
+                    f"👤 Nome: {req.name or 'Não informado'}\n"
+                    f"📱 WhatsApp: {req.phone}\n"
+                    f"📧 Email: {req.email or 'Não informado'}\n\n"
+                    f"💳 Link de pagamento:\n{session.url}"
+                )
+                await send_whatsapp_message(settings.OWNER_WHATSAPP, msg)
+                logger.info("[STRIPE] Lead notification sent to owner: %s", req.phone)
+            except Exception as exc:
+                logger.warning("[STRIPE] Failed to send lead notification: %s", exc)
+
         return CheckoutResponse(
             checkout_url=session.url,
             session_id=session.id,
