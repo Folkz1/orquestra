@@ -90,9 +90,11 @@ export default function Wiki() {
       : graph.nodes.filter(n => n.type === filter)
 
     const filteredIds = new Set(filteredNodes.map(n => n.id))
-    const filteredEdges = graph.edges.filter(
-      e => filteredIds.has(e.source) && filteredIds.has(e.target)
-    )
+    // Normalizar source/target para string (D3 muta edges para objetos após simulacao)
+    const edgeId = (val) => (val && typeof val === 'object' ? val.id : val)
+    const filteredEdges = graph.edges
+      .map(e => ({ source: edgeId(e.source), target: edgeId(e.target) }))
+      .filter(e => filteredIds.has(e.source) && filteredIds.has(e.target))
 
     renderForceGraph(svgRef.current, containerRef.current, filteredNodes, filteredEdges, setSelected)
 
@@ -107,13 +109,17 @@ export default function Wiki() {
   }, [selected?.id])
 
   // Contar conexões do node selecionado
+  // Após a simulação D3, e.source/e.target podem ser objetos {id, ...} ou strings
+  const edgeId = (val) => (val && typeof val === 'object' ? val.id : val)
   const selectedEdges = selected && graph
-    ? graph.edges.filter(e => e.source === selected.id || e.target === selected.id)
+    ? graph.edges.filter(e => edgeId(e.source) === selected.id || edgeId(e.target) === selected.id)
     : []
 
   const getConnectedNode = (edge) => {
     if (!graph) return null
-    const otherId = edge.source === selected.id ? edge.target : edge.source
+    const srcId = edgeId(edge.source)
+    const tgtId = edgeId(edge.target)
+    const otherId = srcId === selected.id ? tgtId : srcId
     return graph.nodes.find(n => n.id === otherId)
   }
 
