@@ -1087,13 +1087,14 @@ async def update_video_descriptions(
     if not channel_id:
         return _error("channel_id nao configurado nas credenciais", 400)
 
-    # Listar todos os videos do canal (paginado)
+    # Listar todos os video IDs do canal via search (paginado)
+    # search aceita apenas part=snippet, nao contentDetails
     all_videos = []
     page_token = None
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             params: dict = {
-                "part": "snippet,contentDetails",
+                "part": "snippet",
                 "channelId": channel_id,
                 "maxResults": 50,
                 "order": "date",
