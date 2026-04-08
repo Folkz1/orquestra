@@ -724,6 +724,10 @@ export function saveStepResult(sessionId, data) {
   })
 }
 
+export function getWikiGraph() {
+  return request('/api/wiki/graph')
+}
+
 export function submitTestSession(sessionId) {
   const base = import.meta.env.VITE_API_URL || ''
   return fetch(`${base}/api/test-sessions/${sessionId}/submit`, {

@@ -30,6 +30,7 @@ import ClienteEntregasPage from './pages/ClienteEntregasPage'
 import { isStandalonePWA } from './lib/native'
 import Blog from './pages/Blog'
 import Community from './pages/Community'
+import Wiki from './pages/Wiki'
 
 function AppRoutes({ onLogout }) {
   const location = useLocation()
@@ -122,6 +123,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<Blog />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/wiki" element={<Wiki />} />
       </Routes>
     </Layout>
   )

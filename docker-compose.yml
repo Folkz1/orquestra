@@ -25,6 +25,7 @@ services:
         condition: service_healthy
     volumes:
       - ./storage/uploads:/app/uploads
+      - ./storage/wiki:/app/storage/wiki
     ports:
       - "8080:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers

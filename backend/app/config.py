@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     # App
     APP_SECRET_KEY: str = ""
+    WIKI_SECRET_KEY: str = ""  # chave exclusiva para /api/wiki/* (mais restrita que APP_SECRET_KEY)
     UPLOAD_DIR: str = "/app/uploads"
     MAX_AUDIO_SIZE_MB: int = 100
     YOUTUBE_PROJECT_NAME: str = "GuyFolkz"

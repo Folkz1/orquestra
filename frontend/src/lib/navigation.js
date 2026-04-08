@@ -23,6 +23,7 @@ export const desktopNavSections = [
     items: [
       { to: '/recordings', label: 'Gravacoes', description: 'Historico de reunioes e transcricoes' },
       { to: '/memory', label: 'Memoria', description: 'Busca semantica e contexto acumulado' },
+      { to: '/wiki', label: 'Wiki Grafo', description: 'Grafo visual de clientes, projetos e calls' },
       { to: '/youtube', label: 'YouTube', description: 'Pipeline editorial e analytics' },
       { to: '/social', label: 'Social', description: 'Publicar em Instagram, TikTok e YouTube' },
       { to: '/blog', label: 'Blog', description: 'Experimentos e artigos por video' },
