@@ -7,11 +7,82 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import get_db
 
 router = APIRouter()
+
+MANUAL_TRIAL_PAYMENT_METHOD = "manual_whatsapp_pending"
+MANUAL_PAID_PAYMENT_METHOD = "manual_whatsapp_paid"
+
+
+def _normalize_phone(phone: str | None) -> str:
+    return "".join(ch for ch in (phone or "") if ch.isdigit())
+
+
+def _row_value(row, key: str):
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get(key)
+    if hasattr(row, key):
+        return getattr(row, key)
+    try:
+        return row[key]
+    except Exception:
+        return None
+
+
+def _access_mode_from_enrollment(row) -> str:
+    payment_method = (_row_value(row, "payment_method") or "").strip()
+    expires_at = _row_value(row, "expires_at")
+    tier = (_row_value(row, "tier") or "free").strip()
+    is_active = _row_value(row, "is_active")
+    active = True if is_active is None else bool(is_active)
+    now = datetime.now(timezone.utc)
+
+    if payment_method == MANUAL_TRIAL_PAYMENT_METHOD:
+        if not active or (expires_at and expires_at <= now):
+            return "expired_trial"
+        return "manual_trial"
+
+    if tier == "pro" and active:
+        if payment_method == MANUAL_PAID_PAYMENT_METHOD:
+            return "paid_manual"
+        return "member"
+
+    return "free"
+
+
+def _has_active_content_access(row) -> bool:
+    return _access_mode_from_enrollment(row) in {"manual_trial", "paid_manual", "member"}
+
+
+def _trial_expired_detail() -> dict:
+    return {
+        "code": "trial_expired",
+        "message": "Seu acesso de 6 horas expirou. Responde meu WhatsApp para concluir a assinatura.",
+    }
+
+
+async def _get_enrollment_by_phone(db: AsyncSession, phone: str):
+    normalized_phone = _normalize_phone(phone)
+    if not normalized_phone:
+        return None
+
+    result = await db.execute(
+        text(
+            """
+            SELECT id, phone, name, email, tier, is_active, enrolled_at, expires_at, payment_method, notes
+            FROM playbook_enrollments
+            WHERE phone = :phone
+            LIMIT 1
+            """
+        ),
+        {"phone": normalized_phone},
+    )
+    return result.mappings().first()
 
 
 # ── Schemas ──────────────────────────────────────────
@@ -63,6 +134,9 @@ class EnrollOut(BaseModel):
     email: str | None
     tier: str
     enrolled_at: str
+    expires_at: str | None = None
+    payment_method: str | None = None
+    access_mode: str = "free"
     completed_steps: int = 0
     total_steps: int = 0
 
@@ -125,6 +199,9 @@ async def get_module(
     db: AsyncSession = Depends(get_db),
 ):
     """Get module with all steps. If phone provided, includes progress."""
+    normalized_phone = _normalize_phone(phone)
+    enrollment = await _get_enrollment_by_phone(db, normalized_phone)
+
     # Get module
     result = await db.execute(
         text("SELECT * FROM playbook_modules WHERE slug = :slug AND is_published = true"),
@@ -134,20 +211,29 @@ async def get_module(
     if not module:
         raise HTTPException(404, "Módulo não encontrado")
 
+    access_mode = _access_mode_from_enrollment(enrollment)
+    if module["tier"] == "pro":
+        if access_mode == "expired_trial":
+            raise HTTPException(status_code=403, detail=_trial_expired_detail())
+        if not enrollment or not _has_active_content_access(enrollment):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "content_locked", "message": "Conteudo PRO disponivel apenas para membros ativos."},
+            )
+
     # Get steps
+    enrollment_id = str(enrollment["id"]) if enrollment else None
     result = await db.execute(
         text("""
             SELECT s.*,
-                CASE WHEN pp.id IS NOT NULL THEN true ELSE false END AS is_completed
+                CASE WHEN :enrollment_id IS NOT NULL AND pp.id IS NOT NULL THEN true ELSE false END AS is_completed
             FROM playbook_steps s
             LEFT JOIN playbook_progress pp ON pp.step_id = s.id
-                AND pp.enrollment_id = (
-                    SELECT id FROM playbook_enrollments WHERE phone = :phone LIMIT 1
-                )
+                AND (:enrollment_id IS NOT NULL AND pp.enrollment_id = CAST(:enrollment_id AS uuid))
             WHERE s.module_id = CAST(:module_id AS uuid) AND s.is_published = true
             ORDER BY s.order_num
         """),
-        {"module_id": str(module["id"]), "phone": phone or ""}
+        {"module_id": str(module["id"]), "enrollment_id": enrollment_id}
     )
     steps = result.mappings().all()
 
@@ -166,10 +252,12 @@ async def get_module(
 @router.post("/enroll")
 async def enroll(data: EnrollIn, db: AsyncSession = Depends(get_db)):
     """Register a new student (free tier)."""
+    phone = _normalize_phone(data.phone)
+
     # Check existing
     result = await db.execute(
         text("SELECT id, tier FROM playbook_enrollments WHERE phone = :phone"),
-        {"phone": data.phone}
+        {"phone": phone}
     )
     existing = result.mappings().first()
     if existing:
@@ -181,7 +269,7 @@ async def enroll(data: EnrollIn, db: AsyncSession = Depends(get_db)):
             VALUES (:phone, :name, :email, 'free')
             RETURNING id, tier
         """),
-        {"phone": data.phone, "name": data.name, "email": data.email}
+        {"phone": phone, "name": data.name, "email": data.email}
     )
     row = result.mappings().first()
     await db.commit()
@@ -191,10 +279,17 @@ async def enroll(data: EnrollIn, db: AsyncSession = Depends(get_db)):
 @router.post("/upgrade")
 async def upgrade_tier(data: dict, db: AsyncSession = Depends(get_db)):
     """Upgrade enrollment tier (admin only — protected by auth middleware)."""
-    phone = data.get("phone")
+    phone = _normalize_phone(data.get("phone"))
     tier = data.get("tier", "pro")
     result = await db.execute(
-        text("UPDATE playbook_enrollments SET tier = :tier WHERE phone = :phone RETURNING id, phone, tier"),
+        text(
+            """
+            UPDATE playbook_enrollments
+            SET tier = :tier, updated_at = NOW()
+            WHERE phone = :phone
+            RETURNING id, phone, tier
+            """
+        ),
         {"tier": tier, "phone": phone}
     )
     row = result.mappings().first()
@@ -207,14 +302,38 @@ async def upgrade_tier(data: dict, db: AsyncSession = Depends(get_db)):
 @router.post("/progress")
 async def mark_progress(data: ProgressIn, db: AsyncSession = Depends(get_db)):
     """Mark a step as completed for a student."""
+    phone = _normalize_phone(data.phone)
+
     # Find enrollment
-    result = await db.execute(
-        text("SELECT id FROM playbook_enrollments WHERE phone = :phone"),
-        {"phone": data.phone}
-    )
-    enrollment = result.mappings().first()
+    enrollment = await _get_enrollment_by_phone(db, phone)
     if not enrollment:
         raise HTTPException(404, "Aluno não encontrado. Faça o cadastro primeiro.")
+
+    access_mode = _access_mode_from_enrollment(enrollment)
+    if access_mode == "expired_trial":
+        raise HTTPException(status_code=403, detail=_trial_expired_detail())
+
+    step_result = await db.execute(
+        text(
+            """
+            SELECT s.id, m.tier
+            FROM playbook_steps s
+            JOIN playbook_modules m ON m.id = s.module_id
+            WHERE s.id = CAST(:sid AS uuid)
+            LIMIT 1
+            """
+        ),
+        {"sid": data.step_id},
+    )
+    step_row = step_result.mappings().first()
+    if not step_row:
+        raise HTTPException(404, "Passo nao encontrado")
+
+    if step_row["tier"] == "pro" and not _has_active_content_access(enrollment):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "content_locked", "message": "Conteudo PRO disponivel apenas para membros ativos."},
+        )
 
     await db.execute(
         text("""
@@ -231,6 +350,8 @@ async def mark_progress(data: ProgressIn, db: AsyncSession = Depends(get_db)):
 @router.get("/progress/{phone}")
 async def get_progress(phone: str, db: AsyncSession = Depends(get_db)):
     """Get student enrollment + progress summary."""
+    normalized_phone = _normalize_phone(phone)
+
     result = await db.execute(
         text("""
             SELECT e.*,
@@ -243,16 +364,23 @@ async def get_progress(phone: str, db: AsyncSession = Depends(get_db)):
             FROM playbook_enrollments e
             WHERE e.phone = :phone
         """),
-        {"phone": phone}
+        {"phone": normalized_phone}
     )
     row = result.mappings().first()
     if not row:
         raise HTTPException(404, "Aluno não encontrado")
 
+    access_mode = _access_mode_from_enrollment(row)
+    if access_mode == "expired_trial":
+        raise HTTPException(status_code=403, detail=_trial_expired_detail())
+
     return EnrollOut(
         id=str(row["id"]), phone=row["phone"], name=row["name"],
         email=row["email"], tier=row["tier"],
         enrolled_at=row["enrolled_at"].isoformat(),
+        expires_at=row["expires_at"].isoformat() if row["expires_at"] else None,
+        payment_method=row["payment_method"],
+        access_mode=access_mode,
         completed_steps=row["completed_steps"],
         total_steps=row["total_steps"]
     )
@@ -381,7 +509,10 @@ async def admin_delete_step(step_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/admin/enrollments")
-async def admin_list_enrollments(db: AsyncSession = Depends(get_db)):
+async def admin_list_enrollments(
+    status: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     """List all enrolled students with progress."""
     result = await db.execute(text("""
         SELECT e.*,
@@ -389,18 +520,85 @@ async def admin_list_enrollments(db: AsyncSession = Depends(get_db)):
         FROM playbook_enrollments e
         ORDER BY e.enrolled_at DESC
     """))
-    return [dict(r) for r in result.mappings().all()]
+    if status and status not in {"pending_manual", "expired_trial", "paid_manual"}:
+        raise HTTPException(400, "Status invalido")
+
+    items = []
+    for row in result.mappings().all():
+        access_mode = _access_mode_from_enrollment(row)
+        if status == "pending_manual" and access_mode != "manual_trial":
+            continue
+        if status == "expired_trial" and access_mode != "expired_trial":
+            continue
+        if status == "paid_manual" and access_mode != "paid_manual":
+            continue
+
+        payload = dict(row)
+        payload["id"] = str(payload["id"])
+        payload["completed_steps"] = int(payload["completed_steps"] or 0)
+        payload["enrolled_at"] = payload["enrolled_at"].isoformat() if payload["enrolled_at"] else None
+        payload["expires_at"] = payload["expires_at"].isoformat() if payload.get("expires_at") else None
+        payload["access_mode"] = access_mode
+        items.append(payload)
+
+    return items
 
 
 @router.put("/admin/enrollments/{enrollment_id}/tier")
 async def admin_update_tier(enrollment_id: str, tier: str = Query(...), db: AsyncSession = Depends(get_db)):
     """Upgrade/downgrade student tier."""
     await db.execute(
-        text("UPDATE playbook_enrollments SET tier = :tier WHERE id = CAST(:id AS uuid)"),
+        text(
+            """
+            UPDATE playbook_enrollments
+            SET tier = :tier, updated_at = NOW()
+            WHERE id = CAST(:id AS uuid)
+            """
+        ),
         {"tier": tier, "id": enrollment_id}
     )
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/admin/enrollments/{enrollment_id}/approve-manual-payment")
+async def approve_manual_payment(enrollment_id: str, db: AsyncSession = Depends(get_db)):
+    """Approve a manual WhatsApp payment and convert trial access into permanent access."""
+    result = await db.execute(
+        text(
+            """
+            UPDATE playbook_enrollments
+            SET tier = 'pro',
+                is_active = true,
+                expires_at = NULL,
+                payment_method = :payment_method,
+                notes = CASE
+                    WHEN COALESCE(notes, '') = '' THEN :note
+                    ELSE notes || E'\n' || :note
+                END
+            WHERE id = CAST(:id AS uuid)
+            RETURNING id, phone, tier, payment_method
+            """
+        ),
+        {
+            "id": enrollment_id,
+            "payment_method": MANUAL_PAID_PAYMENT_METHOD,
+            "note": f"[manual_payment_approved {datetime.now(timezone.utc).isoformat()}]",
+        },
+    )
+    row = result.mappings().first()
+    await db.commit()
+    if not row:
+        raise HTTPException(404, "Enrollment nao encontrado")
+
+    return {
+        "id": str(row["id"]),
+        "phone": row["phone"],
+        "tier": row["tier"],
+        "payment_method": row["payment_method"],
+        "access_mode": "paid_manual",
+        "status": "approved",
+    }
 
 
 @router.post("/admin/seed")

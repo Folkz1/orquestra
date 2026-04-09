@@ -47,6 +47,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+MANUAL_TRIAL_HOURS = 6
+MANUAL_TRIAL_PAYMENT_METHOD = "manual_whatsapp_pending"
+MANUAL_PAID_PAYMENT_METHOD = "manual_whatsapp_paid"
+TRIAL_REDIRECT_URL = "/membros?trial=1"
+DEFAULT_ADMIN_PHONES = ("5551993448124", "51993448124")
+
 # ─── JWT Config ──────────────────────────────────────────────────────────
 
 COMMUNITY_JWT_SECRET = settings.APP_SECRET_KEY or "community-dev-secret"
@@ -78,6 +84,21 @@ class TokenResponse(BaseModel):
     role: str
 
 
+class CommunityLeadRequest(BaseModel):
+    phone: str = Field(..., min_length=8, max_length=20)
+    name: str = Field("", max_length=255)
+    email: str = Field("", max_length=320)
+
+
+class CommunityLeadResponse(BaseModel):
+    status: str
+    redirect_url: str | None = None
+    expires_at: str | None = None
+    phone: str
+    access_mode: str
+    message: str
+
+
 class MemberProfile(BaseModel):
     enrollment_id: str
     email: str
@@ -86,6 +107,13 @@ class MemberProfile(BaseModel):
     tier: str
     role: str
     enrolled_at: str | None
+    is_active: bool = True
+    subscription_status: str | None = None
+    current_period_end: str | None = None
+    expires_at: str | None = None
+    payment_method: str | None = None
+    access_mode: str = "free"
+    has_billing_portal: bool = False
 
 
 class PostCreate(BaseModel):
@@ -178,12 +206,177 @@ def require_member(member: Optional[CurrentMember] = Depends(get_current_member)
 
 def _determine_role(tier: str, phone: str | None = None) -> str:
     """Determine member role based on tier and identity."""
-    # Diego's phone = admin
-    if phone and phone.strip().endswith("5551993448124"):
+    normalized_phone = _normalize_phone(phone)
+    owner_phone = _normalize_phone(settings.OWNER_WHATSAPP)
+    admin_phones = set(DEFAULT_ADMIN_PHONES)
+    if owner_phone:
+        admin_phones.add(owner_phone)
+
+    if normalized_phone in admin_phones:
         return "admin"
     if tier == "pro":
         return "member"
     return "free"
+
+
+def _normalize_phone(phone: str | None) -> str:
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+    return digits
+
+
+def _normalize_email(email: str | None) -> str | None:
+    clean = (email or "").strip().lower()
+    return clean or None
+
+
+def _owner_whatsapp_target() -> str | None:
+    owner_phone = _normalize_phone(settings.OWNER_WHATSAPP)
+    if owner_phone:
+        return owner_phone
+    for phone in DEFAULT_ADMIN_PHONES:
+        normalized = _normalize_phone(phone)
+        if normalized:
+            return normalized
+    return None
+
+
+def _row_value(row, key: str):
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get(key)
+    if hasattr(row, key):
+        return getattr(row, key)
+    try:
+        return row[key]
+    except Exception:
+        return None
+
+
+def _access_mode_from_record(row) -> str:
+    payment_method = (_row_value(row, "payment_method") or "").strip()
+    expires_at = _row_value(row, "expires_at")
+    tier = (_row_value(row, "tier") or "free").strip()
+    is_active = _row_value(row, "is_active")
+    active = True if is_active is None else bool(is_active)
+    now = datetime.now(timezone.utc)
+
+    if payment_method == MANUAL_TRIAL_PAYMENT_METHOD:
+        if not active or (expires_at and expires_at <= now):
+            return "expired_trial"
+        return "manual_trial"
+
+    if tier == "pro" and active:
+        if payment_method == MANUAL_PAID_PAYMENT_METHOD:
+            return "paid_manual"
+        return "member"
+
+    return "free"
+
+
+def _has_active_content_access(row) -> bool:
+    return _access_mode_from_record(row) in {"manual_trial", "paid_manual", "member"}
+
+
+def _trial_expired_detail() -> dict:
+    return {
+        "code": "trial_expired",
+        "message": "Seu acesso de 6 horas expirou. Responde meu WhatsApp para concluir a assinatura.",
+    }
+
+
+def _role_for_enrollment(row) -> str:
+    role = _determine_role(_row_value(row, "tier") or "free", _row_value(row, "phone"))
+    if role == "admin":
+        return role
+    if _access_mode_from_record(row) == "manual_trial":
+        return "trial"
+    if _has_active_content_access(row):
+        return "member"
+    return "free"
+
+
+async def _get_enrollment_by_phone(db: AsyncSession, phone: str):
+    normalized_phone = _normalize_phone(phone)
+    if not normalized_phone:
+        return None
+
+    result = await db.execute(
+        text(
+            """
+            SELECT id, name, email, tier, phone, is_active, enrolled_at, expires_at,
+                   payment_method, notes
+            FROM playbook_enrollments
+            WHERE phone = :phone
+            LIMIT 1
+            """
+        ),
+        {"phone": normalized_phone},
+    )
+    return result.mappings().first()
+
+
+async def _get_enrollment_by_id(db: AsyncSession, enrollment_id: str):
+    result = await db.execute(
+        text(
+            """
+            SELECT id, name, email, tier, phone, is_active, enrolled_at, expires_at,
+                   payment_method, notes
+            FROM playbook_enrollments
+            WHERE id = CAST(:id AS uuid)
+            LIMIT 1
+            """
+        ),
+        {"id": enrollment_id},
+    )
+    return result.mappings().first()
+
+
+async def _require_content_access(db: AsyncSession, member: CurrentMember):
+    enrollment = await _get_enrollment_by_id(db, member.enrollment_id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    access_mode = _access_mode_from_record(enrollment)
+    if access_mode == "expired_trial":
+        raise HTTPException(status_code=403, detail=_trial_expired_detail())
+    if not _has_active_content_access(enrollment) and member.role != "admin":
+        raise HTTPException(status_code=403, detail="Community access not active")
+
+    return enrollment, access_mode
+
+
+async def _require_social_access(db: AsyncSession, member: CurrentMember):
+    enrollment, access_mode = await _require_content_access(db, member)
+    if access_mode == "manual_trial" and member.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "trial_content_only", "message": "O trial de 6 horas libera apenas o conteudo."},
+        )
+    return enrollment, access_mode
+
+
+async def _notify_owner_about_lead(*, phone: str, name: str, email: str | None, status: str, expires_at: datetime | None):
+    owner_target = _owner_whatsapp_target()
+    if not owner_target:
+        logger.info("[COMMUNITY] OWNER_WHATSAPP not configured, lead stored without WhatsApp alert")
+        return
+
+    try:
+        from app.services.whatsapp import send_whatsapp_message
+
+        expires_text = expires_at.astimezone(timezone.utc).strftime("%d/%m %H:%M UTC") if expires_at else "sem expiracao"
+        message = (
+            "*Lead da comunidade*\n\n"
+            f"Status: {status}\n"
+            f"Nome: {name or 'Nao informado'}\n"
+            f"WhatsApp: {phone}\n"
+            f"Email: {email or 'Nao informado'}\n"
+            f"Expira: {expires_text}"
+        )
+        await send_whatsapp_message(owner_target, message)
+    except Exception as exc:
+        logger.warning("[COMMUNITY] Failed to send owner WhatsApp alert for %s: %s", phone, exc)
 
 
 def _generate_code() -> str:
@@ -204,6 +397,167 @@ def _make_jwt(enrollment_id: str, email: str, role: str) -> str:
 # ─── AUTH ENDPOINTS ──────────────────────────────────────────────────────
 
 
+@router.post("/lead", response_model=CommunityLeadResponse)
+async def capture_community_lead(req: CommunityLeadRequest, db: AsyncSession = Depends(get_db)):
+    """Capture a lead, create or reuse a 6-hour manual trial, and alert the owner on WhatsApp."""
+    phone = _normalize_phone(req.phone)
+    if len(phone) < 12:
+        raise HTTPException(status_code=400, detail={"message": "Informe um WhatsApp valido com DDI."})
+
+    email = _normalize_email(req.email)
+    name = (req.name or "").strip() or "Membro"
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=MANUAL_TRIAL_HOURS)
+    note = f"[community_manual_lead {now.isoformat()}]"
+
+    enrollment = await _get_enrollment_by_phone(db, phone)
+    access_mode = _access_mode_from_record(enrollment)
+
+    if enrollment and (_role_for_enrollment(enrollment) == "admin" or access_mode in {"paid_manual", "member"}):
+        return CommunityLeadResponse(
+            status="already_active",
+            redirect_url="/membros",
+            expires_at=_row_value(enrollment, "expires_at").isoformat() if _row_value(enrollment, "expires_at") else None,
+            phone=phone,
+            access_mode=access_mode,
+            message="Teu acesso ja esta ativo. Pode entrar direto na area de membros.",
+        )
+
+    if enrollment and access_mode == "manual_trial":
+        await db.execute(
+            text(
+                """
+                UPDATE playbook_enrollments
+                SET name = COALESCE(NULLIF(:name, ''), name),
+                    email = COALESCE(NULLIF(:email, ''), email),
+                    notes = CASE
+                        WHEN COALESCE(notes, '') = '' THEN :note
+                        ELSE notes || E'\n' || :note
+                    END
+                WHERE id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": str(enrollment["id"]), "name": name, "email": email, "note": note},
+        )
+        await db.commit()
+        await _notify_owner_about_lead(
+            phone=phone,
+            name=name,
+            email=email,
+            status="trial_reused",
+            expires_at=_row_value(enrollment, "expires_at"),
+        )
+        return CommunityLeadResponse(
+            status="trial_reused",
+            redirect_url=TRIAL_REDIRECT_URL,
+            expires_at=_row_value(enrollment, "expires_at").isoformat() if _row_value(enrollment, "expires_at") else None,
+            phone=phone,
+            access_mode="manual_trial",
+            message="Teu acesso ainda esta ativo. Entrando na area de membros agora.",
+        )
+
+    if enrollment and access_mode == "expired_trial":
+        await db.execute(
+            text(
+                """
+                UPDATE playbook_enrollments
+                SET name = COALESCE(NULLIF(:name, ''), name),
+                    email = COALESCE(NULLIF(:email, ''), email),
+                    notes = CASE
+                        WHEN COALESCE(notes, '') = '' THEN :note
+                        ELSE notes || E'\n' || :note
+                    END
+                WHERE id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": str(enrollment["id"]), "name": name, "email": email, "note": note},
+        )
+        await db.commit()
+        await _notify_owner_about_lead(
+            phone=phone,
+            name=name,
+            email=email,
+            status="trial_expired_returning_lead",
+            expires_at=_row_value(enrollment, "expires_at"),
+        )
+        return CommunityLeadResponse(
+            status="trial_already_used",
+            redirect_url=None,
+            expires_at=_row_value(enrollment, "expires_at").isoformat() if _row_value(enrollment, "expires_at") else None,
+            phone=phone,
+            access_mode="expired_trial",
+            message="Teu acesso gratuito ja foi usado. Vou te chamar no WhatsApp para concluir a assinatura.",
+        )
+
+    if enrollment:
+        await db.execute(
+            text(
+                """
+                UPDATE playbook_enrollments
+                SET tier = 'pro',
+                    is_active = true,
+                    expires_at = :expires_at,
+                    payment_method = :payment_method,
+                    name = COALESCE(NULLIF(:name, ''), name),
+                    email = COALESCE(NULLIF(:email, ''), email),
+                    notes = CASE
+                        WHEN COALESCE(notes, '') = '' THEN :note
+                        ELSE notes || E'\n' || :note
+                    END
+                WHERE id = CAST(:id AS uuid)
+                """
+            ),
+            {
+                "id": str(enrollment["id"]),
+                "expires_at": expires_at,
+                "payment_method": MANUAL_TRIAL_PAYMENT_METHOD,
+                "name": name,
+                "email": email,
+                "note": note,
+            },
+        )
+    else:
+        await db.execute(
+            text(
+                """
+                INSERT INTO playbook_enrollments (
+                    phone, name, email, tier, is_active, enrolled_at, expires_at, payment_method, notes
+                )
+                VALUES (
+                    :phone, :name, :email, 'pro', true, :enrolled_at, :expires_at, :payment_method, :note
+                )
+                """
+            ),
+            {
+                "phone": phone,
+                "name": name,
+                "email": email,
+                "enrolled_at": now,
+                "expires_at": expires_at,
+                "payment_method": MANUAL_TRIAL_PAYMENT_METHOD,
+                "note": note,
+            },
+        )
+
+    await db.commit()
+    await _notify_owner_about_lead(
+        phone=phone,
+        name=name,
+        email=email,
+        status="trial_started",
+        expires_at=expires_at,
+    )
+
+    return CommunityLeadResponse(
+        status="trial_started",
+        redirect_url=TRIAL_REDIRECT_URL,
+        expires_at=expires_at.isoformat(),
+        phone=phone,
+        access_mode="manual_trial",
+        message="Teu acesso foi liberado por 6 horas. Entrando na area de membros agora.",
+    )
+
+
 @router.post("/auth/login")
 async def auth_login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Generate a 6-digit code for a pro member's email.
@@ -213,7 +567,14 @@ async def auth_login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # Check if email exists in playbook_enrollments with tier='pro'
     result = await db.execute(
-        text("SELECT id, name, tier, phone FROM playbook_enrollments WHERE LOWER(email) = :email LIMIT 1"),
+        text(
+            """
+            SELECT id, name, tier, phone, is_active
+            FROM playbook_enrollments
+            WHERE LOWER(email) = :email
+            LIMIT 1
+            """
+        ),
         {"email": email},
     )
     row = result.first()
@@ -223,8 +584,8 @@ async def auth_login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         logger.info("[COMMUNITY] Login attempt for unknown email: %s", email)
         return {"status": "code_sent"}
 
-    if row.tier != "pro":
-        logger.info("[COMMUNITY] Login attempt for non-pro member: %s (tier=%s)", email, row.tier)
+    if row.tier != "pro" or row.is_active is False:
+        logger.info("[COMMUNITY] Login attempt for non-pro/inactive member: %s (tier=%s)", email, row.tier)
         return {"status": "code_sent"}
 
     code = _generate_code()
@@ -238,11 +599,9 @@ async def auth_login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     }
 
     # Enviar codigo via WhatsApp se tiver telefone
-    phone = pending_data.get("phone") if "pending_data" in dir() else row.phone
     if row.phone:
         try:
             from app.services.whatsapp import send_whatsapp_message
-            import asyncio
             await send_whatsapp_message(
                 row.phone,
                 f"Seu codigo de acesso GuyFolkz: *{code}*\n\nVale por 10 minutos.",
@@ -302,20 +661,21 @@ async def auth_login_phone(req: PhoneLoginRequest, db: AsyncSession = Depends(ge
     """Issue JWT directly for a phone number that exists in playbook_enrollments as pro.
     Used by CommunityMembers.jsx to bridge WhatsApp-based auth to community JWT.
     """
-    phone = req.phone.strip()
+    phone = _normalize_phone(req.phone)
 
-    result = await db.execute(
-        text("SELECT id, name, email, tier, phone FROM playbook_enrollments WHERE phone = :phone LIMIT 1"),
-        {"phone": phone},
-    )
-    row = result.first()
-
-    if not row or row.tier != "pro":
+    row = await _get_enrollment_by_phone(db, phone)
+    if not row:
         raise HTTPException(status_code=403, detail="Phone not found or not pro member")
 
-    enrollment_id = str(row.id)
-    email = row.email or ""
-    role = _determine_role(row.tier, row.phone)
+    access_mode = _access_mode_from_record(row)
+    if access_mode == "expired_trial":
+        raise HTTPException(status_code=403, detail=_trial_expired_detail())
+    if not _has_active_content_access(row) and _role_for_enrollment(row) != "admin":
+        raise HTTPException(status_code=403, detail="Phone not found or not pro member")
+
+    enrollment_id = str(row["id"])
+    email = row["email"] or ""
+    role = _role_for_enrollment(row)
     token = _make_jwt(enrollment_id, email, role)
 
     logger.info("[COMMUNITY] Phone login: %s (role=%s)", phone, role)
@@ -323,7 +683,7 @@ async def auth_login_phone(req: PhoneLoginRequest, db: AsyncSession = Depends(ge
     return TokenResponse(
         token=token,
         enrollment_id=enrollment_id,
-        name=row.name or "Membro",
+        name=row["name"] or "Membro",
         role=role,
     )
 
@@ -334,23 +694,39 @@ async def get_me(
     db: AsyncSession = Depends(get_db),
 ):
     """Return current member profile from enrollment data."""
-    result = await db.execute(
-        text("SELECT id, name, email, phone, tier, enrolled_at FROM playbook_enrollments WHERE id = CAST(:id AS uuid)"),
-        {"id": member.enrollment_id},
-    )
-    row = result.first()
+    row = await _get_enrollment_by_id(db, member.enrollment_id)
     if not row:
         raise HTTPException(status_code=404, detail="Member not found")
 
+    access_mode = _access_mode_from_record(row)
+    if access_mode == "expired_trial":
+        raise HTTPException(status_code=403, detail=_trial_expired_detail())
+
     return MemberProfile(
-        enrollment_id=str(row.id),
-        email=row.email or member.email,
-        name=row.name or "Membro",
-        phone=row.phone,
-        tier=row.tier,
+        enrollment_id=str(row["id"]),
+        email=row["email"] or member.email,
+        name=row["name"] or "Membro",
+        phone=row["phone"],
+        tier=row["tier"],
         role=member.role,
-        enrolled_at=row.enrolled_at.isoformat() if row.enrolled_at else None,
+        enrolled_at=row["enrolled_at"].isoformat() if row["enrolled_at"] else None,
+        is_active=True if row["is_active"] is None else bool(row["is_active"]),
+        subscription_status=None,
+        current_period_end=None,
+        expires_at=row["expires_at"].isoformat() if row["expires_at"] else None,
+        payment_method=row["payment_method"],
+        access_mode=access_mode,
+        has_billing_portal=False,
     )
+
+
+@router.post("/billing/portal")
+async def create_billing_portal(
+    member: CurrentMember = Depends(require_member),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manual WhatsApp flow does not expose a billing portal."""
+    raise HTTPException(status_code=410, detail="Billing portal desabilitado neste fluxo manual")
 
 
 # ─── FEED ENDPOINTS ─────────────────────────────────────────────────────
@@ -421,6 +797,8 @@ async def create_post(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new community post (auth required)."""
+    await _require_social_access(db, member)
+
     # Get author name from enrollment
     enroll = await db.execute(
         text("SELECT name FROM playbook_enrollments WHERE id = CAST(:id AS uuid)"),
@@ -445,6 +823,7 @@ async def create_post(
         },
     )
     r = result.first()
+    await db.commit()
 
     logger.info("[COMMUNITY] Post created by %s: %s", author_name, str(r.id)[:8])
 
@@ -476,6 +855,8 @@ async def delete_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
+    await _require_social_access(db, member)
+
     # Check ownership or admin
     is_owner = str(post.author_enrollment_id) == member.enrollment_id
     if not is_owner and member.role != "admin":
@@ -490,6 +871,7 @@ async def delete_post(
         text("DELETE FROM community_posts WHERE id = CAST(:pid AS uuid)"),
         {"pid": post_id},
     )
+    await db.commit()
 
     logger.info("[COMMUNITY] Post %s deleted by %s", post_id[:8], member.email)
     return {"ok": True}
@@ -502,6 +884,8 @@ async def toggle_like(
     db: AsyncSession = Depends(get_db),
 ):
     """Toggle like on a post. Returns new like state and count."""
+    await _require_social_access(db, member)
+
     # Check post exists
     post_check = await db.execute(
         text("SELECT id FROM community_posts WHERE id = CAST(:pid AS uuid)"),
@@ -547,6 +931,8 @@ async def toggle_like(
             {"pid": post_id},
         )
         liked = True
+
+    await db.commit()
 
     # Get updated count
     count_result = await db.execute(
@@ -615,6 +1001,8 @@ async def create_comment(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a comment to a post (auth required)."""
+    await _require_social_access(db, member)
+
     # Check post exists
     post_check = await db.execute(
         text("SELECT id FROM community_posts WHERE id = CAST(:pid AS uuid)"),
@@ -652,6 +1040,7 @@ async def create_comment(
         text("UPDATE community_posts SET comments_count = comments_count + 1 WHERE id = CAST(:pid AS uuid)"),
         {"pid": post_id},
     )
+    await db.commit()
 
     logger.info("[COMMUNITY] Comment on post %s by %s", post_id[:8], author_name)
 
@@ -680,6 +1069,8 @@ async def delete_comment(
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
 
+    await _require_social_access(db, member)
+
     is_owner = str(comment.author_enrollment_id) == member.enrollment_id
     if not is_owner and member.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to delete this comment")
@@ -699,6 +1090,7 @@ async def delete_comment(
         text("UPDATE community_posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = CAST(:pid AS uuid)"),
         {"pid": str(comment.post_id)},
     )
+    await db.commit()
 
     logger.info("[COMMUNITY] Comment %s deleted by %s", comment_id[:8], member.email)
     return {"ok": True}
@@ -798,15 +1190,18 @@ async def download_resource(
     if not resource:
         raise HTTPException(status_code=404, detail="Resource not found")
 
-    # Pro-only resources require authentication
-    if resource.tier == "pro" and member is None:
-        raise HTTPException(status_code=401, detail="Pro membership required to download this resource")
+    # Pro-only resources require authentication and live access validation.
+    if resource.tier == "pro":
+        if member is None:
+            raise HTTPException(status_code=401, detail="Pro membership required to download this resource")
+        await _require_content_access(db, member)
 
     # Increment download count
     await db.execute(
         text("UPDATE community_resources SET downloads_count = downloads_count + 1 WHERE id = CAST(:rid AS uuid)"),
         {"rid": resource_id},
     )
+    await db.commit()
 
     logger.info("[COMMUNITY] Resource '%s' downloaded (count=%d)", resource.title, resource.downloads_count + 1)
 

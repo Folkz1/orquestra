@@ -638,6 +638,10 @@ export function createCheckoutSession(data) {
 // but the Community.jsx page manages its own token ('community_token' in localStorage)
 // and sends it as Authorization: Bearer only for /api/community/* endpoints.
 
+export function createCommunityLead(data) {
+  return request('/api/community/lead', { method: 'POST', body: JSON.stringify(data) });
+}
+
 export function communityLogin(email) {
   return request('/api/community/auth/login', { method: 'POST', body: JSON.stringify({ email }) });
 }

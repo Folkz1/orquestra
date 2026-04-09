@@ -29,7 +29,6 @@ import ClientePage from './pages/ClientePage'
 import ClienteEntregasPage from './pages/ClienteEntregasPage'
 import { isStandalonePWA } from './lib/native'
 import Blog from './pages/Blog'
-import Community from './pages/Community'
 import Wiki from './pages/Wiki'
 
 function AppRoutes({ onLogout }) {
@@ -145,7 +144,9 @@ export default function App() {
           <Route path="/proposta/:slug" element={<ProposalView />} />
           <Route path="/cliente/:slug/entregas" element={<ClienteEntregasPage />} />
           <Route path="/cliente/:slug" element={<ClientePage />} />
-          <Route path="/community" element={<Community />} />
+          <Route path="/community" element={<Navigate to="/membros" replace />} />
+          <Route path="/comunidade" element={<CommunityLanding />} />
+          <Route path="/membros" element={<CommunityMembers />} />
           <Route path="/playbook/*" element={<PlaybookPlatform />} />
           <Route path="/tester" element={<TesterPage />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />

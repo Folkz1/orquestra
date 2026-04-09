@@ -1,24 +1,28 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { createCheckoutSession } from '../api'
+import { createCommunityLead } from '../api'
 
 const MODULES = [
-  { title: 'Stack Claude Code (Harness)', desc: 'Setup completo: skills, hooks, harness deterministico, deploy pipeline.', free: false },
-  { title: 'Agent Lab', desc: 'ChatLab + 17 tools + test scenarios automatizados pra validar agentes.', free: false },
-  { title: 'Remotion Pipeline', desc: 'Producao de video com codigo: React, render farm, upload automatico.', free: false },
-  { title: 'Automacao WhatsApp B2B', desc: 'Evolution API, fluxos, debounce, agentes com tools reais.', free: false },
-  { title: 'Dashboard + Orquestra', desc: 'React + FastAPI + graficos + central de inteligencia pessoal.', free: false },
-  { title: 'De Freelancer a Motor 100K', desc: 'Priorizacao por receita, clientes, recorrencia, escala.', free: false },
+  { title: 'Stack Claude Code (Harness)', desc: 'Setup completo: skills, hooks, harness deterministico e pipeline pronta.' },
+  { title: 'Agent Lab', desc: 'ChatLab, tools reais e cenarios de teste para validar agentes de verdade.' },
+  { title: 'Remotion Pipeline', desc: 'Producao de video com codigo, render farm e upload automatizado.' },
+  { title: 'Automacao WhatsApp B2B', desc: 'Evolution API, fluxos, debounce e operacao comercial com IA.' },
+  { title: 'Dashboard + Orquestra', desc: 'React + FastAPI + inteligencia operacional para o negocio inteiro.' },
+  { title: 'De Freelancer a Motor 100K', desc: 'Prioridade por receita, recorrencia e execucao sem gargalo.' },
 ]
 
 const BENEFITS = [
-  'Acesso a todos os modulos e playbooks',
-  'Templates prontos: Agent Lab + Remotion + Skills',
-  'Comunidade exclusiva com feed e recursos',
-  'Contato direto com Diego',
-  'Acesso antecipado a ferramentas novas',
-  'Tudo que Diego descobrir e validar na pratica',
+  'Acesso imediato por 6 horas para explorar o conteudo',
+  'Playbooks e modulos completos da Academy',
+  'Aulas e recursos para acelerar tua implementacao',
+  'Contato direto com Diego no WhatsApp para fechar a assinatura',
+  'Credenciais e liberacao final enviadas manualmente no WhatsApp',
+  'Tudo que esta funcionando na pratica, sem teoria vazia',
 ]
+
+function normalizePhone(value) {
+  return (value || '').replace(/\D/g, '')
+}
 
 export default function CommunityLanding() {
   const [phone, setPhone] = useState('')
@@ -26,21 +30,53 @@ export default function CommunityLanding() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
-  async function handleCheckout(e) {
+  async function handleLeadCapture(e) {
     e.preventDefault()
-    if (!phone.trim()) { setError('Informe seu WhatsApp'); return }
+    const normalizedPhone = normalizePhone(phone)
+    if (!normalizedPhone) {
+      setError('Informe seu WhatsApp')
+      return
+    }
+    if (normalizedPhone.length < 12) {
+      setError('Informe um WhatsApp valido com DDI')
+      return
+    }
+
     setLoading(true)
     setError('')
+    setNotice('')
+
     try {
-      const res = await createCheckoutSession({ phone: phone.trim(), name: name.trim(), email: email.trim() })
-      if (res.checkout_url) {
-        window.location.href = res.checkout_url
-      } else {
-        setError('Stripe nao configurado ainda. Em breve!')
+      localStorage.setItem('community_phone', normalizedPhone)
+      localStorage.setItem('community_checkout_context', JSON.stringify({
+        phone: normalizedPhone,
+        name: name.trim(),
+        email: email.trim(),
+        started_at: Date.now(),
+        source: 'community_manual_trial',
+      }))
+
+      const res = await createCommunityLead({
+        phone: normalizedPhone,
+        name: name.trim(),
+        email: email.trim(),
+      })
+
+      if (res?.redirect_url) {
+        window.location.assign(res.redirect_url)
+        return
       }
+
+      setNotice(res?.message || 'Recebemos teu contato. Vou te chamar no WhatsApp para concluir.')
     } catch (err) {
-      setError(err?.data?.detail || 'Erro ao criar checkout. Tente novamente.')
+      const detail = err?.data?.detail
+      if (typeof detail === 'string') {
+        setError(detail)
+      } else {
+        setError(detail?.message || 'Nao foi possivel liberar teu acesso agora. Tente novamente.')
+      }
     } finally {
       setLoading(false)
     }
@@ -48,20 +84,20 @@ export default function CommunityLanding() {
 
   return (
     <div className="min-h-screen bg-[#090b10] text-zinc-100">
-      {/* Hero */}
       <section className="relative overflow-hidden px-4 py-16 sm:px-6 sm:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(139,212,80,0.08),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(94,166,255,0.06),transparent_50%)]" />
         <div className="relative mx-auto max-w-4xl text-center">
           <p className="font-mono text-xs uppercase tracking-widest text-[#8bd450]">GuyFolkz Academy</p>
           <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-5xl">
-            Construa seu <span className="text-[#8bd450]">CTO Virtual</span> que administra sua empresa inteira
+            Entre agora na comunidade com <span className="text-[#8bd450]">6 horas de acesso</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base text-zinc-400 sm:text-lg">
-            Aprenda a montar agentes autonomos com Claude Code que gerenciam seus projetos, clientes, conteudo e vendas. Tudo que eu uso no dia a dia, aberto pra voce replicar.
+            Libero teu acesso ao conteudo imediatamente e te chamo no WhatsApp para fechar a assinatura manualmente.
+            Depois disso, as credenciais e a continuidade do acesso seguem direto pelo WhatsApp.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <a href="#assinar" className="rounded-2xl bg-[#8bd450] px-8 py-3 text-sm font-semibold text-black transition-transform hover:scale-105">
-              Assinar por R$70/mes
+              Liberar acesso agora
             </a>
             <Link to="/playbook" className="rounded-2xl border border-white/10 px-8 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5">
               Ver conteudo gratuito
@@ -70,60 +106,56 @@ export default function CommunityLanding() {
         </div>
       </section>
 
-      {/* Proof */}
       <section className="border-y border-white/6 bg-white/2 px-4 py-12 sm:px-6">
         <div className="mx-auto grid max-w-5xl gap-8 sm:grid-cols-3">
           <div className="text-center">
-            <p className="text-3xl font-bold text-[#8bd450]">8+</p>
-            <p className="mt-1 text-sm text-zinc-400">Projetos ativos gerenciados por IA</p>
+            <p className="text-3xl font-bold text-[#8bd450]">6h</p>
+            <p className="mt-1 text-sm text-zinc-400">Acesso imediato ao conteudo</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-[#5ea6ff]">R$15k+</p>
-            <p className="mt-1 text-sm text-zinc-400">MRR gerado com automacao B2B</p>
+            <p className="text-3xl font-bold text-[#5ea6ff]">R$70</p>
+            <p className="mt-1 text-sm text-zinc-400">Assinatura mensal fechada no WhatsApp</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-[#67d7d0]">100%</p>
-            <p className="mt-1 text-sm text-zinc-400">Construido com Claude Code</p>
+            <p className="text-3xl font-bold text-[#67d7d0]">1:1</p>
+            <p className="mt-1 text-sm text-zinc-400">Fechamento e credenciais enviados manualmente</p>
           </div>
         </div>
       </section>
 
-      {/* Modules */}
       <section className="px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-5xl">
-          <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">O que voce vai aprender</p>
-          <h2 className="mt-3 text-2xl font-bold sm:text-3xl">6 modulos, do zero ao Motor 100K</h2>
+          <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">O que voce vai encontrar</p>
+          <h2 className="mt-3 text-2xl font-bold sm:text-3xl">Conteudo para gerar resultado rapido</h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {MODULES.map((m, i) => (
-              <div key={i} className="rounded-2xl border border-white/8 bg-white/3 p-5 transition-colors hover:bg-white/5">
+            {MODULES.map((module, index) => (
+              <div key={module.title} className="rounded-2xl border border-white/8 bg-white/3 p-5 transition-colors hover:bg-white/5">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#8bd450]/10 text-xs font-bold text-[#8bd450]">{i + 1}</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#8bd450]/10 text-xs font-bold text-[#8bd450]">{index + 1}</span>
                   <span className="rounded-full bg-[#8bd450]/10 px-2 py-0.5 text-[10px] font-medium text-[#8bd450]">PRO</span>
                 </div>
-                <h3 className="mt-3 text-sm font-semibold">{m.title}</h3>
-                <p className="mt-1 text-xs text-zinc-400">{m.desc}</p>
+                <h3 className="mt-3 text-sm font-semibold">{module.title}</h3>
+                <p className="mt-1 text-xs text-zinc-400">{module.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Benefits */}
       <section className="border-y border-white/6 bg-white/2 px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-center text-2xl font-bold sm:text-3xl">O que voce recebe</h2>
+          <h2 className="text-center text-2xl font-bold sm:text-3xl">Como funciona hoje</h2>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            {BENEFITS.map((b, i) => (
-              <div key={i} className="flex items-start gap-3 rounded-xl border border-white/6 bg-white/3 px-4 py-3">
+            {BENEFITS.map((benefit) => (
+              <div key={benefit} className="flex items-start gap-3 rounded-xl border border-white/6 bg-white/3 px-4 py-3">
                 <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[#8bd450]" />
-                <span className="text-sm">{b}</span>
+                <span className="text-sm">{benefit}</span>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Pricing / CTA */}
       <section id="assinar" className="px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-md">
           <div className="rounded-3xl border border-[#8bd450]/20 bg-[#10141b] p-8">
@@ -132,9 +164,11 @@ export default function CommunityLanding() {
               <span className="text-4xl font-bold">R$70</span>
               <span className="mb-1 text-sm text-zinc-400">/mes</span>
             </div>
-            <p className="mt-2 text-sm text-zinc-400">Cancele quando quiser. Sem fidelidade.</p>
+            <p className="mt-2 text-sm text-zinc-400">
+              Acesso imediato por 6 horas. Eu mesmo continuo o fechamento com voce no WhatsApp.
+            </p>
 
-            <form onSubmit={handleCheckout} className="mt-6 space-y-3">
+            <form onSubmit={handleLeadCapture} className="mt-6 space-y-3">
               <input
                 type="text"
                 placeholder="Seu WhatsApp (ex: 5511999998888)"
@@ -157,24 +191,24 @@ export default function CommunityLanding() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-[#8bd450]/40 focus:ring-1 focus:ring-[#8bd450]/20"
               />
+              {notice && <p className="text-xs text-[#8bd450]">{notice}</p>}
               {error && <p className="text-xs text-red-400">{error}</p>}
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full rounded-xl bg-[#8bd450] py-3 text-sm font-semibold text-black transition-all hover:bg-[#9be060] disabled:opacity-50"
               >
-                {loading ? 'Redirecionando...' : 'Assinar agora'}
+                {loading ? 'Liberando acesso...' : 'Quero meu acesso de 6 horas'}
               </button>
             </form>
 
             <p className="mt-4 text-center text-xs text-zinc-500">
-              Pagamento seguro via Stripe. Voce sera redirecionado.
+              Sem checkout automatico. O fechamento e as credenciais seguem direto no WhatsApp.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-white/6 px-4 py-8 text-center text-xs text-zinc-500">
         <p>GuyFolkz Academy. Construido com Claude Code + Orquestra.</p>
         <div className="mt-2 flex justify-center gap-4">

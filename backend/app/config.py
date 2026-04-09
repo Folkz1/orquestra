@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     NOTION_API_VERSION: str = "2022-06-28"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": (".env", "../.env"),
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
