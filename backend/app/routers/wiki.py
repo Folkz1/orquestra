@@ -690,8 +690,14 @@ async def wiki_graph():
         if md_file.name in ("index.md", "log.md"):
             continue
         folder = md_file.parent.name
-        if folder in ("wiki", "storage"):
+        if folder in ("wiki", "storage", "memory"):
             continue
+        # Ignorar arquivos dentro de subdiretorios de memory (ex: memory/emilio-superbot/context.md)
+        try:
+            md_file.relative_to(WIKI_DIR / "memory")
+            continue
+        except ValueError:
+            pass
 
         node_id = md_file.stem
         if node_id in seen_nodes:
