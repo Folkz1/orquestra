@@ -15,10 +15,16 @@ router = APIRouter()
 
 MANUAL_TRIAL_PAYMENT_METHOD = "manual_whatsapp_pending"
 MANUAL_PAID_PAYMENT_METHOD = "manual_whatsapp_paid"
+HIDDEN_MODULE_SLUGS = {"fundacao", "orchestrator"}
+HIDDEN_MODULE_SLUGS_SQL = ", ".join(f"'{slug}'" for slug in sorted(HIDDEN_MODULE_SLUGS))
 
 
 def _normalize_phone(phone: str | None) -> str:
     return "".join(ch for ch in (phone or "") if ch.isdigit())
+
+
+def _is_hidden_module_slug(slug: str | None) -> bool:
+    return (slug or "").strip().lower() in HIDDEN_MODULE_SLUGS
 
 
 def _row_value(row, key: str):
@@ -168,13 +174,14 @@ async def list_modules(
     db: AsyncSession = Depends(get_db),
 ):
     """List all published modules with step counts."""
-    query = """
+    query = f"""
         SELECT m.id, m.slug, m.title, m.description, m.tier, m.icon, m.order_num,
                COUNT(s.id) AS step_count,
                COALESCE(SUM(s.duration_min), 0) AS duration_min
         FROM playbook_modules m
         LEFT JOIN playbook_steps s ON s.module_id = m.id AND s.is_published = true
         WHERE m.is_published = true
+          AND m.slug NOT IN ({HIDDEN_MODULE_SLUGS_SQL})
     """
     params = {}
     if tier:
@@ -199,6 +206,82 @@ async def get_module(
     db: AsyncSession = Depends(get_db),
 ):
     """Get module with all steps. If phone provided, includes progress."""
+    normalized_slug = (slug or "").strip().lower()
+    if _is_hidden_module_slug(normalized_slug):
+        raise HTTPException(404, "Modulo nao encontrado")
+
+    normalized_phone = _normalize_phone(phone)
+    enrollment = await _get_enrollment_by_phone(db, normalized_phone)
+
+    result = await db.execute(
+        text("SELECT * FROM playbook_modules WHERE slug = :slug AND is_published = true"),
+        {"slug": normalized_slug},
+    )
+    module = result.mappings().first()
+    if not module:
+        raise HTTPException(404, "Modulo nao encontrado")
+
+    access_mode = _access_mode_from_enrollment(enrollment)
+    if module["tier"] == "pro":
+        if access_mode == "expired_trial":
+            raise HTTPException(status_code=403, detail=_trial_expired_detail())
+        if not enrollment or not _has_active_content_access(enrollment):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "content_locked", "message": "Conteudo PRO disponivel apenas para membros ativos."},
+            )
+
+    result = await db.execute(
+        text(
+            """
+            SELECT id, slug, title, COALESCE(content, '') AS content, step_type,
+                   order_num, duration_min, code_snippet
+            FROM playbook_steps
+            WHERE module_id = CAST(:module_id AS uuid) AND is_published = true
+            ORDER BY order_num
+            """
+        ),
+        {"module_id": str(module["id"])},
+    )
+    steps = result.mappings().all()
+
+    completed_step_ids = set()
+    if enrollment:
+        completed_result = await db.execute(
+            text(
+                """
+                SELECT step_id
+                FROM playbook_progress
+                WHERE enrollment_id = CAST(:enrollment_id AS uuid)
+                """
+            ),
+            {"enrollment_id": str(enrollment["id"])},
+        )
+        completed_step_ids = {str(step_id) for step_id in completed_result.scalars().all()}
+
+    return ModuleDetail(
+        id=str(module["id"]),
+        slug=module["slug"],
+        title=module["title"],
+        description=module["description"],
+        tier=module["tier"],
+        icon=module["icon"],
+        steps=[
+            StepOut(
+                id=str(step["id"]),
+                slug=step["slug"],
+                title=step["title"],
+                content=step["content"],
+                step_type=step["step_type"],
+                order_num=step["order_num"],
+                duration_min=step["duration_min"],
+                code_snippet=step["code_snippet"],
+                is_completed=str(step["id"]) in completed_step_ids,
+            )
+            for step in steps
+        ],
+    )
+
     normalized_phone = _normalize_phone(phone)
     enrollment = await _get_enrollment_by_phone(db, normalized_phone)
 
@@ -316,10 +399,12 @@ async def mark_progress(data: ProgressIn, db: AsyncSession = Depends(get_db)):
     step_result = await db.execute(
         text(
             """
-            SELECT s.id, m.tier
+            SELECT s.id, m.tier, m.slug AS module_slug
             FROM playbook_steps s
             JOIN playbook_modules m ON m.id = s.module_id
             WHERE s.id = CAST(:sid AS uuid)
+              AND s.is_published = true
+              AND m.is_published = true
             LIMIT 1
             """
         ),
@@ -327,6 +412,8 @@ async def mark_progress(data: ProgressIn, db: AsyncSession = Depends(get_db)):
     )
     step_row = step_result.mappings().first()
     if not step_row:
+        raise HTTPException(404, "Passo nao encontrado")
+    if _is_hidden_module_slug(step_row["module_slug"]):
         raise HTTPException(404, "Passo nao encontrado")
 
     if step_row["tier"] == "pro" and not _has_active_content_access(enrollment):
@@ -353,12 +440,22 @@ async def get_progress(phone: str, db: AsyncSession = Depends(get_db)):
     normalized_phone = _normalize_phone(phone)
 
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT e.*,
-                (SELECT COUNT(*) FROM playbook_progress pp WHERE pp.enrollment_id = e.id) AS completed_steps,
+                (SELECT COUNT(*)
+                 FROM playbook_progress pp
+                 JOIN playbook_steps s ON s.id = pp.step_id
+                 JOIN playbook_modules m ON m.id = s.module_id
+                 WHERE pp.enrollment_id = e.id
+                   AND s.is_published = true
+                   AND m.is_published = true
+                   AND m.slug NOT IN ({HIDDEN_MODULE_SLUGS_SQL})
+                   AND (m.tier = 'free' OR m.tier = e.tier)
+                ) AS completed_steps,
                 (SELECT COUNT(*) FROM playbook_steps s
                  JOIN playbook_modules m ON m.id = s.module_id
                  WHERE s.is_published = true AND m.is_published = true
+                 AND m.slug NOT IN ({HIDDEN_MODULE_SLUGS_SQL})
                  AND (m.tier = 'free' OR m.tier = e.tier)
                 ) AS total_steps
             FROM playbook_enrollments e
@@ -389,12 +486,18 @@ async def get_progress(phone: str, db: AsyncSession = Depends(get_db)):
 @router.get("/leaderboard")
 async def get_leaderboard(db: AsyncSession = Depends(get_db)):
     """Top members ranked by completed steps."""
-    result = await db.execute(text("""
+    result = await db.execute(text(f"""
         SELECT e.name, e.tier, e.phone,
-               COUNT(pp.id) AS completed_steps,
+               COUNT(pp.id) FILTER (
+                   WHERE s.is_published = true
+                     AND m.is_published = true
+                     AND m.slug NOT IN ({HIDDEN_MODULE_SLUGS_SQL})
+               ) AS completed_steps,
                e.enrolled_at
         FROM playbook_enrollments e
         LEFT JOIN playbook_progress pp ON pp.enrollment_id = e.id
+        LEFT JOIN playbook_steps s ON s.id = pp.step_id
+        LEFT JOIN playbook_modules m ON m.id = s.module_id
         GROUP BY e.id
         ORDER BY completed_steps DESC, e.enrolled_at ASC
         LIMIT 20
@@ -514,9 +617,17 @@ async def admin_list_enrollments(
     db: AsyncSession = Depends(get_db),
 ):
     """List all enrolled students with progress."""
-    result = await db.execute(text("""
+    result = await db.execute(text(f"""
         SELECT e.*,
-            (SELECT COUNT(*) FROM playbook_progress pp WHERE pp.enrollment_id = e.id) AS completed_steps
+            (SELECT COUNT(*)
+             FROM playbook_progress pp
+             JOIN playbook_steps s ON s.id = pp.step_id
+             JOIN playbook_modules m ON m.id = s.module_id
+             WHERE pp.enrollment_id = e.id
+               AND s.is_published = true
+               AND m.is_published = true
+               AND m.slug NOT IN ({HIDDEN_MODULE_SLUGS_SQL})
+            ) AS completed_steps
         FROM playbook_enrollments e
         ORDER BY e.enrolled_at DESC
     """))
@@ -860,6 +971,8 @@ Inclui: branch atual, commits recentes, contagem do backlog e status dos testes.
         ],
     }
 
+    modules = [module for module in modules if module["slug"] not in HIDDEN_MODULE_SLUGS]
+
     # Insert modules
     for m in modules:
         await db.execute(
@@ -874,6 +987,8 @@ Inclui: branch atual, commits recentes, contagem do backlog e status dos testes.
 
     # Insert steps
     for module_slug, steps in steps_data.items():
+        if module_slug in HIDDEN_MODULE_SLUGS:
+            continue
         mod_result = await db.execute(
             text("SELECT id FROM playbook_modules WHERE slug = :slug"),
             {"slug": module_slug}
@@ -893,4 +1008,8 @@ Inclui: branch atual, commits recentes, contagem do backlog e status dos testes.
                 )
 
     await db.commit()
-    return {"ok": True, "modules": len(modules), "steps": sum(len(v) for v in steps_data.values())}
+    return {
+        "ok": True,
+        "modules": len(modules),
+        "steps": sum(len(steps) for module_slug, steps in steps_data.items() if module_slug not in HIDDEN_MODULE_SLUGS),
+    }

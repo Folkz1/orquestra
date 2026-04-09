@@ -3,18 +3,18 @@ import { Link } from 'react-router-dom'
 import { createCommunityLead } from '../api'
 
 const MODULES = [
-  { title: 'Stack Claude Code (Harness)', desc: 'Setup completo: skills, hooks, harness deterministico e pipeline pronta.' },
-  { title: 'Agent Lab', desc: 'ChatLab, tools reais e cenarios de teste para validar agentes de verdade.' },
-  { title: 'Remotion Pipeline', desc: 'Producao de video com codigo, render farm e upload automatizado.' },
+  { title: 'Gerenciamento de Projetos', desc: 'Backlog, prioridade e execucao para tirar projeto do papel com menos caos.' },
+  { title: 'WhatsApp Integrado', desc: 'Fluxos comerciais e operacao conectada ao WhatsApp com automacao pratica.' },
+  { title: 'Remotion no YouTube', desc: 'Aula real no ar sobre pipeline de video com codigo, render e publicacao.' },
   { title: 'Automacao WhatsApp B2B', desc: 'Evolution API, fluxos, debounce e operacao comercial com IA.' },
-  { title: 'Dashboard + Orquestra', desc: 'React + FastAPI + inteligencia operacional para o negocio inteiro.' },
-  { title: 'De Freelancer a Motor 100K', desc: 'Prioridade por receita, recorrencia e execucao sem gargalo.' },
+  { title: 'YouTube Analytics', desc: 'Tendencias, briefing e direcionamento de conteudo para crescer o canal.' },
+  { title: 'Deploy Automatizado', desc: 'Publicacao com EasyPanel, containers e rotina de deploy sem travar o negocio.' },
 ]
 
 const BENEFITS = [
   'Acesso imediato por 6 horas para explorar o conteudo',
   'Playbooks e modulos completos da Academy',
-  'Aulas e recursos para acelerar tua implementacao',
+  'Aula real de Remotion + recursos para acelerar tua implementacao',
   'Contato direto com Diego no WhatsApp para fechar a assinatura',
   'Credenciais e liberacao final enviadas manualmente no WhatsApp',
   'Tudo que esta funcionando na pratica, sem teoria vazia',
@@ -99,9 +99,14 @@ export default function CommunityLanding() {
             <a href="#assinar" className="rounded-2xl bg-[#8bd450] px-8 py-3 text-sm font-semibold text-black transition-transform hover:scale-105">
               Liberar acesso agora
             </a>
-            <Link to="/playbook" className="rounded-2xl border border-white/10 px-8 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5">
-              Ver conteudo gratuito
-            </Link>
+            <a
+              href="https://www.youtube.com/watch?v=eHWvvgJTb1s"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-2xl border border-white/10 px-8 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5"
+            >
+              Ver a aula de Remotion
+            </a>
           </div>
         </div>
       </section>
@@ -213,7 +218,7 @@ export default function CommunityLanding() {
         <p>GuyFolkz Academy. Construido com Claude Code + Orquestra.</p>
         <div className="mt-2 flex justify-center gap-4">
           <Link to="/membros" className="hover:text-zinc-300">Area de membros</Link>
-          <Link to="/playbook" className="hover:text-zinc-300">Conteudo gratuito</Link>
+          <a href="https://www.youtube.com/watch?v=eHWvvgJTb1s" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300">Aula de Remotion</a>
           <a href="https://youtube.com/@guyfolkz" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300">YouTube</a>
         </div>
       </footer>

@@ -2,12 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 const API = import.meta.env.VITE_API_URL || ''
+const HIDDEN_MODULE_SLUGS = new Set(['fundacao', 'orchestrator'])
 
 const ACADEMY_VIDEOS = [
-  { id: 'iNdg_WGWXRI', tier: 'free', title: 'Crianca de 15 anos fez $50K instalando IA', desc: 'Caso real de execucao.', duration: '18 min', tag: 'Mindset' },
-  { id: 'PLi5NfSa0uA', tier: 'free', title: 'App de R$100M codado aos 18 anos', desc: 'Vibe coding virou business.', duration: '22 min', tag: 'Case Real' },
-  { id: 'neBEx5i_7lM', tier: 'pro', title: 'Para de criar agentes e cria skills', desc: 'Skills vencem quando o produto precisa de contexto.', duration: '25 min', tag: 'Estrategia' },
-  { id: 'rHiq3-609VE', tier: 'pro', title: 'Claude controla teu computador', desc: 'O que muda quando a IA opera o PC inteiro.', duration: '30 min', tag: 'Tech' },
+  {
+    id: 'eHWvvgJTb1s',
+    tier: 'free',
+    title: 'Eu edito videos com CODIGO (Remotion + Claude Code + Render Farm)',
+    desc: 'A aula real que esta no ar hoje sobre o pipeline de Remotion e render farm.',
+    duration: '18 min',
+    tag: 'Remotion',
+    thumbnail: 'https://i.ytimg.com/vi/eHWvvgJTb1s/sddefault.jpg',
+  },
 ]
 
 function normalizePhone(value) {
@@ -114,7 +120,11 @@ export default function CommunityMembers() {
       fetch(`${API}/api/playbook/modules`).then((res) => (res.ok ? res.json().catch(() => []) : [])).catch(() => []),
       fetch(`${API}/api/playbook/leaderboard`).then((res) => (res.ok ? res.json().catch(() => []) : [])).catch(() => []),
     ])
-    setModules(Array.isArray(modulesData) ? modulesData : [])
+    setModules(
+      Array.isArray(modulesData)
+        ? modulesData.filter((module) => !HIDDEN_MODULE_SLUGS.has(module?.slug) && Number(module?.step_count || 0) > 0)
+        : []
+    )
     setLeaderboard(Array.isArray(leaderboardData) ? leaderboardData : [])
   }
 
@@ -235,15 +245,19 @@ export default function CommunityMembers() {
 
   async function loadModule(slug) {
     setError('')
-    const res = await fetch(`${API}/api/playbook/modules/${slug}?phone=${phone}`)
-    if (!res.ok) {
-      setError(await readErrorMessage(res, 'Nao foi possivel abrir esse modulo agora.'))
-      return
+    try {
+      const res = await fetch(`${API}/api/playbook/modules/${slug}?phone=${encodeURIComponent(phone)}`)
+      if (!res.ok) {
+        setError(await readErrorMessage(res, 'Nao foi possivel abrir esse modulo agora.'))
+        return
+      }
+      const data = await res.json()
+      setActiveModule(data)
+      setActiveStep(null)
+      setView('module')
+    } catch {
+      setError('Nao foi possivel abrir esse modulo agora.')
     }
-    const data = await res.json()
-    setActiveModule(data)
-    setActiveStep(null)
-    setView('module')
   }
 
   async function markComplete(stepId) {
@@ -484,7 +498,7 @@ export default function CommunityMembers() {
             <div className={`grid gap-3 ${isTrial ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
               <button onClick={() => setTab('aulas')} className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4 text-left hover:bg-purple-500/10">
                 <p className="text-sm font-semibold text-purple-300">Aulas</p>
-                <p className="mt-1 text-xs text-zinc-400">{ACADEMY_VIDEOS.length} videos para assistir hoje</p>
+                <p className="mt-1 text-xs text-zinc-400">{ACADEMY_VIDEOS.length === 1 ? '1 aula real no ar agora' : `${ACADEMY_VIDEOS.length} aulas disponiveis agora`}</p>
               </button>
               {showResources && (
                 <button onClick={() => setTab('recursos')} className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-left hover:bg-blue-500/10">
@@ -543,7 +557,7 @@ export default function CommunityMembers() {
           <div className="space-y-4">
             <div>
               <h2 className="text-lg font-bold">Sala de aulas</h2>
-              <p className="mt-1 text-sm text-zinc-400">Casos reais de IA e automacao</p>
+              <p className="mt-1 text-sm text-zinc-400">Hoje a aula publicada de verdade e a do pipeline de Remotion.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {ACADEMY_VIDEOS.map((video) => {
@@ -551,7 +565,7 @@ export default function CommunityMembers() {
                 return (
                   <button key={video.id} onClick={() => { setActiveVideo(video); setView('video') }} className={`overflow-hidden rounded-2xl border text-left ${locked ? 'border-white/6 opacity-80' : 'border-white/10 hover:border-white/20'}`}>
                     <div className="relative aspect-video bg-zinc-900">
-                      <img src={`https://img.youtube.com/vi/${video.id}/hqdefault.jpg`} alt={video.title} className="h-full w-full object-cover" />
+                      <img src={video.thumbnail || `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`} alt={video.title} className="h-full w-full object-cover" />
                       {locked && <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-semibold text-amber-200">PRO</div>}
                     </div>
                     <div className="p-4">
