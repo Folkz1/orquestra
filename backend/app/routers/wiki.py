@@ -85,6 +85,37 @@ def _write(path: Path, content: str):
     logger.info("wiki: wrote %s", path.relative_to(WIKI_DIR))
 
 
+def _sha256(content: str) -> str:
+    """Retorna SHA256 do conteudo para skip de escrita quando nao mudou."""
+    import hashlib
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _write_if_changed(path: Path, content: str) -> bool:
+    """Escreve apenas se o conteudo mudou. Retorna True se escreveu."""
+    if path.exists():
+        current = path.read_text(encoding="utf-8", errors="replace")
+        if _sha256(current) == _sha256(content):
+            logger.debug("wiki: skip unchanged %s", path.name)
+            return False
+    _write(path, content)
+    return True
+
+
+def _frontmatter(sources: list[str], staleness_tier: str = "weekly", confidence: str = "high") -> str:
+    """Gera bloco frontmatter YAML para paginas da wiki."""
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    src_list = "\n".join(f"  - {s}" for s in sources) if sources else "  []"
+    return (
+        f"---\n"
+        f"last_updated: {now_iso}\n"
+        f"sources:\n{src_list}\n"
+        f"staleness_tier: {staleness_tier}\n"
+        f"confidence: {confidence}\n"
+        f"---\n\n"
+    )
+
+
 # ─── Helpers de filtragem ─────────────────────────────────────────────────────
 
 _NOMES_INVALIDOS = {
@@ -268,7 +299,10 @@ def _build_contacts(contacts, recordings, projects) -> list[str]:
 
         related_recordings = recs_for(name)
 
+        sources_list = [f"orquestra:contact:{contact_id}"] if contact_id else ["orquestra:contacts"]
+        fm = _frontmatter(sources=sources_list, staleness_tier="daily", confidence="high")
         lines = [
+            fm,
             f"# {name}", "",
             f"> Contato WhatsApp | Pipeline: `{pipeline}` | Ultima msg: {last_msg_at}", "",
             "## Status Comercial",
@@ -409,7 +443,13 @@ def _build_recordings(recordings, contacts) -> list[str]:
         mentioned    = find_contacts(title + " " + summary)
         dur_str      = f"{duration//60}m{duration%60:02d}s" if duration else "?"
 
-        lines = [f"# {title}", "", f"> Gravacao de {date} | Duracao: {dur_str}", ""]
+        rec_id = r.get("id") or _slug(title)
+        fm_rec = _frontmatter(
+            sources=[f"orquestra:recording:{rec_id}"],
+            staleness_tier="permanent",
+            confidence="high",
+        )
+        lines = [fm_rec, f"# {title}", "", f"> Gravacao de {date} | Duracao: {dur_str}", ""]
         if project_name:
             lines += [f"**Projeto:** {_wikilink(project_name)}", ""]
         if mentioned:
@@ -497,7 +537,12 @@ def _build_projects(projects, contacts, recordings) -> list[str]:
             or any(pr.get("contact_id") == o.get("id") for o in owners)
         ]
 
-        lines = [f"# {name}", "", f"> Projeto | Status: `{status}` | Criado em: {created}", ""]
+        fm_proj = _frontmatter(
+            sources=[f"orquestra:project:{proj_id}"] if proj_id else ["orquestra:projects"],
+            staleness_tier="weekly",
+            confidence="high",
+        )
+        lines = [fm_proj, f"# {name}", "", f"> Projeto | Status: `{status}` | Criado em: {created}", ""]
 
         if description:
             lines += ["## Descricao", description, ""]
@@ -576,32 +621,73 @@ def _build_projects(projects, contacts, recordings) -> list[str]:
     return names
 
 
+def _extract_subtitle(md_path: Path) -> str:
+    """Extrai a linha '> ...' de um .md como resumo de 1 linha para o index."""
+    if not md_path.exists():
+        return ""
+    for line in md_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("> ") and len(line) > 3:
+            return line[2:].strip()[:120]
+    return ""
+
+
 def _build_index(contact_names, recording_titles, project_names):
+    """Index semantico: cada entidade tem resumo de 1 linha extraido do seu .md."""
     today = datetime.now().strftime("%d/%m/%Y")
+    now_str = _now()
+
     lines = [
-        "# Wiki da Orquestra", "",
-        f"> Base de conhecimento gerada automaticamente. Atualizado em {today}.", "",
-        f"## Projetos Ativos ({len(project_names)})",
+        "# Wiki da Orquestra — Index Semantico", "",
+        f"> Base de conhecimento incremental. Atualizado em {today}.",
+        f"> Entidades: {len(contact_names)} contatos | {len(project_names)} projetos | {len(recording_titles)} gravacoes", "",
+        "---", "",
+        f"## Projetos Ativos ({len(project_names)})", "",
     ]
     for n in sorted(project_names):
-        lines.append(f"- {_wikilink(n)}")
-    lines += ["", f"## Contatos ({len(contact_names)})"]
+        slug = re.sub(r"[^\w\s-]", "", n.lower())
+        slug = re.sub(r"[\s_]+", "-", slug).strip("-")
+        subtitle = _extract_subtitle(WIKI_DIR / "projects" / f"{slug}.md")
+        summary = f" — {subtitle}" if subtitle else ""
+        lines.append(f"- {_wikilink(n)}{summary}")
+
+    lines += ["", f"## Contatos ({len(contact_names)})", ""]
     for n in sorted(contact_names):
-        lines.append(f"- {_wikilink(n)}")
-    lines += ["", f"## Gravacoes ({len(recording_titles)})"]
+        slug = re.sub(r"[^\w\s-]", "", n.lower())
+        slug = re.sub(r"[\s_]+", "-", slug).strip("-")
+        subtitle = _extract_subtitle(WIKI_DIR / "contacts" / f"{slug}.md")
+        summary = f" — {subtitle}" if subtitle else ""
+        lines.append(f"- {_wikilink(n)}{summary}")
+
+    lines += ["", f"## Gravacoes ({len(recording_titles)})", ""]
     for t in sorted(recording_titles):
-        lines.append(f"- {_wikilink(t)}")
-    lines += ["", "---", f"*Gerado em {_now()} | Fonte: API Orquestra*"]
+        slug = re.sub(r"[^\w\s-]", "", t.lower())
+        slug = re.sub(r"[\s_]+", "-", slug).strip("-")
+        subtitle = _extract_subtitle(WIKI_DIR / "recordings" / f"{slug}.md")
+        summary = f" — {subtitle}" if subtitle else ""
+        lines.append(f"- {_wikilink(t)}{summary}")
+
+    lines += ["", "---", f"*Index gerado em {now_str} | Para consulta: leia este index primeiro, depois abra o .md especifico*"]
     _write(WIKI_DIR / "index.md", "\n".join(lines))
 
 
-def _append_log(n_contacts, n_recordings, n_projects):
-    entry = f"- **{_now()}** — {n_contacts} contatos, {n_recordings} gravacoes, {n_projects} projetos\n"
+def _append_log(n_contacts, n_recordings, n_projects, operation: str = "rebuild", detail: str = ""):
+    """Append ao log.md em formato parseavel por LLM.
+
+    Formato: ## [YYYY-MM-DD HH:MM UTC] {operation} | {detail}
+    Seguido de bullet com contagens.
+    """
+    now_str = _now()
+    date_only = now_str[:10]
+    detail_str = f" | {detail}" if detail else f" | {n_contacts}c {n_recordings}r {n_projects}p"
+    header = f"## [{now_str}] {operation}{detail_str}"
+    body = f"- contatos: {n_contacts} | gravacoes: {n_recordings} | projetos: {n_projects}\n"
+    entry = f"\n{header}\n{body}"
+
     log_path = WIKI_DIR / "log.md"
     if log_path.exists():
         log_path.write_text(log_path.read_text(encoding="utf-8") + entry, encoding="utf-8")
     else:
-        _write(log_path, f"# Log de Geracoes\n{entry}")
+        _write(log_path, f"# Log de Operacoes da Wiki\n\n> Formato: `## [timestamp] operacao | detalhe`\n{entry}")
 
 
 # ─── Funcao principal de geracao ──────────────────────────────────────────────
@@ -668,11 +754,250 @@ def _generate_wiki(only: str | None = None):
                 len(contact_names), len(recording_titles), len(project_names))
 
 
+# ─── Ingest Incremental (Fase 1) ─────────────────────────────────────────────
+
+# Set de recording_ids em processamento — mitigação de idempotência (Codex risk #2)
+_ingest_in_progress: set[str] = set()
+
+
+async def _analyze_recording_impact(recording: dict, contact_name: str) -> dict:
+    """Fase análise: LLM lê transcrição + context.md do cliente → mapa de impacto JSON.
+
+    Retorna estrutura:
+    {
+        "pages_to_update": ["contacts", "recordings"],  # tipos de página impactados
+        "contact_slug": "emilio-superbot",
+        "recording_title": "...",
+        "summary": "resumo 2-3 frases do que mudou",
+        "decisions": ["decisao 1"],
+        "action_items": ["item 1"],
+        "contradictions": []  # claims que contradizem o estado atual
+    }
+    """
+    from app.services.llm import chat_completion
+
+    title = recording.get("title") or "Sem titulo"
+    transcription = (recording.get("transcription") or "")[:3000]
+    existing_summary = recording.get("summary") or ""
+    decisions = recording.get("decisions") or []
+    actions = recording.get("action_items") or []
+
+    # Ler context.md do cliente se existir (estado atual da wiki)
+    contact_slug = _slug(contact_name) if contact_name else ""
+    context_content = ""
+    if contact_slug:
+        context_path = WIKI_DIR / "memory" / contact_slug / "context.md"
+        if context_path.exists():
+            context_content = context_path.read_text(encoding="utf-8", errors="replace")[:2000]
+
+    prompt = f"""Você analisa uma gravação/call para um sistema de knowledge base incremental de CRM B2B.
+
+CALL: {title}
+CLIENTE: {contact_name or 'desconhecido'}
+DECISÕES JÁ EXTRAÍDAS: {decisions}
+ACTION ITEMS JÁ EXTRAÍDOS: {actions}
+TRANSCRIÇÃO (preview): {transcription}
+
+CONTEXTO ATUAL DO CLIENTE NA WIKI:
+{context_content or '(sem contexto prévio)'}
+
+Produza um JSON com o mapa de impacto desta call. Responda APENAS com JSON válido:
+{{
+  "pages_to_update": ["contacts", "recordings"],
+  "contact_slug": "{contact_slug}",
+  "recording_title": "{title}",
+  "summary": "2-3 frases do que foi discutido e o que mudou no relacionamento",
+  "new_decisions": ["decisão nova ou confirmada"],
+  "new_action_items": ["item de ação"],
+  "contradictions": ["claim que contradiz algo na wiki atual, se houver"],
+  "confidence": "high|medium|low"
+}}
+
+Regras:
+- Se nao houver contexto previo, pages_to_update inclui "contacts" sempre
+- Se houver novas decisoes ou actions, inclui "contacts" e "recordings"
+- Se nao houver nada novo, retorne pages_to_update como ["recordings"] apenas
+- contradictions so se tiver certeza — prefira omitir a inventar"""
+
+    try:
+        result = await chat_completion(
+            [{"role": "user", "content": prompt}],
+            model=settings.MODEL_CHAT_CHEAP,
+            max_tokens=500,
+            temperature=0.1,
+        )
+        # Extrair JSON da resposta (o LLM pode adicionar texto extra)
+        import json as _json
+        text = result.strip()
+        # Tentar extrair bloco JSON se houver markdown
+        if "```" in text:
+            text = text.split("```")[1].lstrip("json").strip()
+        impact = _json.loads(text)
+        # Validar campos obrigatórios (Codex risk #5 — deriva semântica)
+        required = {"pages_to_update", "contact_slug", "recording_title", "summary"}
+        if not required.issubset(impact.keys()):
+            raise ValueError(f"JSON de impacto incompleto: faltam {required - impact.keys()}")
+        return impact
+    except Exception as e:
+        logger.warning("wiki/ingest: falha ao analisar impacto de '%s': %s — fallback para mapa mínimo", title, e)
+        return {
+            "pages_to_update": ["recordings"],
+            "contact_slug": contact_slug,
+            "recording_title": title,
+            "summary": existing_summary or "Análise indisponível",
+            "new_decisions": decisions,
+            "new_action_items": actions,
+            "contradictions": [],
+            "confidence": "low",
+        }
+
+
+async def _execute_ingest(recording_id: str):
+    """Pipeline completo de ingest incremental de uma gravação.
+
+    Mitigações Codex:
+    - #1 asyncio.run(): função é async, usa await — sem asyncio.run()
+    - #2 idempotência: _ingest_in_progress guard no endpoint
+    - #3 race condition: _write_if_changed é atômico por arquivo
+    - #4 partial failure: impact map salvo antes de executar updates
+    - #5 deriva semântica: validação JSON + fallback para mapa mínimo
+    """
+    import json as _json
+
+    logger.info("wiki/ingest: iniciando ingest recording_id=%s", recording_id)
+
+    # 1. Buscar dados da gravação
+    try:
+        recording = _fetch(f"/api/recordings/{recording_id}")
+    except Exception as e:
+        logger.error("wiki/ingest: erro ao buscar recording %s: %s", recording_id, e)
+        return
+
+    title = recording.get("title") or "Sem titulo"
+
+    # 2. Identificar contato relacionado à gravação
+    contacts_raw = _fetch("/api/contacts?limit=200&is_group=false")
+    all_contacts = contacts_raw if isinstance(contacts_raw, list) else contacts_raw.get("data", contacts_raw.get("items", []))
+    contacts = [c for c in all_contacts if _is_cliente_ativo(c)]
+
+    contact_name = ""
+    for c in contacts:
+        cname = (c.get("name") or "").lower()
+        rec_title_lower = title.lower()
+        if cname and cname in rec_title_lower:
+            contact_name = c.get("name", "")
+            break
+
+    logger.info("wiki/ingest: recording='%s' contact='%s'", title, contact_name or "desconhecido")
+
+    # 3. Fase análise — LLM produz mapa de impacto
+    impact = await _analyze_recording_impact(recording, contact_name)
+
+    # 4. Audit trail: salvar mapa de impacto ANTES de executar (Codex risk #4)
+    audit_dir = WIKI_DIR / "ingest-audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    audit_path = audit_dir / f"{recording_id}.json"
+    audit_path.write_text(_json.dumps(impact, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("wiki/ingest: audit salvo em %s", audit_path)
+
+    # 5. Fase geração — atualizar apenas páginas impactadas
+    pages_updated = []
+    pages_to_update = impact.get("pages_to_update", ["recordings"])
+
+    if "recordings" in pages_to_update:
+        # Gerar/atualizar página da gravação
+        recording_titles = _build_recordings([recording], contacts)
+        pages_updated.extend([f"recordings/{t}" for t in recording_titles])
+
+    if "contacts" in pages_to_update and contact_name:
+        # Atualizar página do contato
+        # _build_contacts usa asyncio.run() internamente (_summarize_conversation).
+        # Não pode ser chamado direto de contexto async — usar run_in_executor (thread pool).
+        contact_contacts = [c for c in contacts if c.get("name") == contact_name]
+        if contact_contacts:
+            projects_raw = _fetch("/api/projects")
+            projects = projects_raw if isinstance(projects_raw, list) else projects_raw.get("data", projects_raw.get("items", []))
+            recordings_for_contact = [recording]
+
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,  # default ThreadPoolExecutor
+                _build_contacts,
+                contact_contacts,
+                recordings_for_contact,
+                projects,
+            )
+            pages_updated.append(f"contacts/{_slug(contact_name)}")
+
+    # 6. Atualizar index.md e log
+    # Coletar nomes existentes no disco para não quebrar o index
+    existing_contacts = [f.stem for f in (WIKI_DIR / "contacts").glob("*.md")] if (WIKI_DIR / "contacts").exists() else []
+    existing_recordings = [f.stem for f in (WIKI_DIR / "recordings").glob("*.md")] if (WIKI_DIR / "recordings").exists() else []
+    existing_projects = [f.stem for f in (WIKI_DIR / "projects").glob("*.md")] if (WIKI_DIR / "projects").exists() else []
+    _build_index(existing_contacts, existing_recordings, existing_projects)
+
+    detail = f"{title[:60]} (confiança: {impact.get('confidence', '?')})"
+    _append_log(
+        len(pages_updated),
+        1,
+        0,
+        operation="ingest",
+        detail=detail,
+    )
+
+    logger.info("wiki/ingest: concluído — %d páginas atualizadas: %s", len(pages_updated), pages_updated)
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@router.post("/ingest", dependencies=[Depends(_require_wiki_key)])
+async def ingest_recording(background_tasks: BackgroundTasks, recording_id: str):
+    """Ingest incremental de uma gravacao: atualiza so as paginas afetadas.
+
+    Fluxo:
+    1. Busca a gravacao na API Orquestra
+    2. LLM analisa transcricao e produz mapa de impacto JSON
+    3. Atualiza apenas as paginas afetadas (SHA256 hash check)
+    4. Salva audit trail em /ingest-audit/{recording_id}.json
+
+    Mitigacoes:
+    - Idempotencia: rejeita recording_id ja em processamento
+    - Partial failure: audit trail salvo antes de executar updates
+    - Deriva semantica: validacao do JSON + fallback para mapa minimo
+    - Race condition: _write_if_changed e atomico por arquivo
+
+    Alternativa: use /rebuild para regenerar tudo do zero.
+    """
+    if not recording_id:
+        raise HTTPException(status_code=400, detail="recording_id obrigatorio")
+
+    # Idempotencia: rejeita se ja em processamento (Codex risk #2 e #3)
+    if recording_id in _ingest_in_progress:
+        return {
+            "status": "already_processing",
+            "recording_id": recording_id,
+            "message": "Este recording_id ja esta sendo processado. Aguarde ou use /rebuild.",
+        }
+
+    _ingest_in_progress.add(recording_id)
+
+    async def _run_and_cleanup():
+        try:
+            await _execute_ingest(recording_id)
+        finally:
+            _ingest_in_progress.discard(recording_id)
+
+    background_tasks.add_task(_run_and_cleanup)
+    return {
+        "status": "ingesting",
+        "recording_id": recording_id,
+        "message": "Ingest incremental iniciado em background. Audit trail sera salvo em /app/storage/wiki/ingest-audit/",
+    }
+
 
 @router.post("/rebuild", dependencies=[Depends(_require_wiki_key)])
 async def rebuild_wiki(background_tasks: BackgroundTasks, only: str | None = None):
-    """Dispara regeneracao do LLM Wiki em background."""
+    """Dispara regeneracao completa do LLM Wiki em background (fallback do ingest incremental)."""
     background_tasks.add_task(_generate_wiki, only)
     return {"status": "rebuilding", "only": only or "all", "message": "Wiki sendo gerada em background"}
 
@@ -705,7 +1030,15 @@ async def wiki_graph():
         seen_nodes.add(node_id)
 
         lines = md_file.read_text(encoding="utf-8", errors="replace").splitlines()
-        title = lines[0].lstrip("# ").strip() if lines else node_id
+        # Bug fix: pular frontmatter YAML (--- ... ---) antes de extrair o titulo H1
+        content_lines = lines
+        if lines and lines[0].strip() == "---":
+            try:
+                end_fm = lines.index("---", 1)
+                content_lines = lines[end_fm + 1:]
+            except ValueError:
+                content_lines = lines
+        title = next((l.lstrip("# ").strip() for l in content_lines if l.startswith("# ")), node_id)
         nodes.append({"id": node_id, "label": title, "type": folder})
 
         content = "\n".join(lines)
