@@ -17,9 +17,9 @@ from app.models import Subscription, SubscriptionPayment
 
 logger = logging.getLogger(__name__)
 
-EVOLUTION_BASE = getattr(settings, "EVOLUTION_API_URL", "https://apps-evolution-api.klx2s6.easypanel.host")
-EVOLUTION_KEY = getattr(settings, "EVOLUTION_API_KEY", "CD6D2B1F7373-4086-AAC9-53391CF245E8")
-DIEGO_PHONE = getattr(settings, "DIEGO_PHONE", "555193448124")
+EVOLUTION_BASE = settings.EVOLUTION_API_URL
+EVOLUTION_KEY = settings.EVOLUTION_API_KEY
+DIEGO_PHONE = settings.OWNER_WHATSAPP or "5551934481245"
 
 
 def _send_whatsapp(instance: str, apikey: str, phone: str, text: str) -> bool:
