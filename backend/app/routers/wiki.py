@@ -919,7 +919,7 @@ async def _execute_ingest(recording_id: str):
             projects = projects_raw if isinstance(projects_raw, list) else projects_raw.get("data", projects_raw.get("items", []))
             recordings_for_contact = [recording]
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None,  # default ThreadPoolExecutor
                 _build_contacts,
