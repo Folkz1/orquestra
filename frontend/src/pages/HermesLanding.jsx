@@ -345,7 +345,51 @@ export default function HermesLanding() {
           </a>
         </div>
 
-        {/* CTA */}
+        {/* Community upsell */}
+        <div className="mb-8 relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/8 via-orange-500/5 to-transparent p-8">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-semibold mb-4">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              Comunidade GuyFolkz
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-3">
+              Isto é só o que partilhamos em público.
+            </h2>
+            <p className="text-zinc-400 mb-6 max-w-xl">
+              Na comunidade tens acesso a <strong className="text-zinc-200">playbooks completos</strong>,
+              os prompts que usamos com clientes reais, skills avançadas de RAG, automações B2B,
+              e uma biblioteca de casos como este do Eduardo — entregues a cada semana.
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+              {[
+                { icon: '🧠', label: 'Prompts testados em produção' },
+                { icon: '⚙️', label: 'Skills RAG + multimodal' },
+                { icon: '📦', label: 'Playbooks B2B completos' },
+                { icon: '🎬', label: 'Cases reais semana a semana' },
+              ].map(({ icon, label }) => (
+                <div key={label} className="p-3 rounded-xl border border-zinc-700/50 bg-zinc-800/30 text-center">
+                  <div className="text-xl mb-1">{icon}</div>
+                  <div className="text-xs text-zinc-400 leading-tight">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <a href="https://guyyfolkz.mbest.site/comunidade" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold transition-all hover:scale-105 hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]">
+                Entrar na Comunidade →
+              </a>
+              <a href="https://guyyfolkz.mbest.site/playbook" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white font-semibold transition-all">
+                Ver Playbooks Grátis
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA implementação */}
         <div className="text-center p-8 rounded-2xl border border-zinc-800 bg-zinc-900/30">
           <p className="text-zinc-400 text-sm mb-2">Quer implementar no teu negócio?</p>
           <p className="text-white font-semibold mb-4">
