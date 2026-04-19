@@ -22,6 +22,7 @@ import YouTubeWorkspacePage from './pages/YouTubeWorkspacePage'
 import PlaybookPlatform from './pages/PlaybookPlatform'
 import TesterPage from './pages/TesterPage'
 import CommunityLanding from './pages/CommunityLanding'
+import HermesLanding from './pages/HermesLanding'
 import CommunityMembers from './pages/CommunityMembers'
 import SocialPublish from './pages/SocialPublish'
 import Subscriptions from './pages/Subscriptions'
@@ -67,6 +68,10 @@ function AppRoutes({ onLogout }) {
 
   if (location.pathname.startsWith('/playbook')) {
     return <PlaybookPlatform />
+  }
+
+  if (location.pathname === '/hermes') {
+    return <HermesLanding />
   }
 
   // Newsletter é página pública — renderiza sem Layout mesmo logado
@@ -148,6 +153,7 @@ export default function App() {
           <Route path="/comunidade" element={<CommunityLanding />} />
           <Route path="/membros" element={<CommunityMembers />} />
           <Route path="/playbook/*" element={<PlaybookPlatform />} />
+          <Route path="/hermes" element={<HermesLanding />} />
           <Route path="/tester" element={<TesterPage />} />
           <Route path="*" element={<Login onLogin={() => setAuthenticated(true)} />} />
         </Routes>
