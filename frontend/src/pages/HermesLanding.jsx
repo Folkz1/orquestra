@@ -4,7 +4,8 @@ const INSTALL_PROMPT = `Instala o Hermes Agent v0.10.0 no meu servidor e configu
 
 ## Contexto
 Hermes Agent é um framework open-source (Nous Research) para rodar agentes de IA locais num servidor VDS/VPS próprio.
-Sem custo por token de OpenAI. O agente tem memória persistente, skills configuráveis e gateway para WhatsApp e Telegram.
+O agente tem memória persistente, skills configuráveis e gateway para WhatsApp e Telegram.
+Funciona com qualquer provider LLM: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, ou qualquer endpoint OpenAI-compatível.
 
 ## O que vais instalar
 - Hermes Agent v0.10.0 via Docker
@@ -13,23 +14,57 @@ Sem custo por token de OpenAI. O agente tem memória persistente, skills configu
 - (Opcional) Gateway Telegram via \`hermes gateway run\`
 
 ## Antes de começar, pergunta-me (uma de cada vez):
-1. IP do servidor e utilizador SSH (ex: root@77.237.233.117)
-2. Nome da persona do agente (ex: Joana, Max, SilvIA)
-3. Área de atuação (ex: jurídica, médica, atendimento ao cliente)
-4. GEMINI_API_KEY — chave gratuita de aistudio.google.com
-5. Instalar gateway Telegram? (sim/não)
-6. Instalar shim WhatsApp? (sim/não)
+
+### 1. Servidor
+- IP do servidor e utilizador SSH (ex: root@77.237.233.117)
+
+### 2. Persona
+- Nome do agente (ex: Joana, Max, SilvIA)
+- Área de atuação (ex: jurídica, médica, atendimento, imobiliária)
+- Língua principal (pt-PT, pt-BR, en, es...)
+
+### 3. Provider LLM — qual queres usar?
+| Provider      | Quando escolher                       | Variável de ambiente |
+|---------------|---------------------------------------|----------------------|
+| OpenAI        | Já tens conta OpenAI / queres GPT-4o  | OPENAI_API_KEY       |
+| Anthropic     | Queres Claude (Sonnet/Opus)           | ANTHROPIC_API_KEY    |
+| Google Gemini | Tier gratuito generoso, multimodal    | GEMINI_API_KEY       |
+| OpenRouter    | Escolher entre 300+ modelos           | OPENROUTER_API_KEY   |
+| Groq          | Velocidade máxima (Llama 3.1 70B)     | GROQ_API_KEY         |
+| Ollama local  | 100% local (Llama, Mistral)           | endpoint http://host:11434 |
+| Custom        | Qualquer endpoint OpenAI-compat       | URL + API key        |
+
+Pergunta qual o provider e pede a API key correspondente.
+
+### 4. Modelo específico (depende do provider)
+Exemplos: OpenAI \`gpt-4o-mini\`, Anthropic \`claude-sonnet-4-5\`, Gemini \`gemini-2.5-flash\`, OpenRouter \`anthropic/claude-sonnet-4.5\`, Groq \`llama-3.1-70b-versatile\`, Ollama \`llama3.1\`.
+
+### 5. Integrações
+- Instalar gateway Telegram? (sim/não — se sim, pede TELEGRAM_BOT_TOKEN do @BotFather)
+- Instalar shim WhatsApp? (sim/não — se sim, pede a URL do Z-API bridge)
 
 ## Referência de comandos
 
-### 1. Criar container Hermes
+### 1. Criar container Hermes (exemplo OpenAI — ajusta ao provider escolhido)
 \`\`\`bash
 docker run -d --name hermes \\
   --restart unless-stopped \\
-  -e GEMINI_API_KEY=<chave> \\
+  -e OPENAI_API_KEY=<chave> \\
+  -e LLM_PROVIDER=openai \\
+  -e LLM_MODEL=gpt-4o-mini \\
   -p 9119:9119 -p 9120:9120 \\
+  -v /home/hermes:/home/hermes \\
   ghcr.io/folkz1/hermes:v0.10.0
 \`\`\`
+
+Ajustar env var conforme provider:
+- OPENAI_API_KEY=sk-... + LLM_PROVIDER=openai
+- ANTHROPIC_API_KEY=sk-ant-... + LLM_PROVIDER=anthropic
+- GEMINI_API_KEY=AIza... + LLM_PROVIDER=gemini
+- OPENROUTER_API_KEY=sk-or-... + LLM_PROVIDER=openrouter
+- GROQ_API_KEY=gsk_... + LLM_PROVIDER=groq
+- Ollama: LLM_PROVIDER=openai + LLM_BASE_URL=http://host.docker.internal:11434/v1
+- Custom: LLM_PROVIDER=openai + LLM_BASE_URL=<url> + OPENAI_API_KEY=<key>
 
 ### 2. Verificar instalação
 \`\`\`bash
@@ -46,6 +81,7 @@ Personaliza o SOUL.md com o nome, língua e área do teu agente.
 hermes gateway run --token <TELEGRAM_BOT_TOKEN>
 \`\`\`
 
+Recomendo começar com o provider que já tens conta/API key — evita um passo de setup.
 Começa por me perguntar o IP e as credenciais SSH.`
 
 const MIGRATE_PROMPT = `Migra o meu agente OpenClaw para o Hermes Agent usando a migração oficial.
@@ -53,11 +89,11 @@ const MIGRATE_PROMPT = `Migra o meu agente OpenClaw para o Hermes Agent usando a
 ## Contexto
 O \`hermes claw migrate\` é o comando oficial de migração OpenClaw → Hermes.
 Transfere: SOUL.md (personalidade), playbooks, knowledge base e configurações.
-O Hermes é o sucessor do OpenClaw — mesma filosofia, mais recursos, sem custo por token.
+O Hermes é o sucessor do OpenClaw — mesma filosofia, mais recursos, escolha livre de provider LLM (OpenAI, Anthropic, Gemini, OpenRouter, Groq, Ollama local, ou custom).
 
 ## O que vais fazer
 1. SSH ao servidor onde o OpenClaw está rodando
-2. Instalar Hermes Agent se não instalado (Docker)
+2. Instalar Hermes Agent se não instalado (Docker) — com o provider LLM escolhido
 3. \`hermes claw migrate --dry-run\` — preview sem executar nada
 4. \`hermes claw migrate --yes\` — migração real
 5. Verificar que o agente responde com a personalidade correcta
@@ -66,13 +102,56 @@ O Hermes é o sucessor do OpenClaw — mesma filosofia, mais recursos, sem custo
 8. Testar o bot no WhatsApp ao vivo
 
 ## Antes de começar, pergunta-me (uma de cada vez):
-1. IP do servidor e utilizador SSH (ex: root@77.237.233.117)
-2. O OpenClaw está em container Docker? Se sim, nome do container
-3. Tens bridge WhatsApp? Qual a URL actual do LLM endpoint?
-4. GEMINI_API_KEY para o Hermes (gratuita em aistudio.google.com)
-5. Manter OpenClaw activo durante a transição? (sim/não)
+
+### 1. Servidor
+- IP do servidor e utilizador SSH (ex: root@77.237.233.117)
+
+### 2. Container OpenClaw
+- O OpenClaw está em container Docker? Se sim, nome do container
+
+### 3. Bridge WhatsApp
+- Tens bridge WhatsApp (Z-API bridge ou similar)? Qual a URL actual do LLM endpoint?
+
+### 4. Provider LLM para o Hermes — qual queres usar?
+| Provider      | Quando escolher                       | Variável de ambiente |
+|---------------|---------------------------------------|----------------------|
+| OpenAI        | Já tens conta OpenAI / queres GPT-4o  | OPENAI_API_KEY       |
+| Anthropic     | Queres Claude (Sonnet/Opus)           | ANTHROPIC_API_KEY    |
+| Google Gemini | Tier gratuito generoso, multimodal    | GEMINI_API_KEY       |
+| OpenRouter    | Escolher entre 300+ modelos           | OPENROUTER_API_KEY   |
+| Groq          | Velocidade máxima (Llama 3.1 70B)     | GROQ_API_KEY         |
+| Ollama local  | 100% local (Llama, Mistral)           | endpoint http://host:11434 |
+| Custom        | Qualquer endpoint OpenAI-compat       | URL + API key        |
+
+Pergunta qual o provider e pede a API key.
+
+### 5. Modelo específico (depende do provider)
+Exemplos: OpenAI \`gpt-4o-mini\`, Anthropic \`claude-sonnet-4-5\`, Gemini \`gemini-2.5-flash\`, OpenRouter \`anthropic/claude-sonnet-4.5\`, Groq \`llama-3.1-70b-versatile\`, Ollama \`llama3.1\`.
+
+### 6. Transição
+- Manter OpenClaw activo durante a transição ou desligá-lo imediatamente?
 
 ## Referência de comandos
+
+### Instalação Hermes (exemplo OpenAI — ajusta env var ao provider escolhido)
+\`\`\`bash
+docker run -d --name hermes --restart unless-stopped \\
+  -e OPENAI_API_KEY=<chave> \\
+  -e LLM_PROVIDER=openai \\
+  -e LLM_MODEL=gpt-4o-mini \\
+  -p 9119:9119 -p 9120:9120 \\
+  -v /home/hermes:/home/hermes \\
+  ghcr.io/folkz1/hermes:v0.10.0
+\`\`\`
+
+Ajustar env var conforme provider:
+- OPENAI_API_KEY + LLM_PROVIDER=openai
+- ANTHROPIC_API_KEY + LLM_PROVIDER=anthropic
+- GEMINI_API_KEY + LLM_PROVIDER=gemini
+- OPENROUTER_API_KEY + LLM_PROVIDER=openrouter
+- GROQ_API_KEY + LLM_PROVIDER=groq
+- Ollama: LLM_PROVIDER=openai + LLM_BASE_URL=http://host.docker.internal:11434/v1
+- Custom: LLM_PROVIDER=openai + LLM_BASE_URL=<url> + OPENAI_API_KEY=<key>
 
 ### Migração
 \`\`\`bash
@@ -100,6 +179,7 @@ curl -X POST http://<IP>:9120/v1/chat/completions \\
   -d '{"model":"hermes","messages":[{"role":"user","content":"teste"}]}'
 \`\`\`
 
+Recomendo começar com o provider que já tens conta/API key.
 Começa por me perguntar o IP e as credenciais SSH.`
 
 const ARCH_STEPS = [
@@ -167,7 +247,7 @@ export default function HermesLanding() {
           <p className="text-lg text-zinc-400 max-w-xl mx-auto mb-3">
             Agente de IA no teu servidor. Com memória, skills, WhatsApp e Telegram.
             <br />
-            <strong className="text-zinc-200">Sem pagar OpenAI por token.</strong>
+            <strong className="text-zinc-200">Escolhe o teu LLM: OpenAI, Anthropic, Gemini, Groq, Ollama local ou custom.</strong>
           </p>
 
           <p className="text-sm text-zinc-600">
@@ -242,7 +322,7 @@ export default function HermesLanding() {
               </div>
 
               <div className="space-y-2 mb-4">
-                {['Docker instalado no servidor', 'GEMINI_API_KEY gratuita (aistudio.google.com)', 'Acesso SSH ao servidor'].map(r => (
+                {['Docker instalado no servidor', 'API key do provider à escolha (OpenAI, Anthropic, Gemini, Groq…) ou Ollama local', 'Acesso SSH ao servidor'].map(r => (
                   <div key={r} className="flex items-center gap-2 text-sm text-zinc-400">
                     <span className="text-emerald-400">✓</span> {r}
                   </div>
@@ -286,7 +366,7 @@ export default function HermesLanding() {
               </div>
 
               <div className="space-y-2 mb-4">
-                {['OpenClaw rodando no servidor', 'Hermes instalado (ou Claude instala)', 'GEMINI_API_KEY gratuita'].map(r => (
+                {['OpenClaw rodando no servidor', 'Hermes instalado (ou Claude instala)', 'API key do provider à escolha (ou Ollama local)'].map(r => (
                   <div key={r} className="flex items-center gap-2 text-sm text-zinc-400">
                     <span className="text-blue-400">✓</span> {r}
                   </div>
