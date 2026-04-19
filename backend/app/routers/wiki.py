@@ -1147,5 +1147,16 @@ async def wiki_status():
     if not log_path.exists():
         return {"status": "never_run", "log": []}
     lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    entries = [l for l in lines if l.startswith("- **")][-10:]
-    return {"status": "ok", "log": entries}
+    # Suporte a ambos os formatos de log:
+    # Novo (incremental): "## [2026-04-17 10:30 UTC] rebuild | ..."
+    # Legado (rebuild):   "- **2026-04-17 10:30 UTC** — N contatos..."
+    entries = []
+    for i, line in enumerate(lines):
+        if line.startswith("## [") and "] " in line:
+            # Novo formato — inclui header + linha de body seguinte
+            body = lines[i + 1].strip() if i + 1 < len(lines) else ""
+            entries.append(f"{line} | {body}" if body else line)
+        elif line.startswith("- **"):
+            # Formato legado
+            entries.append(line)
+    return {"status": "ok", "log": entries[-10:]}
