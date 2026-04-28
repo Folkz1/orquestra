@@ -3,21 +3,21 @@ import { Link } from 'react-router-dom'
 import { createCommunityLead } from '../api'
 
 const MODULES = [
-  { title: 'Gerenciamento de Projetos', desc: 'Backlog, prioridade e execucao para tirar projeto do papel com menos caos.' },
-  { title: 'WhatsApp Integrado', desc: 'Fluxos comerciais e operacao conectada ao WhatsApp com automacao pratica.' },
-  { title: 'Remotion no YouTube', desc: 'Aula real no ar sobre pipeline de video com codigo, render e publicacao.' },
-  { title: 'Automacao WhatsApp B2B', desc: 'Evolution API, fluxos, debounce e operacao comercial com IA.' },
-  { title: 'YouTube Analytics', desc: 'Tendencias, briefing e direcionamento de conteudo para crescer o canal.' },
-  { title: 'Deploy Automatizado', desc: 'Publicacao com EasyPanel, containers e rotina de deploy sem travar o negocio.' },
+  { title: 'Instalacao guiada do Hermes', desc: 'Passo a passo para rodar localmente ou em VPS com Docker, dominio e painel web.' },
+  { title: 'Prompts para Claude Code e Codex', desc: 'Comandos prontos para a IA instalar, configurar e validar o agente junto com voce.' },
+  { title: 'Repositorios GitHub prontos', desc: 'Arquivos base, templates e estrutura para voce executar sem comecar do zero.' },
+  { title: 'GPT-5.5 com OAuth', desc: 'Configuracao do provider OpenAI Codex, modelo, contexto e boas praticas de uso.' },
+  { title: 'Telegram, memoria e skills', desc: 'Como ligar o Hermes em canais reais e transformar conversa em agente persistente.' },
+  { title: 'Oferta B2B com Hermes', desc: 'Como empacotar agentes self-hosted para clientes, automacoes e operacoes reais.' },
 ]
 
 const BENEFITS = [
-  'Acesso imediato por 6 horas para explorar o conteudo',
-  'Playbooks e modulos completos da Academy',
-  'Aula real de Remotion + recursos para acelerar tua implementacao',
-  'Contato direto com Diego no WhatsApp para fechar a assinatura',
-  'Credenciais e liberacao final enviadas manualmente no WhatsApp',
-  'Tudo que esta funcionando na pratica, sem teoria vazia',
+  'Curso Hermes como produto principal desta turma',
+  'Prompts prontos para Claude Code e Codex instalarem com voce',
+  'Repositorios e templates para rodar localmente ou em VPS',
+  '6 meses de comunidade GuyFolkz incluidos como bonus',
+  'Fechamento e suporte inicial direto pelo WhatsApp do Diego',
+  'Acesso de teste por 6 horas enquanto a assinatura e fechada',
 ]
 
 function normalizePhone(value) {
@@ -55,7 +55,7 @@ export default function CommunityLanding() {
         name: name.trim(),
         email: email.trim(),
         started_at: Date.now(),
-        source: 'community_manual_trial',
+        source: 'hermes_course_manual_lead',
       }))
 
       const res = await createCommunityLead({
@@ -69,7 +69,7 @@ export default function CommunityLanding() {
         return
       }
 
-      setNotice(res?.message || 'Recebemos teu contato. Vou te chamar no WhatsApp para concluir.')
+      setNotice(res?.message || 'Recebemos teu interesse. Vou te chamar no WhatsApp para fechar o Curso Hermes.')
     } catch (err) {
       const detail = err?.data?.detail
       if (typeof detail === 'string') {
@@ -89,23 +89,23 @@ export default function CommunityLanding() {
         <div className="relative mx-auto max-w-4xl text-center">
           <p className="font-mono text-xs uppercase tracking-widest text-[#8bd450]">GuyFolkz Academy</p>
           <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-5xl">
-            Entre agora na comunidade com <span className="text-[#8bd450]">6 horas de acesso</span>
+            Entre no Curso Hermes e ganhe <span className="text-[#8bd450]">6 meses de comunidade</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base text-zinc-400 sm:text-lg">
-            Libero teu acesso ao conteudo imediatamente e te chamo no WhatsApp para fechar a assinatura manualmente.
-            Depois disso, as credenciais e a continuidade do acesso seguem direto pelo WhatsApp.
+            Aprenda a instalar o Hermes localmente ou na VPS com prompts prontos para Claude Code/Codex,
+            repositorios GitHub e suporte direto para colocar seu agente IA self-hosted no ar.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <a href="#assinar" className="rounded-2xl bg-[#8bd450] px-8 py-3 text-sm font-semibold text-black transition-transform hover:scale-105">
-              Liberar acesso agora
+              Quero entrar no Curso Hermes
             </a>
             <a
-              href="https://www.youtube.com/watch?v=eHWvvgJTb1s"
+              href="https://guyyfolkz.mbest.site/hermes"
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-2xl border border-white/10 px-8 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5"
             >
-              Ver a aula de Remotion
+              Ver a pagina Hermes
             </a>
           </div>
         </div>
@@ -114,24 +114,24 @@ export default function CommunityLanding() {
       <section className="border-y border-white/6 bg-white/2 px-4 py-12 sm:px-6">
         <div className="mx-auto grid max-w-5xl gap-8 sm:grid-cols-3">
           <div className="text-center">
-            <p className="text-3xl font-bold text-[#8bd450]">6h</p>
-            <p className="mt-1 text-sm text-zinc-400">Acesso imediato ao conteudo</p>
+            <p className="text-3xl font-bold text-[#8bd450]">Curso</p>
+            <p className="mt-1 text-sm text-zinc-400">Hermes do zero ate o servidor</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-[#5ea6ff]">R$70</p>
-            <p className="mt-1 text-sm text-zinc-400">Assinatura mensal fechada no WhatsApp</p>
+            <p className="text-3xl font-bold text-[#5ea6ff]">R$420</p>
+            <p className="mt-1 text-sm text-zinc-400">Bonus em 6 meses de comunidade</p>
           </div>
           <div className="text-center">
             <p className="text-3xl font-bold text-[#67d7d0]">1:1</p>
-            <p className="mt-1 text-sm text-zinc-400">Fechamento e credenciais enviados manualmente</p>
+            <p className="mt-1 text-sm text-zinc-400">Fechamento manual pelo WhatsApp</p>
           </div>
         </div>
       </section>
 
       <section className="px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-5xl">
-          <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">O que voce vai encontrar</p>
-          <h2 className="mt-3 text-2xl font-bold sm:text-3xl">Conteudo para gerar resultado rapido</h2>
+          <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">O que voce recebe</p>
+          <h2 className="mt-3 text-2xl font-bold sm:text-3xl">Treinamento pratico para colocar Hermes no ar</h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {MODULES.map((module, index) => (
               <div key={module.title} className="rounded-2xl border border-white/8 bg-white/3 p-5 transition-colors hover:bg-white/5">
@@ -149,7 +149,7 @@ export default function CommunityLanding() {
 
       <section className="border-y border-white/6 bg-white/2 px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-center text-2xl font-bold sm:text-3xl">Como funciona hoje</h2>
+          <h2 className="text-center text-2xl font-bold sm:text-3xl">Como funciona a primeira turma</h2>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {BENEFITS.map((benefit) => (
               <div key={benefit} className="flex items-start gap-3 rounded-xl border border-white/6 bg-white/3 px-4 py-3">
@@ -164,13 +164,12 @@ export default function CommunityLanding() {
       <section id="assinar" className="px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-md">
           <div className="rounded-3xl border border-[#8bd450]/20 bg-[#10141b] p-8">
-            <p className="font-mono text-xs uppercase tracking-widest text-[#8bd450]">Comunidade GuyFolkz</p>
+            <p className="font-mono text-xs uppercase tracking-widest text-[#8bd450]">Curso Hermes + Comunidade</p>
             <div className="mt-4 flex items-end gap-2">
-              <span className="text-4xl font-bold">R$70</span>
-              <span className="mb-1 text-sm text-zinc-400">/mes</span>
+              <span className="text-4xl font-bold">Turma inicial</span>
             </div>
             <p className="mt-2 text-sm text-zinc-400">
-              Acesso imediato por 6 horas. Eu mesmo continuo o fechamento com voce no WhatsApp.
+              Deixa teu WhatsApp e eu te chamo para fechar o acesso ao curso, aos prompts, aos repositorios e aos 6 meses de comunidade.
             </p>
 
             <form onSubmit={handleLeadCapture} className="mt-6 space-y-3">
@@ -203,12 +202,12 @@ export default function CommunityLanding() {
                 disabled={loading}
                 className="w-full rounded-xl bg-[#8bd450] py-3 text-sm font-semibold text-black transition-all hover:bg-[#9be060] disabled:opacity-50"
               >
-                {loading ? 'Liberando acesso...' : 'Quero meu acesso de 6 horas'}
+                {loading ? 'Enviando interesse...' : 'Quero entrar no Curso Hermes'}
               </button>
             </form>
 
             <p className="mt-4 text-center text-xs text-zinc-500">
-              Sem checkout automatico. O fechamento e as credenciais seguem direto no WhatsApp.
+              Sem checkout automatico nesta turma. O fechamento e as credenciais seguem direto no WhatsApp.
             </p>
           </div>
         </div>
@@ -218,7 +217,7 @@ export default function CommunityLanding() {
         <p>GuyFolkz Academy. Construido com Claude Code + Orquestra.</p>
         <div className="mt-2 flex justify-center gap-4">
           <Link to="/membros" className="hover:text-zinc-300">Area de membros</Link>
-          <a href="https://www.youtube.com/watch?v=eHWvvgJTb1s" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300">Aula de Remotion</a>
+          <Link to="/hermes" className="hover:text-zinc-300">Pagina Hermes</Link>
           <a href="https://youtube.com/@guyfolkz" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300">YouTube</a>
         </div>
       </footer>

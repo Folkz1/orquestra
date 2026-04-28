@@ -144,6 +144,8 @@ export default function App() {
         <AppRoutes onLogout={() => { localStorage.removeItem('orquestra_token'); setAuthenticated(false) }} />
       ) : (
         <Routes>
+          <Route path="/" element={<HermesLanding />} />
+          <Route path="/login" element={<Login onLogin={() => setAuthenticated(true)} />} />
           <Route path="/newsletter" element={<NewsletterPage />} />
           <Route path="/youtube-briefing" element={<YouTubeBriefing />} />
           <Route path="/proposta/:slug" element={<ProposalView />} />

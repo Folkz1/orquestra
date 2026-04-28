@@ -51,7 +51,7 @@ MANUAL_TRIAL_HOURS = 6
 MANUAL_TRIAL_PAYMENT_METHOD = "manual_whatsapp_pending"
 MANUAL_PAID_PAYMENT_METHOD = "manual_whatsapp_paid"
 TRIAL_REDIRECT_URL = "/membros?trial=1"
-DEFAULT_ADMIN_PHONES = ("5551993448124", "51993448124")
+DEFAULT_ADMIN_PHONES = ("555193299031", "5551993448124", "51993448124")
 
 # ─── JWT Config ──────────────────────────────────────────────────────────
 
@@ -367,7 +367,7 @@ async def _notify_owner_about_lead(*, phone: str, name: str, email: str | None, 
 
         expires_text = expires_at.astimezone(timezone.utc).strftime("%d/%m %H:%M UTC") if expires_at else "sem expiracao"
         message = (
-            "*Lead da comunidade*\n\n"
+            "*Lead Curso Hermes + comunidade*\n\n"
             f"Status: {status}\n"
             f"Nome: {name or 'Nao informado'}\n"
             f"WhatsApp: {phone}\n"
