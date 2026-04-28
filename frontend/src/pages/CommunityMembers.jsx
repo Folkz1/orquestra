@@ -6,13 +6,85 @@ const HIDDEN_MODULE_SLUGS = new Set(['fundacao', 'orchestrator'])
 
 const ACADEMY_VIDEOS = [
   {
+    id: 'hermes-prompt',
+    externalUrl: '/hermes',
+    tier: 'free',
+    title: 'Aula 0 - Prompt de instalacao Hermes',
+    desc: 'Comece pelo prompt e pela arquitetura do Hermes enquanto as gravacoes da turma entram no ar.',
+    duration: 'inicio rapido',
+    tag: 'Hermes',
+  },
+  {
     id: 'eHWvvgJTb1s',
     tier: 'free',
-    title: 'Eu edito videos com CODIGO (Remotion + Claude Code + Render Farm)',
-    desc: 'A aula real que esta no ar hoje sobre o pipeline de Remotion e render farm.',
+    title: 'Bonus - Pipeline com codigo, Claude Code e Render Farm',
+    desc: 'Aula bonus da Academy mostrando a filosofia de usar codigo e agentes para criar ativos reais.',
     duration: '18 min',
-    tag: 'Remotion',
+    tag: 'Bonus',
     thumbnail: 'https://i.ytimg.com/vi/eHWvvgJTb1s/sddefault.jpg',
+  },
+]
+
+const HERMES_MODULES = [
+  {
+    slug: 'hermes-instalacao',
+    icon: 'H1',
+    tier: 'pro',
+    title: 'Instalacao Hermes local e VPS',
+    description: 'Docker, EasyPanel, dominio, dashboard e primeiro teste do agente.',
+    step_count: 4,
+    duration_min: 42,
+    href: '/hermes',
+  },
+  {
+    slug: 'hermes-prompts',
+    icon: 'H2',
+    tier: 'pro',
+    title: 'Prompts Claude Code e Codex',
+    description: 'Prompts para a IA instalar, perguntar credenciais e validar tudo com voce.',
+    step_count: 5,
+    duration_min: 35,
+    href: '/hermes',
+  },
+  {
+    slug: 'hermes-gpt55-oauth',
+    icon: 'H3',
+    tier: 'pro',
+    title: 'GPT-5.5, OAuth e providers',
+    description: 'OpenAI Codex OAuth, modelo padrao, contexto e fallback de providers.',
+    step_count: 3,
+    duration_min: 28,
+    href: '/hermes',
+  },
+  {
+    slug: 'hermes-memoria-skills',
+    icon: 'H4',
+    tier: 'pro',
+    title: 'SOUL, memoria e skills',
+    description: 'Como transformar chat descartavel em agente com identidade e contexto vivo.',
+    step_count: 4,
+    duration_min: 33,
+    href: '/hermes',
+  },
+  {
+    slug: 'hermes-telegram-whatsapp',
+    icon: 'H5',
+    tier: 'pro',
+    title: 'Telegram, WhatsApp e operacao',
+    description: 'Gateways, alertas, conversa real e cuidado com aprovacoes em producao.',
+    step_count: 4,
+    duration_min: 36,
+    href: '/hermes',
+  },
+  {
+    slug: 'hermes-b2b',
+    icon: 'H6',
+    tier: 'pro',
+    title: 'Empacotando Hermes para B2B',
+    description: 'Como vender agentes self-hosted para atendimento, juridico, comercial e suporte.',
+    step_count: 3,
+    duration_min: 31,
+    href: '/comunidade',
   },
 ]
 
@@ -473,7 +545,7 @@ export default function CommunityMembers() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium">Ola, {member.name || 'membro'}.</p>
-                  <p className="mt-0.5 text-xs text-zinc-500">Seu progresso dentro da Academy</p>
+                  <p className="mt-0.5 text-xs text-zinc-500">Seu progresso no Curso Hermes</p>
                 </div>
                 <p className="text-2xl font-bold text-[#8bd450]">{progress}%</p>
               </div>
@@ -484,7 +556,7 @@ export default function CommunityMembers() {
               {isTrial && (
                 <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
                   <p className="text-sm font-medium text-amber-200">Trial de 6 horas ativo</p>
-                  <p className="mt-1 text-xs text-amber-100/80">Conteudo liberado ate {formatDateTime(member.expires_at)}. Feed, membros e ranking entram depois da confirmacao manual.</p>
+                  <p className="mt-1 text-xs text-amber-100/80">Curso Hermes liberado ate {formatDateTime(member.expires_at)}. Feed, membros e ranking entram depois da confirmacao manual.</p>
                 </div>
               )}
               {!isTrial && member.payment_method === 'manual_whatsapp_paid' && (
@@ -498,12 +570,12 @@ export default function CommunityMembers() {
             <div className={`grid gap-3 ${isTrial ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
               <button onClick={() => setTab('aulas')} className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4 text-left hover:bg-purple-500/10">
                 <p className="text-sm font-semibold text-purple-300">Aulas</p>
-                <p className="mt-1 text-xs text-zinc-400">{ACADEMY_VIDEOS.length === 1 ? '1 aula real no ar agora' : `${ACADEMY_VIDEOS.length} aulas disponiveis agora`}</p>
+                <p className="mt-1 text-xs text-zinc-400">Primeiros materiais Hermes e bonus da Academy</p>
               </button>
               {showResources && (
                 <button onClick={() => setTab('recursos')} className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-left hover:bg-blue-500/10">
                   <p className="text-sm font-semibold text-blue-300">Recursos</p>
-                  <p className="mt-1 text-xs text-zinc-400">Downloads, templates e playbooks</p>
+                  <p className="mt-1 text-xs text-zinc-400">Prompts, repositorios e playbooks</p>
                 </button>
               )}
               {!isTrial && (
@@ -527,14 +599,14 @@ export default function CommunityMembers() {
             </div>
 
             <div>
-              <h2 className="text-base font-bold">Modulos</h2>
+              <h2 className="text-base font-bold">Trilha Hermes</h2>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {modules.map((module) => {
+                {HERMES_MODULES.map((module) => {
                   const locked = module.tier === 'pro' && !hasContentAccess
                   return (
                     <button
                       key={module.id || module.slug}
-                      onClick={() => { if (!locked) loadModule(module.slug) }}
+                      onClick={() => { if (!locked && module.href) window.location.assign(module.href) }}
                       disabled={locked}
                       className={`rounded-2xl border p-4 text-left ${locked ? 'cursor-not-allowed border-white/4 bg-white/2 opacity-60' : 'border-white/8 bg-white/3 hover:bg-white/5'}`}
                     >
@@ -557,15 +629,19 @@ export default function CommunityMembers() {
           <div className="space-y-4">
             <div>
               <h2 className="text-lg font-bold">Sala de aulas</h2>
-              <p className="mt-1 text-sm text-zinc-400">Hoje a aula publicada de verdade e a do pipeline de Remotion.</p>
+              <p className="mt-1 text-sm text-zinc-400">Primeiros materiais do Curso Hermes e bonus da Academy.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {ACADEMY_VIDEOS.map((video) => {
                 const locked = video.tier === 'pro' && !hasContentAccess
                 return (
-                  <button key={video.id} onClick={() => { setActiveVideo(video); setView('video') }} className={`overflow-hidden rounded-2xl border text-left ${locked ? 'border-white/6 opacity-80' : 'border-white/10 hover:border-white/20'}`}>
+                  <button key={video.id} onClick={() => { if (video.externalUrl) window.location.assign(video.externalUrl); else { setActiveVideo(video); setView('video') } }} className={`overflow-hidden rounded-2xl border text-left ${locked ? 'border-white/6 opacity-80' : 'border-white/10 hover:border-white/20'}`}>
                     <div className="relative aspect-video bg-zinc-900">
-                      <img src={video.thumbnail || `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`} alt={video.title} className="h-full w-full object-cover" />
+                      {video.thumbnail ? (
+                        <img src={video.thumbnail} alt={video.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-500/20 via-blue-500/10 to-zinc-950 text-sm font-semibold text-emerald-200">Curso Hermes</div>
+                      )}
                       {locked && <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-semibold text-amber-200">PRO</div>}
                     </div>
                     <div className="p-4">
