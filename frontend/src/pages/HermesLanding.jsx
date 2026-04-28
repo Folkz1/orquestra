@@ -192,12 +192,6 @@ const ARCH_STEPS = [
   { icon: '🤖', label: 'Hermes Agent', desc: 'SOUL + skills + memória + RAG' },
 ]
 
-const DEMO_LINKS = [
-  { icon: '💻', label: 'CLI Web', url: 'https://hermes-testdrive.advocaciadeguerrilha.com', desc: 'Terminal no browser' },
-  { icon: '📊', label: 'Dashboard UI', url: 'https://hermes-ui.advocaciadeguerrilha.com', desc: 'Sessões em tempo real' },
-  { icon: '✈️', label: 'Telegram Bot', url: 'https://t.me/Hermesstestebot', desc: 'Chat com o agente' },
-]
-
 function CopyButton({ text, label }) {
   const [copied, setCopied] = useState(false)
   const handleCopy = () => {
@@ -409,23 +403,6 @@ export default function HermesLanding() {
             </div>
           </div>
         )}
-
-        {/* Demo links */}
-        <div className="mb-12">
-          <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-widest mb-4 text-center">
-            Demos ao Vivo (case Eduardo — Advocacia de Guerrilha)
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {DEMO_LINKS.map(({ icon, label, url, desc }) => (
-              <a key={label} href={url} target="_blank" rel="noopener noreferrer"
-                className="group p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 hover:border-zinc-600 hover:bg-zinc-800/40 transition-all hover:scale-[1.02]">
-                <div className="text-2xl mb-2">{icon}</div>
-                <div className="font-semibold text-white text-sm mb-0.5">{label}</div>
-                <div className="text-xs text-zinc-500">{desc}</div>
-              </a>
-            ))}
-          </div>
-        </div>
 
         {/* Video placeholder */}
         <div className="mb-12 p-8 rounded-2xl border border-zinc-800 bg-zinc-900/40 text-center">
