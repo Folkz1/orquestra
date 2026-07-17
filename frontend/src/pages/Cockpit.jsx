@@ -5,7 +5,14 @@ import { getTasks, updateTask } from '../api'
 // uma task com metadata_json.kind === 'cockpit_question' é uma pergunta.
 // O Claude cria via POST /api/tasks; o Diego responde aqui (PATCH /api/tasks/{id}).
 const KIND = 'cockpit_question'
+const KIND_FW = 'flywheel'          // estado de um loop rodando (1 card por projeto)
 const POLL_MS = 10000
+
+// Métricas do scorecard do Flywheel (M1-M7). Ordem e rótulo curtos para o card.
+const METRICAS = [
+  ['M1', 'precisão'], ['M2', 'reincidência'], ['M3', 'detecção'],
+  ['M4', 'aceite'], ['M5', 'ruído'], ['M6', 'fila'], ['M7', 'custo'],
+]
 
 const UI_META = {
   decision: { label: 'Decisão', badge: 'bg-sky-500/15 text-sky-200 border-sky-500/30' },
@@ -102,15 +109,74 @@ function QuestionCard({ task, onAnswer }) {
   )
 }
 
+function projName(p) {
+  return String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
+}
+
+// Card de um Flywheel: o que o loop fez + o scorecard que ele mede e melhora.
+function FlywheelCard({ fw }) {
+  const m = fw.metadata_json || {}
+  const rodando = (m.status || '').toLowerCase() === 'rodando'
+  const sc = m.scorecard || {}
+  const prog = m.progresso || {}
+  const ultimo = m.ultimo_ciclo || {}
+  return (
+    <div className={`rounded-2xl border p-5 ${rodando ? 'border-emerald-500/30 bg-emerald-500/[0.04]' : 'border-white/8 bg-white/[0.03]'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-white">
+          🔄 {projName(m.project_path) || fw.title}
+        </h3>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${rodando ? 'bg-emerald-500/15 text-emerald-200' : 'bg-zinc-700/40 text-zinc-400'}`}>
+          {rodando ? `● rodando${m.janela ? ' · ' + m.janela : ''}` : 'parado'}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
+        {m.ciclos != null && <span>ciclos: <b className="text-zinc-200">{m.ciclos}</b></span>}
+        {prog.total != null && <span>tarefas: <b className="text-zinc-200">{prog.feitas || 0}/{prog.total}</b></span>}
+        {m.propostas && <span>propostas: <b className="text-amber-200">{m.propostas.pendentes || 0}</b> pendentes · {m.propostas.aplicadas || 0} aplicadas</span>}
+      </div>
+      {ultimo.resumo && (
+        <p className="mt-3 rounded-lg border-l-2 border-sky-500/40 bg-black/20 px-3 py-2 text-sm text-zinc-300">
+          <span className="text-zinc-500">último ciclo{ultimo.n ? ' #' + ultimo.n : ''}:</span> {ultimo.resumo}
+          {ultimo.ts && <span className="ml-1 text-[11px] text-zinc-600">· {formatDate(ultimo.ts)}</span>}
+        </p>
+      )}
+      {Object.keys(sc).length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {METRICAS.filter(([k]) => sc[k] != null).map(([k, label]) => {
+            const v = sc[k]
+            const val = v && typeof v === 'object' ? v.valor : v
+            const ok = v && typeof v === 'object' ? v.ok : null
+            const tone = ok === true ? 'border-emerald-500/30 text-emerald-200'
+              : ok === false ? 'border-rose-500/30 text-rose-200'
+                : 'border-white/10 text-zinc-300'
+            return (
+              <span key={k} className={`rounded-md border px-2 py-1 text-[10px] ${tone}`} title={label}>
+                {k} {label}: <b>{String(val)}</b>
+              </span>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Cockpit() {
   const [tasks, setTasks] = useState([])
+  const [flywheels, setFlywheels] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
     try {
-      const data = await getTasks({ kind: KIND })
-      setTasks(Array.isArray(data) ? data : data.items || [])
+      const [q, fw] = await Promise.all([
+        getTasks({ kind: KIND }),
+        getTasks({ kind: KIND_FW }).catch(() => []),
+      ])
+      setTasks(Array.isArray(q) ? q : q.items || [])
+      setFlywheels((Array.isArray(fw) ? fw : fw.items || [])
+        .sort((a, b) => ((b.metadata_json || {}).status === 'rodando' ? 1 : 0) - ((a.metadata_json || {}).status === 'rodando' ? 1 : 0)))
       setError(null)
     } catch (err) {
       setError(err.message || 'falha ao carregar')
@@ -167,6 +233,18 @@ export default function Cockpit() {
         </div>
       )}
 
+      {flywheels.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+            🔄 Flywheels — o que os loops estão fazendo
+          </h2>
+          <div className="space-y-3">
+            {flywheels.map((fw) => <FlywheelCard key={fw.id} fw={fw} />)}
+          </div>
+        </section>
+      )}
+
+      <h2 className="mb-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">🔔 Precisam de você</h2>
       <section className="space-y-3">
         {loading ? (
           <p className="text-sm text-zinc-500">carregando…</p>
