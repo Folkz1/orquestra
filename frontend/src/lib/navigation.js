@@ -4,6 +4,7 @@ export const desktopNavSections = [
     label: 'Central',
     items: [
       { to: '/', label: 'Home', description: 'KPIs executivos e radar do dia' },
+      { to: '/cockpit', label: 'Cockpit', description: 'Perguntas do Claude que precisam de você' },
       { to: '/chat', label: 'Chat', description: 'WhatsApp realtime com contexto do cliente' },
       { to: '/briefs', label: 'Briefings', description: 'Resumo diario e contexto acionavel' },
     ],
