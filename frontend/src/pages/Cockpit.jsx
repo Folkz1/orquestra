@@ -252,6 +252,72 @@ function PlanReviewCard({ plan, onDecide }) {
   )
 }
 
+// Card de PROJETO detalhado: clica e vê o que está sendo feito ali (resumo, git, loop, perguntas).
+function ProjetoCard({ beat, flywheel, perguntas }) {
+  const m = beat.metadata_json || {}
+  const [aberto, setAberto] = useState(false)
+  const min = m.updated_at ? Math.round((Date.now() - new Date(m.updated_at).getTime()) / 60000) : null
+  const vivo = min != null && min < 15
+  const quando = min == null ? '' : min < 15 ? `ativo agora (${min}min)` : min < 60 ? `há ${min}min` : min < 1440 ? `há ${(min / 60).toFixed(1)}h` : `há ${(min / 1440).toFixed(1)} dias`
+  const fwm = (flywheel || {}).metadata_json || {}
+  const commits = m.commits_recentes || []
+
+  return (
+    <div className={`rounded-xl border ${vivo ? 'border-emerald-500/25 bg-emerald-500/[0.03]' : 'border-white/6 bg-white/[0.02]'}`}>
+      <button onClick={() => setAberto((a) => !a)} className="flex w-full items-start justify-between gap-2 px-4 py-3 text-left hover:bg-white/[0.02]">
+        <div className="min-w-0">
+          <span className="text-sm font-medium text-zinc-200">
+            {vivo && <span className="mr-1 text-emerald-300">●</span>}{aberto ? '▾ ' : '▸ '}{projName(m.project_path)}
+            {m.branch && <span className="ml-2 rounded bg-white/6 px-1.5 py-0.5 text-[10px] text-zinc-400">{m.branch}</span>}
+          </span>
+          {!aberto && m.last_summary && <p className="mt-0.5 truncate text-xs text-zinc-500">{m.last_summary}</p>}
+        </div>
+        <div className="shrink-0 text-right">
+          <span className="text-[11px] text-zinc-500">{quando}</span>
+          <div className="mt-0.5 flex justify-end gap-1.5 text-[10px]">
+            {fwm.status && <span className="rounded bg-sky-500/15 px-1.5 text-sky-200">🔄 {fwm.status}</span>}
+            {perguntas > 0 && <span className="rounded bg-amber-500/15 px-1.5 text-amber-200">🔔 {perguntas}</span>}
+            {m.arquivos_mexidos > 0 && <span className="rounded bg-white/6 px-1.5 text-zinc-400">{m.arquivos_mexidos} arq</span>}
+          </div>
+        </div>
+      </button>
+      {aberto && (
+        <div className="border-t border-white/6 px-4 py-3 space-y-3">
+          {m.last_summary && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">o que a última sessão fez</p>
+              <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">{m.last_summary}</p>
+            </div>
+          )}
+          {commits.length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">últimos commits (o que mudou)</p>
+              <ul className="mt-1 space-y-0.5">
+                {commits.map((c, i) => <li key={i} className="text-xs text-zinc-400">· {c}</li>)}
+              </ul>
+            </div>
+          )}
+          {fwm.status && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">loop de melhoria</p>
+              <p className="mt-1 text-xs text-zinc-400">
+                {fwm.status} · {(fwm.progresso || {}).feitas || 0}/{(fwm.progresso || {}).total || '?'} tarefas
+                {(fwm.propostas) ? ` · ${fwm.propostas.pendentes || 0} propostas pendentes` : ''}
+                {(fwm.scorecard || {}).M1 ? ` · M1 ${fwm.scorecard.M1.valor}` : ''}
+              </p>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-x-4 text-[10px] text-zinc-600">
+            {m.account && <span>conta: {m.account}</span>}
+            {m.branch && <span>branch: {m.branch}</span>}
+            {m.arquivos_mexidos != null && <span>{m.arquivos_mexidos} arquivos com mudança</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Cockpit() {
   const [tasks, setTasks] = useState([])
   const [flywheels, setFlywheels] = useState([])
@@ -377,24 +443,10 @@ export default function Cockpit() {
           </h2>
           <div className="space-y-2">
             {beats.map((t) => {
-              const m = t.metadata_json || {}
-              const min = m.updated_at ? Math.round((Date.now() - new Date(m.updated_at).getTime()) / 60000) : null
-              const vivo = min != null && min < 15
-              return (
-                <div key={t.id} className={`rounded-xl border px-4 py-3 ${vivo ? 'border-emerald-500/25 bg-emerald-500/[0.03]' : 'border-white/6 bg-white/[0.02]'}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-zinc-200">
-                      {vivo && <span className="mr-1 text-emerald-300">●</span>}
-                      {projName(m.project_path)}
-                    </span>
-                    <span className="text-[11px] text-zinc-500">
-                      {min == null ? '' : min < 15 ? `ativo agora (${min}min)` : min < 60 ? `há ${min}min` : min < 1440 ? `há ${(min / 60).toFixed(1)}h` : `há ${(min / 1440).toFixed(1)} dias`}
-                    </span>
-                  </div>
-                  {m.last_summary && <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{m.last_summary}</p>}
-                  {m.account && <p className="mt-0.5 text-[10px] text-zinc-600">{m.account}</p>}
-                </div>
-              )
+              const pp = (t.metadata_json || {}).project_path || ''
+              const fw = flywheels.find((f) => (f.metadata_json || {}).project_path === pp)
+              const nq = tasks.filter((q) => isPending(q) && ((q.metadata_json || {}).project_path || '') === pp).length
+              return <ProjetoCard key={t.id} beat={t} flywheel={fw} perguntas={nq} />
             })}
           </div>
         </section>
