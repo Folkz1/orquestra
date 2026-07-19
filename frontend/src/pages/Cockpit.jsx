@@ -7,6 +7,7 @@ import { getTasks, updateTask } from '../api'
 const KIND = 'cockpit_question'
 const KIND_FW = 'flywheel'          // estado de um loop rodando (1 card por projeto)
 const KIND_PLAN = 'plan_review'     // F5 — plano fatiado pra revisar/comentar por seção
+const KIND_HB = 'cockpit_heartbeat' // pulso de cada sessão (hook Stop, determinístico)
 const POLL_MS = 10000
 
 // Métricas do scorecard do Flywheel (M1-M7). Ordem e rótulo curtos para o card.
@@ -258,17 +259,22 @@ export default function Cockpit() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  const [beats, setBeats] = useState([])
+
   const load = useCallback(async () => {
     try {
-      const [q, fw, pl] = await Promise.all([
+      const [q, fw, pl, hb] = await Promise.all([
         getTasks({ kind: KIND }),
         getTasks({ kind: KIND_FW }).catch(() => []),
         getTasks({ kind: KIND_PLAN }).catch(() => []),
+        getTasks({ kind: KIND_HB }).catch(() => []),
       ])
       setTasks(Array.isArray(q) ? q : q.items || [])
       setFlywheels((Array.isArray(fw) ? fw : fw.items || [])
         .sort((a, b) => ((b.metadata_json || {}).status === 'rodando' ? 1 : 0) - ((a.metadata_json || {}).status === 'rodando' ? 1 : 0)))
       setPlans((Array.isArray(pl) ? pl : pl.items || []).filter((p) => (p.metadata_json || {}).decisao === 'pendente'))
+      setBeats((Array.isArray(hb) ? hb : hb.items || [])
+        .sort((a, b) => ((b.metadata_json || {}).updated_at || '').localeCompare((a.metadata_json || {}).updated_at || '')))
       setError(null)
     } catch (err) {
       setError(err.message || 'falha ao carregar')
@@ -360,6 +366,36 @@ export default function Cockpit() {
           </h2>
           <div className="space-y-3">
             {flywheels.map((fw) => <FlywheelCard key={fw.id} fw={fw} />)}
+          </div>
+        </section>
+      )}
+
+      {beats.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+            🫀 Atividade dos projetos — última sessão de cada um
+          </h2>
+          <div className="space-y-2">
+            {beats.map((t) => {
+              const m = t.metadata_json || {}
+              const min = m.updated_at ? Math.round((Date.now() - new Date(m.updated_at).getTime()) / 60000) : null
+              const vivo = min != null && min < 15
+              return (
+                <div key={t.id} className={`rounded-xl border px-4 py-3 ${vivo ? 'border-emerald-500/25 bg-emerald-500/[0.03]' : 'border-white/6 bg-white/[0.02]'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-zinc-200">
+                      {vivo && <span className="mr-1 text-emerald-300">●</span>}
+                      {projName(m.project_path)}
+                    </span>
+                    <span className="text-[11px] text-zinc-500">
+                      {min == null ? '' : min < 15 ? `ativo agora (${min}min)` : min < 60 ? `há ${min}min` : min < 1440 ? `há ${(min / 60).toFixed(1)}h` : `há ${(min / 1440).toFixed(1)} dias`}
+                    </span>
+                  </div>
+                  {m.last_summary && <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{m.last_summary}</p>}
+                  {m.account && <p className="mt-0.5 text-[10px] text-zinc-600">{m.account}</p>}
+                </div>
+              )
+            })}
           </div>
         </section>
       )}
