@@ -6,6 +6,7 @@ import { getTasks, updateTask } from '../api'
 // O Claude cria via POST /api/tasks; o Diego responde aqui (PATCH /api/tasks/{id}).
 const KIND = 'cockpit_question'
 const KIND_FW = 'flywheel'          // estado de um loop rodando (1 card por projeto)
+const KIND_PLAN = 'plan_review'     // F5 — plano fatiado pra revisar/comentar por seção
 const POLL_MS = 10000
 
 // Métricas do scorecard do Flywheel (M1-M7). Ordem e rótulo curtos para o card.
@@ -185,21 +186,89 @@ function FlywheelCard({ fw }) {
   )
 }
 
+// F5 — revisão de plano por seção: lê o plano fatiado, comenta cada seção, aprova/ajusta.
+function PlanReviewCard({ plan, onDecide }) {
+  const m = plan.metadata_json || {}
+  const secoes = m.secoes || []
+  const [coment, setComent] = useState(m.comentarios || {})
+  const [aberta, setAberta] = useState({})
+  const [busy, setBusy] = useState(false)
+
+  const temComentario = Object.values(coment).some((c) => (c || '').trim())
+
+  async function decidir(decisao) {
+    setBusy(true)
+    try { await onDecide(plan, decisao, coment) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded-2xl border border-violet-500/30 bg-violet-500/[0.04] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-white">{plan.title}</h3>
+        <span className="shrink-0 rounded-full bg-violet-500/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-200">
+          revisar plano · {secoes.length} seções
+        </span>
+      </div>
+      {m.project_path && <p className="mt-1 text-[11px] text-zinc-500">{m.project_path} · sha {m.plan_sha}</p>}
+
+      <div className="mt-3 space-y-2">
+        {secoes.map((s) => (
+          <div key={s.id} className="rounded-lg border border-white/8 bg-black/20">
+            <button
+              onClick={() => setAberta((a) => ({ ...a, [s.id]: !a[s.id] }))}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/[0.03]"
+            >
+              <span>{aberta[s.id] ? '▾' : '▸'} {s.titulo}</span>
+              {(coment[s.id] || '').trim() && <span className="text-[10px] text-amber-300">✎ comentado</span>}
+            </button>
+            {aberta[s.id] && (
+              <div className="border-t border-white/6 px-3 py-2">
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-zinc-400">{s.corpo_md}</pre>
+                <input
+                  value={coment[s.id] || ''}
+                  onChange={(e) => setComent((c) => ({ ...c, [s.id]: e.target.value }))}
+                  placeholder="comentário desta seção (ajuste, dúvida, corte…)"
+                  className="mt-2 w-full rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:border-violet-500/40 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button disabled={busy} onClick={() => decidir('aprovado')} className="rounded-lg bg-gradient-to-br from-emerald-400 to-sky-400 px-4 py-2 text-sm font-semibold text-zinc-950 hover:opacity-90 disabled:opacity-50">
+          {busy ? '…' : 'Aprovar — executa autônomo'}
+        </button>
+        <button disabled={busy || !temComentario} onClick={() => decidir('ajustar')} className="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-200 hover:bg-amber-500/[0.08] disabled:opacity-40">
+          Aprovar com ajustes ({Object.values(coment).filter((c) => (c || '').trim()).length})
+        </button>
+        <button disabled={busy} onClick={() => decidir('rejeitado')} className="rounded-lg border border-rose-500/40 px-4 py-2 text-sm text-rose-200 hover:bg-rose-500/[0.08] disabled:opacity-50">
+          Rejeitar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Cockpit() {
   const [tasks, setTasks] = useState([])
   const [flywheels, setFlywheels] = useState([])
+  const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
     try {
-      const [q, fw] = await Promise.all([
+      const [q, fw, pl] = await Promise.all([
         getTasks({ kind: KIND }),
         getTasks({ kind: KIND_FW }).catch(() => []),
+        getTasks({ kind: KIND_PLAN }).catch(() => []),
       ])
       setTasks(Array.isArray(q) ? q : q.items || [])
       setFlywheels((Array.isArray(fw) ? fw : fw.items || [])
         .sort((a, b) => ((b.metadata_json || {}).status === 'rodando' ? 1 : 0) - ((a.metadata_json || {}).status === 'rodando' ? 1 : 0)))
+      setPlans((Array.isArray(pl) ? pl : pl.items || []).filter((p) => (p.metadata_json || {}).decisao === 'pendente'))
       setError(null)
     } catch (err) {
       setError(err.message || 'falha ao carregar')
@@ -229,6 +298,23 @@ export default function Cockpit() {
     await load()
   }
 
+  // F5 — Diego decide um plano: aprovado assina o sha (o dispatcher só executa essa versão).
+  async function decidePlan(plan, decisao, comentarios) {
+    const m = plan.metadata_json || {}
+    await updateTask(plan.id, {
+      status: decisao === 'rejeitado' ? 'cancelled' : 'review',
+      metadata_json: {
+        ...m,
+        decisao,
+        comentarios,
+        approved_sha: decisao === 'aprovado' ? m.plan_sha : (decisao === 'ajustar' ? null : m.approved_sha),
+        decided_by: 'diego',
+        decided_at: new Date().toISOString(),
+      },
+    })
+    await load()
+  }
+
   const pending = tasks.filter(isPending)
   const answered = tasks
     .filter((t) => meta(t).kind === KIND && meta(t).answer)
@@ -249,6 +335,17 @@ export default function Cockpit() {
         <StatCard label="Respondidas (10)" value={answered.length} />
         <StatCard label="Total no kind" value={tasks.length} />
       </div>
+
+      {plans.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+            📋 Planos para revisar
+          </h2>
+          <div className="space-y-3">
+            {plans.map((p) => <PlanReviewCard key={p.id} plan={p} onDecide={decidePlan} />)}
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
