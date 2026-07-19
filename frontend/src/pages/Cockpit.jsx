@@ -113,23 +113,46 @@ function projName(p) {
   return String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
 }
 
+// F1 — vivacidade: cada estado tem cor própria (mata o "verde mentiroso").
+const VIV = {
+  rodando:   { card: 'border-emerald-500/30 bg-emerald-500/[0.04]', badge: 'bg-emerald-500/15 text-emerald-200', dot: '●' },
+  ocioso:    { card: 'border-amber-500/25 bg-amber-500/[0.03]',     badge: 'bg-amber-500/15 text-amber-200',   dot: '◐' },
+  parado:    { card: 'border-zinc-600/30 bg-white/[0.02]',          badge: 'bg-zinc-700/40 text-zinc-400',      dot: '○' },
+  estagnado: { card: 'border-rose-500/40 bg-rose-500/[0.05]',       badge: 'bg-rose-500/15 text-rose-200',      dot: '⚠' },
+}
+
+function tempoAtras(iso) {
+  if (!iso) return null
+  const h = (Date.now() - new Date(iso).getTime()) / 3.6e6
+  if (h < 1) return `há ${Math.round(h * 60)}min`
+  if (h < 24) return `há ${h.toFixed(1)}h`
+  return `há ${(h / 24).toFixed(1)} dias`
+}
+
 // Card de um Flywheel: o que o loop fez + o scorecard que ele mede e melhora.
 function FlywheelCard({ fw }) {
   const m = fw.metadata_json || {}
-  const rodando = (m.status || '').toLowerCase() === 'rodando'
+  const estado = (m.status || 'parado').toLowerCase()
+  const v = VIV[estado] || VIV.parado
   const sc = m.scorecard || {}
   const prog = m.progresso || {}
   const ultimo = m.ultimo_ciclo || {}
   return (
-    <div className={`rounded-2xl border p-5 ${rodando ? 'border-emerald-500/30 bg-emerald-500/[0.04]' : 'border-white/8 bg-white/[0.03]'}`}>
+    <div className={`rounded-2xl border p-5 ${v.card}`}>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-semibold text-white">
           🔄 {projName(m.project_path) || fw.title}
+          {m.sessao_ativa && <span className="ml-2 align-middle text-[10px] font-medium text-emerald-300">● sessão ativa agora</span>}
         </h3>
-        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${rodando ? 'bg-emerald-500/15 text-emerald-200' : 'bg-zinc-700/40 text-zinc-400'}`}>
-          {rodando ? `● rodando${m.janela ? ' · ' + m.janela : ''}` : 'parado'}
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${v.badge}`} title={m.vivacidade_motivo || ''}>
+          {v.dot} {estado}{estado === 'rodando' && m.janela ? ' · ' + m.janela : ''}
         </span>
       </div>
+      {m.ultima_atividade && (
+        <p className="mt-1 text-[11px] text-zinc-500">
+          última atividade real {tempoAtras(m.ultima_atividade)}{m.vivacidade_motivo ? ` · ${m.vivacidade_motivo}` : ''}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
         {m.ciclos != null && <span>ciclos: <b className="text-zinc-200">{m.ciclos}</b></span>}
         {prog.total != null && <span>tarefas: <b className="text-zinc-200">{prog.feitas || 0}/{prog.total}</b></span>}
