@@ -29,6 +29,7 @@ const UI_META = {
   decision: { label: 'Decisão', badge: 'bg-sky-500/15 text-sky-200 border-sky-500/30' },
   credential: { label: 'Credencial', badge: 'bg-violet-500/15 text-violet-200 border-violet-500/30' },
   input: { label: 'Input', badge: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30' },
+  delivery: { label: 'Entrega — revisar', badge: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30' },
 }
 const DEFAULT_OPTIONS = ['Funcionando', 'Concluído', 'Continuar', 'Bloqueado']
 
@@ -89,8 +90,17 @@ function QuestionCard({ task, onAnswer }) {
         <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">{m.context || task.description}</p>
       )}
 
+      {/* F4 Gate 2 — bloco de evidências da entrega */}
+      {m.entrega && (
+        <div className="mt-3 space-y-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
+          {m.entrega.o_que_mudou && <div><p className="text-[10px] uppercase tracking-wider text-zinc-500">o que mudou</p><p className="mt-0.5 whitespace-pre-wrap text-xs text-zinc-300">{m.entrega.o_que_mudou}</p></div>}
+          {(m.entrega.evidencias || []).length > 0 && <div><p className="text-[10px] uppercase tracking-wider text-zinc-500">evidências</p><ul className="mt-0.5 space-y-0.5">{m.entrega.evidencias.map((e, i) => <li key={i} className="text-xs text-emerald-200">✓ {e}</li>)}</ul></div>}
+          {m.entrega.como_verificar && <div><p className="text-[10px] uppercase tracking-wider text-zinc-500">como verificar em 2 min</p><p className="mt-0.5 whitespace-pre-wrap text-xs text-sky-200">{m.entrega.como_verificar}</p></div>}
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {ui === 'decision' && (m.options || DEFAULT_OPTIONS).map((opt) => (
+        {(ui === 'decision' || ui === 'delivery') && (m.options || DEFAULT_OPTIONS).map((opt) => (
           <button
             key={opt}
             disabled={sending}
@@ -316,10 +326,27 @@ function ProjetoCard({ beat, flywheel, perguntas }) {
               </p>
             </div>
           )}
+          {(m.tarefas_clickup || []).length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                ClickUp — {m.clickup_total} abertas{m.clickup_talita ? ` · ${m.clickup_talita} da Talita` : ''}
+              </p>
+              <div className="mt-1 max-h-48 space-y-0.5 overflow-auto">
+                {m.tarefas_clickup.map((t, i) => (
+                  <a key={i} href={t.url || undefined} target="_blank" rel="noreferrer" className="block text-[11px] text-zinc-400 hover:text-zinc-200">
+                    <span className="text-zinc-600">[{t.status}]</span> {t.nome}
+                    {t.quem && <span className="text-zinc-600"> · {t.quem}</span>}
+                    {t.prazo && <span className="text-amber-400/70"> ⏰{t.prazo}</span>}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-4 text-[10px] text-zinc-600">
             {m.account && <span>conta: {m.account}</span>}
             {m.branch && <span>branch: {m.branch}</span>}
             {m.arquivos_mexidos != null && <span>{m.arquivos_mexidos} arquivos com mudança</span>}
+            {m.clickup_atualizado && <span>ClickUp sync {formatDate(m.clickup_atualizado)}</span>}
           </div>
         </div>
       )}
