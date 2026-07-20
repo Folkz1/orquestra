@@ -402,12 +402,23 @@ function KanbanCard({ task, onExecutar, fases = [] }) {
           {m.criterio_pronto && <p className="text-[10px] text-zinc-600">pronto = {m.criterio_pronto}</p>}
           {ehEpico && fases.length > 0 && (
             <div className="rounded-md bg-black/20 p-2">
-              <p className="mb-1 text-[9px] uppercase tracking-wider text-zinc-600">fases (executam em bloco)</p>
+              <p className="mb-1 text-[9px] uppercase tracking-wider text-zinc-600">
+                fases (executam em bloco{(m.ondas || []).length > 1 ? `, ${m.ondas.length} ondas` : ''})
+              </p>
               {fases.sort((a, b) => ((a.metadata_json || {}).ordem || 0) - ((b.metadata_json || {}).ordem || 0)).map((f) => (
                 <p key={f.id} className="text-[10px] text-zinc-400">
                   {f.status === 'done' ? '✓' : f.status === 'in_progress' ? '▶' : '○'} {(f.metadata_json || {}).ordem}. {f.title}
                 </p>
               ))}
+              {(m.ondas || []).some((o) => o.paralelo) && (
+                <div className="mt-1.5 border-t border-white/6 pt-1.5">
+                  {m.ondas.map((o) => (
+                    <p key={o.onda} className="text-[9px] text-zinc-500">
+                      ⚡ onda {o.onda}: {o.paralelo ? <span className="text-sky-300">{o.fases.length} em paralelo</span> : '1 tarefa'}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
