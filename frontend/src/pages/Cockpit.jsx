@@ -8,6 +8,15 @@ const KIND = 'cockpit_question'
 const KIND_FW = 'flywheel'          // estado de um loop rodando (1 card por projeto)
 const KIND_PLAN = 'plan_review'     // F5 — plano fatiado pra revisar/comentar por seção
 const KIND_HB = 'cockpit_heartbeat' // pulso de cada sessão (hook Stop, determinístico)
+const KIND_TASK = 'cockpit_task'    // F9 — tarefas grandes do Kanban (na fila/execução/aguardando/done)
+
+// F9 — colunas do Kanban = enum do backend. Ordem e rótulo em PT.
+const COLUNAS = [
+  ['backlog', 'Na fila', 'border-zinc-600/30'],
+  ['in_progress', 'Em execução', 'border-emerald-500/25'],
+  ['review', 'Aguardando você', 'border-amber-500/30'],
+  ['done', 'Finalizado', 'border-sky-500/20'],
+]
 const POLL_MS = 10000
 
 // Métricas do scorecard do Flywheel (M1-M7). Ordem e rótulo curtos para o card.
@@ -318,10 +327,44 @@ function ProjetoCard({ beat, flywheel, perguntas }) {
   )
 }
 
+// F9 — card de tarefa do Kanban: prazo destacado + botão de execução autônoma.
+function prazoInfo(prazo) {
+  if (!prazo) return null
+  const dias = Math.ceil((new Date(prazo + 'T23:59').getTime() - Date.now()) / 86400000)
+  if (dias < 0) return { txt: `venceu ${-dias}d`, cls: 'text-rose-300' }
+  if (dias === 0) return { txt: 'hoje', cls: 'text-rose-300' }
+  if (dias <= 2) return { txt: `em ${dias}d`, cls: 'text-amber-300' }
+  return { txt: prazo.slice(5), cls: 'text-zinc-500' }
+}
+
+function KanbanCard({ task, onExecutar, onMover }) {
+  const m = task.metadata_json || {}
+  const pz = prazoInfo(m.prazo)
+  const jaAuto = m.autonomo && m.autonomo.solicitado
+  return (
+    <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-medium leading-snug text-zinc-100">{task.title}</p>
+        {pz && <span className={`shrink-0 text-[10px] font-semibold ${pz.cls}`}>⏰{pz.txt}</span>}
+      </div>
+      {m.project_path && <p className="mt-1 text-[10px] text-zinc-500">{projName(m.project_path)}</p>}
+      {task.priority === 'high' && <span className="mt-1 inline-block rounded bg-rose-500/15 px-1.5 text-[9px] text-rose-200">alta</span>}
+      {task.status === 'backlog' && (
+        jaAuto
+          ? <p className="mt-2 text-[10px] text-emerald-300">🚀 execução solicitada</p>
+          : <button onClick={() => onExecutar(task)} className="mt-2 w-full rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/[0.12]">
+              ▶ Executar autônomo
+            </button>
+      )}
+    </div>
+  )
+}
+
 export default function Cockpit() {
   const [tasks, setTasks] = useState([])
   const [flywheels, setFlywheels] = useState([])
   const [plans, setPlans] = useState([])
+  const [kanban, setKanban] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -329,11 +372,12 @@ export default function Cockpit() {
 
   const load = useCallback(async () => {
     try {
-      const [q, fw, pl, hb] = await Promise.all([
+      const [q, fw, pl, hb, kb] = await Promise.all([
         getTasks({ kind: KIND }),
         getTasks({ kind: KIND_FW }).catch(() => []),
         getTasks({ kind: KIND_PLAN }).catch(() => []),
         getTasks({ kind: KIND_HB }).catch(() => []),
+        getTasks({ kind: KIND_TASK }).catch(() => []),
       ])
       setTasks(Array.isArray(q) ? q : q.items || [])
       setFlywheels((Array.isArray(fw) ? fw : fw.items || [])
@@ -341,6 +385,7 @@ export default function Cockpit() {
       setPlans((Array.isArray(pl) ? pl : pl.items || []).filter((p) => (p.metadata_json || {}).decisao === 'pendente'))
       setBeats((Array.isArray(hb) ? hb : hb.items || [])
         .sort((a, b) => ((b.metadata_json || {}).updated_at || '').localeCompare((a.metadata_json || {}).updated_at || '')))
+      setKanban(Array.isArray(kb) ? kb : kb.items || [])
       setError(null)
     } catch (err) {
       setError(err.message || 'falha ao carregar')
@@ -366,6 +411,20 @@ export default function Cockpit() {
         answered_by: 'diego',
         answered_at: new Date().toISOString(),
       },
+    })
+    await load()
+  }
+
+  // F9 — Diego clica "Executar autônomo": grava a solicitação; o dispatcher pega e roda.
+  async function executarTask(task) {
+    const m = task.metadata_json || {}
+    if (!m.criterio_pronto && !task.description) {
+      const crit = window.prompt('Qual é o critério de "pronto" desta tarefa? (o agente precisa saber quando terminou)')
+      if (!crit) return
+      m.criterio_pronto = crit
+    }
+    await updateTask(task.id, {
+      metadata_json: { ...m, autonomo: { solicitado: true, em: new Date().toISOString() } },
     })
     await load()
   }
@@ -402,11 +461,34 @@ export default function Cockpit() {
         </p>
       </header>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Aguardando você" value={pending.length} alert={pending.length > 0} />
-        <StatCard label="Respondidas (10)" value={answered.length} />
-        <StatCard label="Total no kind" value={tasks.length} />
+        <StatCard label="Na fila" value={kanban.filter((t) => t.status === 'backlog').length} />
+        <StatCard label="Em execução" value={kanban.filter((t) => t.status === 'in_progress').length} />
+        <StatCard label="Vencendo (≤2d)" value={kanban.filter((t) => { const p = (t.metadata_json || {}).prazo; if (!p || t.status === 'done') return false; return (new Date(p + 'T23:59') - Date.now()) / 86400000 <= 2 }).length} alert={kanban.some((t) => { const p = (t.metadata_json || {}).prazo; if (!p || t.status === 'done') return false; return (new Date(p + 'T23:59') - Date.now()) / 86400000 <= 2 })} />
       </div>
+
+      {kanban.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">🗂️ Kanban — o que tem pra fazer</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {COLUNAS.map(([st, label, borda]) => {
+              const cards = kanban
+                .filter((t) => t.status === st)
+                .sort((a, b) => ((a.metadata_json || {}).prazo || '9999').localeCompare((b.metadata_json || {}).prazo || '9999'))
+              return (
+                <div key={st} className={`rounded-xl border ${borda} bg-white/[0.02] p-2`}>
+                  <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{label} <span className="text-zinc-600">{cards.length}</span></p>
+                  <div className="space-y-2">
+                    {cards.map((t) => <KanbanCard key={t.id} task={t} onExecutar={executarTask} />)}
+                    {cards.length === 0 && <p className="px-1 py-4 text-center text-[10px] text-zinc-600">—</p>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {plans.length > 0 && (
         <section className="mb-8">
