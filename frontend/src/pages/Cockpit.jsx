@@ -326,10 +326,27 @@ function ProjetoCard({ beat, flywheel, perguntas }) {
               </p>
             </div>
           )}
+          {(m.tarefas_clickup || []).length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                ClickUp — {m.clickup_total} abertas{m.clickup_talita ? ` · ${m.clickup_talita} da Talita` : ''}
+              </p>
+              <div className="mt-1 max-h-48 space-y-0.5 overflow-auto">
+                {m.tarefas_clickup.map((t, i) => (
+                  <a key={i} href={t.url || undefined} target="_blank" rel="noreferrer" className="block text-[11px] text-zinc-400 hover:text-zinc-200">
+                    <span className="text-zinc-600">[{t.status}]</span> {t.nome}
+                    {t.quem && <span className="text-zinc-600"> · {t.quem}</span>}
+                    {t.prazo && <span className="text-amber-400/70"> ⏰{t.prazo}</span>}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-4 text-[10px] text-zinc-600">
             {m.account && <span>conta: {m.account}</span>}
             {m.branch && <span>branch: {m.branch}</span>}
             {m.arquivos_mexidos != null && <span>{m.arquivos_mexidos} arquivos com mudança</span>}
+            {m.clickup_atualizado && <span>ClickUp sync {formatDate(m.clickup_atualizado)}</span>}
           </div>
         </div>
       )}
