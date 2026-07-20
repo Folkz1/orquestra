@@ -337,23 +337,60 @@ function prazoInfo(prazo) {
   return { txt: prazo.slice(5), cls: 'text-zinc-500' }
 }
 
-function KanbanCard({ task, onExecutar, onMover }) {
+const ESFORCO = { rapido: '🟢 rápido', medio: '🟡 médio', grande: '🔴 grande' }
+
+function KanbanCard({ task, onExecutar, fases = [] }) {
   const m = task.metadata_json || {}
+  const [aberto, setAberto] = useState(false)
   const pz = prazoInfo(m.prazo)
   const jaAuto = m.autonomo && m.autonomo.solicitado
+  const ehEpico = m.tipo === 'epico'
+  const fasesDone = fases.filter((f) => f.status === 'done').length
+  const bloq = m.bloqueado
+  const temInfo = m.contexto || (m.depende_de || []).length || (m.destrava || []).length || bloq
+
   return (
-    <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium leading-snug text-zinc-100">{task.title}</p>
+    <div className={`rounded-lg border p-3 ${bloq ? 'border-rose-500/30 bg-rose-500/[0.03]' : ehEpico ? 'border-violet-500/25 bg-violet-500/[0.03]' : 'border-white/8 bg-white/[0.03]'}`}>
+      <button onClick={() => (temInfo || ehEpico) && setAberto((a) => !a)} className="flex w-full items-start justify-between gap-2 text-left">
+        <p className="text-xs font-medium leading-snug text-zinc-100">
+          {ehEpico && '🧱 '}{(temInfo || ehEpico) && <span className="text-zinc-500">{aberto ? '▾ ' : '▸ '}</span>}{task.title}
+        </p>
         {pz && <span className={`shrink-0 text-[10px] font-semibold ${pz.cls}`}>⏰{pz.txt}</span>}
+      </button>
+
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+        {m.project_path && <span>{projName(m.project_path)}</span>}
+        {ehEpico && fases.length > 0 && <span className="text-violet-300">{fasesDone}/{fases.length} fases</span>}
+        {m.esforco && ESFORCO[m.esforco] && <span>{ESFORCO[m.esforco]}</span>}
+        {task.priority === 'high' && <span className="rounded bg-rose-500/15 px-1 text-rose-200">alta</span>}
+        {bloq && <span className="rounded bg-rose-500/15 px-1 text-rose-200">⛔ bloqueado</span>}
       </div>
-      {m.project_path && <p className="mt-1 text-[10px] text-zinc-500">{projName(m.project_path)}</p>}
-      {task.priority === 'high' && <span className="mt-1 inline-block rounded bg-rose-500/15 px-1.5 text-[9px] text-rose-200">alta</span>}
-      {task.status === 'backlog' && (
+
+      {aberto && (
+        <div className="mt-2 space-y-2 border-t border-white/6 pt-2">
+          {m.contexto && <p className="text-[11px] leading-relaxed text-zinc-300">{m.contexto}</p>}
+          {bloq && <p className="text-[10px] text-rose-300">⛔ {bloq}</p>}
+          {(m.depende_de || []).length > 0 && <p className="text-[10px] text-zinc-500">depende de: {m.depende_de.join(', ')}</p>}
+          {(m.destrava || []).length > 0 && <p className="text-[10px] text-zinc-500">destrava: {m.destrava.join(', ')}</p>}
+          {m.criterio_pronto && <p className="text-[10px] text-zinc-600">pronto = {m.criterio_pronto}</p>}
+          {ehEpico && fases.length > 0 && (
+            <div className="rounded-md bg-black/20 p-2">
+              <p className="mb-1 text-[9px] uppercase tracking-wider text-zinc-600">fases (executam em bloco)</p>
+              {fases.sort((a, b) => ((a.metadata_json || {}).ordem || 0) - ((b.metadata_json || {}).ordem || 0)).map((f) => (
+                <p key={f.id} className="text-[10px] text-zinc-400">
+                  {f.status === 'done' ? '✓' : f.status === 'in_progress' ? '▶' : '○'} {(f.metadata_json || {}).ordem}. {f.title}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {task.status === 'backlog' && !bloq && (
         jaAuto
           ? <p className="mt-2 text-[10px] text-emerald-300">🚀 execução solicitada</p>
           : <button onClick={() => onExecutar(task)} className="mt-2 w-full rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/[0.12]">
-              ▶ Executar autônomo
+              ▶ Executar {ehEpico ? 'épico (todas as fases)' : 'autônomo'}
             </button>
       )}
     </div>
@@ -473,14 +510,18 @@ export default function Cockpit() {
           <h2 className="mb-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">🗂️ Kanban — o que tem pra fazer</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {COLUNAS.map(([st, label, borda]) => {
+              // fases (tipo==='fase') não aparecem soltas — vivem dentro do épico
               const cards = kanban
-                .filter((t) => t.status === st)
+                .filter((t) => t.status === st && (t.metadata_json || {}).tipo !== 'fase')
                 .sort((a, b) => ((a.metadata_json || {}).prazo || '9999').localeCompare((b.metadata_json || {}).prazo || '9999'))
               return (
                 <div key={st} className={`rounded-xl border ${borda} bg-white/[0.02] p-2`}>
                   <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{label} <span className="text-zinc-600">{cards.length}</span></p>
                   <div className="space-y-2">
-                    {cards.map((t) => <KanbanCard key={t.id} task={t} onExecutar={executarTask} />)}
+                    {cards.map((t) => (
+                      <KanbanCard key={t.id} task={t} onExecutar={executarTask}
+                        fases={(t.metadata_json || {}).tipo === 'epico' ? kanban.filter((f) => (f.metadata_json || {}).epico_id === t.id) : []} />
+                    ))}
                     {cards.length === 0 && <p className="px-1 py-4 text-center text-[10px] text-zinc-600">—</p>}
                   </div>
                 </div>
