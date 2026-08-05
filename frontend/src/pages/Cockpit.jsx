@@ -30,6 +30,7 @@ const UI_META = {
   decision: { label: 'Decisão', badge: 'bg-sky-500/15 text-sky-200 border-sky-500/30' },
   credential: { label: 'Credencial', badge: 'bg-violet-500/15 text-violet-200 border-violet-500/30' },
   input: { label: 'Input', badge: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30' },
+  delivery: { label: 'Entrega — revisar', badge: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30' },
 }
 const DEFAULT_OPTIONS = ['Funcionando', 'Concluído', 'Continuar', 'Bloqueado']
 
@@ -157,11 +158,12 @@ function QuestionCard({ task, onAnswer }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [expandido, setExpandido] = useState(false)
-  const [escrevendo, setEscrevendo] = useState(ui !== 'decision')
+  const comBotoes = ui === 'decision' || ui === 'delivery'
+  const [escrevendo, setEscrevendo] = useState(!comBotoes)
 
   const contexto = m.context || task.description || ''
   const longo = contexto.length > 140
-  const opcoes = ui === 'decision' ? (m.options || DEFAULT_OPTIONS) : []
+  const opcoes = comBotoes ? (m.options || DEFAULT_OPTIONS) : []
 
   async function send(value) {
     const answer = String(value ?? text).trim()
@@ -204,6 +206,32 @@ function QuestionCard({ task, onAnswer }) {
         <p className="mt-3 break-words rounded-lg border-l-2 border-sky-500/40 bg-black/20 px-3 py-2 text-xs text-zinc-300">
           <span className="text-zinc-500">como conferir:</span> {m.como_verificar}
         </p>
+      )}
+
+      {/* F4 Gate 2 — evidências da entrega. Ficam sempre visíveis: é o que ele revisa aqui. */}
+      {m.entrega && (
+        <div className="mt-3 space-y-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
+          {m.entrega.o_que_mudou && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">o que mudou</p>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-zinc-300">{m.entrega.o_que_mudou}</p>
+            </div>
+          )}
+          {(m.entrega.evidencias || []).length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">evidências</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {m.entrega.evidencias.map((e, i) => <li key={i} className="break-words text-xs text-emerald-200">✓ {e}</li>)}
+              </ul>
+            </div>
+          )}
+          {m.entrega.como_verificar && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">como verificar em 2 min</p>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-sky-200">{m.entrega.como_verificar}</p>
+            </div>
+          )}
+        </div>
       )}
 
       {/* 1 toque = 1 decisão. Os botões resolvem o card; o campo livre só aparece se ele pedir. */}
@@ -449,10 +477,28 @@ function ProjetoCard({ beat, flywheel, perguntas }) {
               </p>
             </div>
           )}
+          {/* F2 — tarefas do ClickUp do Alan no card do projeto */}
+          {(m.tarefas_clickup || []).length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                ClickUp — {m.clickup_total} abertas{m.clickup_talita ? ` · ${m.clickup_talita} da Talita` : ''}
+              </p>
+              <div className="mt-1 max-h-48 space-y-0.5 overflow-auto">
+                {m.tarefas_clickup.map((t, i) => (
+                  <a key={i} href={t.url || undefined} target="_blank" rel="noreferrer" className="block break-words text-[11px] text-zinc-400 hover:text-zinc-200">
+                    <span className="text-zinc-600">[{t.status}]</span> {t.nome}
+                    {t.quem && <span className="text-zinc-600"> · {t.quem}</span>}
+                    {t.prazo && <span className="text-amber-400/70"> ⏰{t.prazo}</span>}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-4 text-[10px] text-zinc-600">
             {m.account && <span>conta: {m.account}</span>}
             {m.branch && <span>branch: {m.branch}</span>}
             {m.arquivos_mexidos != null && <span>{m.arquivos_mexidos} arquivos com mudança</span>}
+            {m.clickup_atualizado && <span>ClickUp sync {formatDate(m.clickup_atualizado)}</span>}
           </div>
         </div>
       )}
@@ -470,7 +516,10 @@ function prazoInfo(prazo) {
   return { txt: prazo.slice(5), cls: 'text-zinc-500', urgente: false }
 }
 
-function KanbanCard({ task, onExecutar }) {
+// F10/F7 — épico traz suas fases dentro; esforço, bloqueio e dependências ficam a 1 toque.
+const ESFORCO = { rapido: '🟢 rápido', medio: '🟡 médio', grande: '🔴 grande' }
+
+function KanbanCard({ task, onExecutar, fases = [] }) {
   const m = task.metadata_json || {}
   const pz = prazoInfo(m.prazo)
   const jaAuto = m.autonomo && m.autonomo.solicitado
@@ -478,16 +527,65 @@ function KanbanCard({ task, onExecutar }) {
   const precisaCriterio = !m.criterio_pronto && !task.description
   const [criterio, setCriterio] = useState('')
   const [pedindo, setPedindo] = useState(false)
+  const [aberto, setAberto] = useState(false)
+
+  const ehEpico = m.tipo === 'epico'
+  const bloq = m.bloqueado
+  const fasesDone = fases.filter((f) => f.status === 'done').length
+  const temInfo = m.contexto || (m.depende_de || []).length || (m.destrava || []).length || bloq
 
   return (
-    <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium leading-snug text-zinc-100">{task.title}</p>
+    <div className={`rounded-lg border p-3 ${bloq ? 'border-rose-500/30 bg-rose-500/[0.03]' : ehEpico ? 'border-violet-500/25 bg-violet-500/[0.03]' : 'border-white/8 bg-white/[0.03]'}`}>
+      <button
+        onClick={() => (temInfo || ehEpico) && setAberto((a) => !a)}
+        className="flex w-full items-start justify-between gap-2 text-left"
+      >
+        <p className="break-words text-xs font-medium leading-snug text-zinc-100">
+          {ehEpico && '🧱 '}{(temInfo || ehEpico) && <span className="text-zinc-500">{aberto ? '▾ ' : '▸ '}</span>}{task.title}
+        </p>
         {pz && <span className={`shrink-0 text-[10px] font-semibold ${pz.cls}`}>⏰{pz.txt}</span>}
+      </button>
+
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+        {m.project_path && <span>{projName(m.project_path)}</span>}
+        {ehEpico && fases.length > 0 && <span className="text-violet-300">{fasesDone}/{fases.length} fases</span>}
+        {m.esforco && ESFORCO[m.esforco] && <span>{ESFORCO[m.esforco]}</span>}
+        {task.priority === 'high' && <span className="rounded bg-rose-500/15 px-1 text-rose-200">alta</span>}
+        {bloq && <span className="rounded bg-rose-500/15 px-1 text-rose-200">⛔ bloqueado</span>}
       </div>
-      {m.project_path && <p className="mt-1 text-[10px] text-zinc-500">{projName(m.project_path)}</p>}
-      {task.priority === 'high' && <span className="mt-1 inline-block rounded bg-rose-500/15 px-1.5 text-[9px] text-rose-200">alta</span>}
-      {task.status === 'backlog' && (
+
+      {aberto && (
+        <div className="mt-2 space-y-2 border-t border-white/6 pt-2">
+          {m.contexto && <p className="break-words text-[11px] leading-relaxed text-zinc-300">{m.contexto}</p>}
+          {bloq && <p className="break-words text-[10px] text-rose-300">⛔ {bloq}</p>}
+          {(m.depende_de || []).length > 0 && <p className="break-words text-[10px] text-zinc-500">depende de: {m.depende_de.join(', ')}</p>}
+          {(m.destrava || []).length > 0 && <p className="break-words text-[10px] text-zinc-500">destrava: {m.destrava.join(', ')}</p>}
+          {m.criterio_pronto && <p className="break-words text-[10px] text-zinc-600">pronto = {m.criterio_pronto}</p>}
+          {ehEpico && fases.length > 0 && (
+            <div className="rounded-md bg-black/20 p-2">
+              <p className="mb-1 text-[9px] uppercase tracking-wider text-zinc-600">
+                fases (executam em bloco{(m.ondas || []).length > 1 ? `, ${m.ondas.length} ondas` : ''})
+              </p>
+              {[...fases].sort((a, b) => ((a.metadata_json || {}).ordem || 0) - ((b.metadata_json || {}).ordem || 0)).map((f) => (
+                <p key={f.id} className="break-words text-[10px] text-zinc-400">
+                  {f.status === 'done' ? '✓' : f.status === 'in_progress' ? '▶' : '○'} {(f.metadata_json || {}).ordem}. {f.title}
+                </p>
+              ))}
+              {(m.ondas || []).some((o) => o.paralelo) && (
+                <div className="mt-1.5 border-t border-white/6 pt-1.5">
+                  {m.ondas.map((o) => (
+                    <p key={o.onda} className="text-[9px] text-zinc-500">
+                      ⚡ onda {o.onda}: {o.paralelo ? <span className="text-sky-300">{o.fases.length} em paralelo</span> : '1 tarefa'}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {task.status === 'backlog' && !bloq && (
         jaAuto
           ? <p className="mt-2 text-[10px] text-emerald-300">🚀 execução solicitada</p>
           : pedindo && precisaCriterio
@@ -520,7 +618,7 @@ function KanbanCard({ task, onExecutar }) {
                 onClick={() => (precisaCriterio ? setPedindo(true) : onExecutar(task))}
                 className="mt-2 min-h-[40px] w-full rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/[0.12]"
               >
-                ▶ Executar sozinho
+                ▶ Executar {ehEpico ? 'épico (todas as fases)' : 'sozinho'}
               </button>
             )
       )}
@@ -769,7 +867,10 @@ export default function Cockpit() {
             {loopsVivos.map((fw) => <FlywheelCard key={fw.id} fw={fw} />)}
             {emExecucao.length > 0 && (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {emExecucao.map((t) => <KanbanCard key={t.id} task={t} onExecutar={executarTask} />)}
+                {emExecucao.map((t) => (
+                  <KanbanCard key={t.id} task={t} onExecutar={executarTask}
+                    fases={meta(t).tipo === 'epico' ? kanban.filter((f) => meta(f).epico_id === t.id) : []} />
+                ))}
               </div>
             )}
           </div>
@@ -778,17 +879,21 @@ export default function Cockpit() {
 
       {/* NÍVEL 3 — acompanhamento. Fica fechado: é o que enchia a tela sem pedir nada. */}
       {kanban.length > 0 && (
-        <Faixa titulo="🗂️ Tarefas" sub="a fila inteira" total={kanban.length} chave="kanban">
+        <Faixa titulo="🗂️ Tarefas" sub="a fila inteira" total={kanban.filter((t) => meta(t).tipo !== 'fase').length} chave="kanban">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {COLUNAS.map(([st, label, borda]) => {
+              // fases (tipo==='fase') não aparecem soltas — vivem dentro do épico
               const cards = kanban
-                .filter((t) => t.status === st)
+                .filter((t) => t.status === st && meta(t).tipo !== 'fase')
                 .sort((a, b) => (meta(a).prazo || '9999').localeCompare(meta(b).prazo || '9999'))
               return (
                 <div key={st} className={`rounded-xl border ${borda} bg-white/[0.02] p-2`}>
                   <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{label} <span className="text-zinc-600">{cards.length}</span></p>
                   <div className="space-y-2">
-                    {cards.map((t) => <KanbanCard key={t.id} task={t} onExecutar={executarTask} />)}
+                    {cards.map((t) => (
+                      <KanbanCard key={t.id} task={t} onExecutar={executarTask}
+                        fases={meta(t).tipo === 'epico' ? kanban.filter((f) => meta(f).epico_id === t.id) : []} />
+                    ))}
                     {cards.length === 0 && <p className="px-1 py-4 text-center text-[10px] text-zinc-600">—</p>}
                   </div>
                 </div>
