@@ -178,7 +178,7 @@ function QuestionCard({ task, onAnswer }) {
   return (
     <div className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.03] p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-semibold leading-snug text-white">{task.title}</h3>
+        <h3 className="break-words text-base font-semibold leading-snug text-white">{task.title}</h3>
         <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${UI_META[ui].badge}`}>
           {UI_META[ui].label}
         </span>
@@ -186,7 +186,7 @@ function QuestionCard({ task, onAnswer }) {
 
       {contexto && (
         <>
-          <p className={`mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 ${longo && !expandido ? 'line-clamp-2' : ''}`}>
+          <p className={`mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-300 ${longo && !expandido ? 'line-clamp-2' : ''}`}>
             {contexto}
           </p>
           {longo && (
@@ -201,7 +201,7 @@ function QuestionCard({ task, onAnswer }) {
       )}
 
       {m.como_verificar && expandido && (
-        <p className="mt-3 rounded-lg border-l-2 border-sky-500/40 bg-black/20 px-3 py-2 text-xs text-zinc-300">
+        <p className="mt-3 break-words rounded-lg border-l-2 border-sky-500/40 bg-black/20 px-3 py-2 text-xs text-zinc-300">
           <span className="text-zinc-500">como conferir:</span> {m.como_verificar}
         </p>
       )}
@@ -320,7 +320,7 @@ function FlywheelCard({ fw }) {
         {m.propostas && <span>propostas: <b className="text-amber-200">{m.propostas.pendentes || 0}</b> pendentes · {m.propostas.aplicadas || 0} aplicadas</span>}
       </div>
       {ultimo.resumo && (
-        <p className="mt-3 rounded-lg border-l-2 border-sky-500/40 bg-black/20 px-3 py-2 text-sm text-zinc-300">
+        <p className="mt-3 break-words rounded-lg border-l-2 border-sky-500/40 bg-black/20 px-3 py-2 text-sm text-zinc-300">
           <span className="text-zinc-500">último ciclo{ultimo.n ? ' #' + ultimo.n : ''}:</span> {ultimo.resumo}
           {ultimo.ts && <span className="ml-1 text-[11px] text-zinc-600">· {formatDate(ultimo.ts)}</span>}
         </p>
@@ -348,7 +348,7 @@ function PlanReviewCard({ plan, onDecide }) {
   return (
     <div className="rounded-2xl border border-violet-500/30 bg-violet-500/[0.04] p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-base font-semibold leading-snug text-white">{plan.title}</h3>
+        <h3 className="break-words text-base font-semibold leading-snug text-white">{plan.title}</h3>
         <span className="shrink-0 rounded-full bg-violet-500/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-200">
           {secoes.length} seções
         </span>
@@ -367,7 +367,7 @@ function PlanReviewCard({ plan, onDecide }) {
             </button>
             {aberta[s.id] && (
               <div className="border-t border-white/6 px-3 py-2">
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-zinc-400">{s.corpo_md}</pre>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{s.corpo_md}</pre>
                 <input
                   value={coment[s.id] || ''}
                   onChange={(e) => setComent((c) => ({ ...c, [s.id]: e.target.value }))}
@@ -429,14 +429,14 @@ function ProjetoCard({ beat, flywheel, perguntas }) {
           {m.last_summary && (
             <div>
               <p className="text-[10px] uppercase tracking-wider text-zinc-600">o que a última sessão fez</p>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">{m.last_summary}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-300">{m.last_summary}</p>
             </div>
           )}
           {commits.length > 0 && (
             <div>
               <p className="text-[10px] uppercase tracking-wider text-zinc-600">últimos commits (o que mudou)</p>
               <ul className="mt-1 space-y-0.5">
-                {commits.map((c, i) => <li key={i} className="text-xs text-zinc-400">· {c}</li>)}
+                {commits.map((c, i) => <li key={i} className="break-words text-xs text-zinc-400">· {c}</li>)}
               </ul>
             </div>
           )}
@@ -529,21 +529,45 @@ function KanbanCard({ task, onExecutar }) {
 }
 
 // Uma tarefa parada em "Aguardando você" é pendência do Diego — sobe pro topo, não fica no Kanban.
-function TarefaAguardando({ task }) {
+// Se sobe pro topo, tem que dar pra AGIR ali: card sem ação na faixa de urgência é promessa falsa.
+function TarefaAguardando({ task, onDecidir }) {
   const m = task.metadata_json || {}
   const pz = prazoInfo(m.prazo)
+  const [busy, setBusy] = useState(false)
+
+  async function decidir(status) {
+    setBusy(true)
+    try { await onDecidir(task, status) } finally { setBusy(false) }
+  }
+
   return (
     <div className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.03] p-4">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold leading-snug text-white">{task.title}</h3>
+        <h3 className="break-words text-sm font-semibold leading-snug text-white">{task.title}</h3>
         {pz && <span className={`shrink-0 text-[11px] font-semibold ${pz.cls}`}>⏰{pz.txt}</span>}
       </div>
       {(m.contexto || task.description) && (
-        <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-400">{m.contexto || task.description}</p>
+        <p className="mt-2 line-clamp-2 break-words text-xs leading-relaxed text-zinc-400">{m.contexto || task.description}</p>
       )}
-      <p className="mt-2 text-[11px] text-zinc-600">
-        parada em “Aguardando você”{m.criterio_pronto ? ` · pronta quando: ${m.criterio_pronto}` : ''}
-      </p>
+      {m.criterio_pronto && (
+        <p className="mt-2 break-words text-[11px] text-zinc-600">pronta quando: {m.criterio_pronto}</p>
+      )}
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <button
+          disabled={busy}
+          onClick={() => decidir('done')}
+          className="min-h-[44px] rounded-xl border border-emerald-500/30 bg-emerald-500/[0.08] px-4 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/[0.14] disabled:opacity-50"
+        >
+          {busy ? '…' : 'Já fiz'}
+        </button>
+        <button
+          disabled={busy}
+          onClick={() => decidir('in_progress')}
+          className="min-h-[44px] rounded-xl border border-white/12 px-4 text-sm text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50"
+        >
+          Devolver pro Claude
+        </button>
+      </div>
     </div>
   )
 }
@@ -606,6 +630,20 @@ export default function Cockpit() {
     } catch (err) {
       setResolvidos((s) => { const n = new Set(s); n.delete(task.id); return n })
       setError(err.message || 'não consegui salvar a resposta')
+      return
+    }
+    await load()
+  }
+
+  // Tarefa parada em "Aguardando você": ele resolve ali mesmo ("Já fiz") ou devolve pro Claude.
+  // Só mexe no status (enum do backend) — nada do que o dispatcher lê é tocado.
+  async function decidirTarefa(task, status) {
+    setResolvidos((s) => new Set(s).add(task.id))
+    try {
+      await updateTask(task.id, { status })
+    } catch (err) {
+      setResolvidos((s) => { const n = new Set(s); n.delete(task.id); return n })
+      setError(err.message || 'não consegui atualizar a tarefa')
       return
     }
     await load()
@@ -710,7 +748,7 @@ export default function Cockpit() {
               {g.itens.map(({ item, tipo }) => (
                 tipo === 'pergunta' ? <QuestionCard key={item.id} task={item} onAnswer={answer} />
                   : tipo === 'plano' ? <PlanReviewCard key={item.id} plan={item} onDecide={decidePlan} />
-                    : <TarefaAguardando key={item.id} task={item} />
+                    : <TarefaAguardando key={item.id} task={item} onDecidir={decidirTarefa} />
               ))}
             </GrupoProjeto>
           ))
