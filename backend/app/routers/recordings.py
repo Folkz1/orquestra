@@ -22,7 +22,7 @@ from fastapi import (
 )
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.config import settings
 from app.database import async_session, get_db
@@ -38,6 +38,24 @@ router = APIRouter()
 
 
 TRANSCRIPTION_PREVIEW_LENGTH = 500
+
+
+def _project_without_collections():
+    """
+    Load Recording.project resolving ONLY its own columns.
+
+    Project declares contacts/messages/recordings/tasks with lazy="selectin", so
+    merely loading the project fires a selectin query for every one of those
+    collections. On a busy project that means pulling thousands of message rows
+    to render a single recording — Projeto Superbot (6.7k messages) turned every
+    detail/patch/inject request into a 500. Same guard list_projects already uses.
+    """
+    return selectinload(Recording.project).options(
+        noload(Project.contacts),
+        noload(Project.messages),
+        noload(Project.recordings),
+        noload(Project.tasks),
+    )
 
 
 def _recording_to_response(recording: Recording) -> RecordingResponse:
@@ -415,7 +433,7 @@ async def get_recording(
     db: AsyncSession = Depends(get_db),
 ):
     """Get full details of a single recording."""
-    stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
+    stmt = select(Recording).options(_project_without_collections()).where(Recording.id == recording_id)
     result = await db.execute(stmt)
     recording = result.scalar_one_or_none()
 
@@ -432,7 +450,7 @@ async def update_recording(
     db: AsyncSession = Depends(get_db),
 ):
     """Update recording fields (project_id, title, transcription, etc.)."""
-    stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
+    stmt = select(Recording).options(_project_without_collections()).where(Recording.id == recording_id)
     result = await db.execute(stmt)
     recording = result.scalar_one_or_none()
 
@@ -467,7 +485,7 @@ async def inject_transcription(
     Returns a lightweight response with truncated transcription to avoid
     OOM/timeout on large payloads (52k+ chars).
     """
-    stmt = select(Recording).options(selectinload(Recording.project)).where(Recording.id == recording_id)
+    stmt = select(Recording).options(_project_without_collections()).where(Recording.id == recording_id)
     result = await db.execute(stmt)
     recording = result.scalar_one_or_none()
     if not recording:
