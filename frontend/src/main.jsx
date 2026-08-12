@@ -9,8 +9,25 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 )
 
+// Drena a fila de gravacoes que ficaram offline.
+//
+// Quando o upload falha, Recorder.jsx manda QUEUE_RECORDING e o service worker
+// guarda o audio no IndexedDB, e a tela avisa "Sera enviado quando houver
+// conexao". Só que nada no app mandava SYNC_RECORDINGS de volta: a fila era
+// write-only e a promessa da tela nunca se cumpria. Uma call de 30min do Emilio
+// (31MB) ficou presa assim, e so foi recuperada na marra dos blobs do Chrome.
+function drainPendingRecordings() {
+  navigator.serviceWorker.controller?.postMessage({ type: 'SYNC_RECORDINGS' })
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(() => navigator.serviceWorker.ready)
+      .then(drainPendingRecordings)
+      .catch(() => {})
   })
+  // e de novo assim que a conexao voltar
+  window.addEventListener('online', drainPendingRecordings)
 }
