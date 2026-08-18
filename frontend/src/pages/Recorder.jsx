@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import RecordButton from '../components/RecordButton'
 import { uploadRecording, getProjects } from '../api'
+import { beginBackup, appendChunks, loadOrphan, clearBackup } from '../lib/recordingBackup'
 
 const STATUS = {
   IDLE: 'idle',
@@ -34,6 +35,36 @@ export default function Recorder() {
   const streamRef = useRef(null)
   const chunksRef = useRef([])
   const timerRef = useRef(null)
+  const backupBufferRef = useRef([])   // pedacos ainda nao gravados em disco
+  const backupSeqRef = useRef(0)       // quantos ja foram gravados
+
+  // Segura o fechamento da aba enquanto grava — foi assim que uma call de 2h
+  // se perdeu: fechar a aba mata o array em memoria antes do onstop rodar.
+  useEffect(() => {
+    const aviso = (e) => {
+      if (status === STATUS.RECORDING) {
+        e.preventDefault()
+        e.returnValue = 'Gravacao em andamento. Se sair agora ela nao sera enviada.'
+        return e.returnValue
+      }
+    }
+    window.addEventListener('beforeunload', aviso)
+    return () => window.removeEventListener('beforeunload', aviso)
+  }, [status])
+
+  // Recupera gravacao que ficou pela metade (aba fechada, refresh, crash)
+  useEffect(() => {
+    loadOrphan()
+      .then((orfa) => {
+        if (!orfa || orfa.chunks < 5) return
+        const minutos = Math.round(orfa.chunks / 60)
+        setErrorMsg(`Gravacao interrompida de ~${minutos}min recuperada. Enviando...`)
+        setStatus(STATUS.UPLOADING)
+        return handleUpload(orfa.blob)
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load projects
   useEffect(() => {
@@ -141,11 +172,26 @@ export default function Recorder() {
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunksRef.current.push(e.data)
+          // Espelha em disco enquanto grava: se a aba morrer, o audio sobrevive.
+          backupBufferRef.current.push(e.data)
+          if (backupBufferRef.current.length >= 15) {
+            const lote = backupBufferRef.current
+            backupBufferRef.current = []
+            const desde = backupSeqRef.current
+            backupSeqRef.current += lote.length
+            appendChunks(lote, desde).catch(() => {})
+          }
         }
       }
 
       mediaRecorder.onstop = async () => {
         stopTimer()
+        if (backupBufferRef.current.length) {
+          const resto = backupBufferRef.current
+          backupBufferRef.current = []
+          await appendChunks(resto, backupSeqRef.current).catch(() => {})
+          backupSeqRef.current += resto.length
+        }
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
         await handleUpload(blob)
       }
@@ -164,6 +210,9 @@ export default function Recorder() {
       })
 
       mediaRecorderRef.current = mediaRecorder
+      backupBufferRef.current = []
+      backupSeqRef.current = 0
+      await beginBackup(Date.now(), { mode }).catch(() => {})
       mediaRecorder.start(1000) // Collect data every second
       setStatus(STATUS.RECORDING)
       startTimer()
@@ -209,6 +258,7 @@ export default function Recorder() {
 
       setStatus(STATUS.TRANSCRIBING)
       const data = await uploadRecording(file, title || undefined, projectId || undefined)
+      await clearBackup().catch(() => {})
       setResult(data)
       setStatus(STATUS.DONE)
       setTitle('')
