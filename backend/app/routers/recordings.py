@@ -9,6 +9,7 @@ import math
 import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import (
     APIRouter,
@@ -20,6 +21,7 @@ from fastapi import (
     Query,
     UploadFile,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
@@ -441,6 +443,46 @@ async def get_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
 
     return _recording_to_response(recording)
+
+
+@router.get("/{recording_id}/audio")
+async def get_recording_audio(
+    recording_id: uuid.UUID,
+    download: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Serve the recording's audio file.
+
+    Without this there is no way to get the audio back out of the server, so a
+    recording whose transcription came out truncated could never be re-transcribed
+    with a different engine — the audio was reachable only from inside the container.
+    """
+    stmt = select(Recording).where(Recording.id == recording_id)
+    result = await db.execute(stmt)
+    recording = result.scalar_one_or_none()
+
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    if not recording.file_path:
+        raise HTTPException(status_code=404, detail="Recording has no file")
+
+    file_path = Path(recording.file_path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Audio file missing on disk")
+
+    ext = file_path.suffix.lower()
+    media_type = {
+        ".ogg": "audio/ogg", ".opus": "audio/ogg", ".webm": "audio/webm",
+        ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav",
+    }.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=file_path.name,
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 
 @router.patch("/{recording_id}", response_model=RecordingLightResponse)
