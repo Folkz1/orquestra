@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.config import settings
 from app.database import get_db
@@ -247,11 +247,30 @@ async def _get_contact(contact_id: UUID, db: AsyncSession) -> Contact:
     return contact
 
 
+
+def _portal_project_without_collections():
+    """
+    Load ClientPortalLink.project resolving ONLY its own columns.
+
+    Project declares contacts/messages/recordings/tasks with lazy="selectin",
+    so loading a project drags every one of those collections along. On a busy
+    project that is thousands of rows to render one portal page — the same
+    mechanism that made every recording of Projeto Superbot (6.7k messages)
+    answer 500. This portal only ever reads project.name/status/color.
+    """
+    return selectinload(ClientPortalLink.project).options(
+        noload(Project.contacts),
+        noload(Project.messages),
+        noload(Project.recordings),
+        noload(Project.tasks),
+    )
+
+
 async def _get_link(link_id: UUID, db: AsyncSession) -> ClientPortalLink | None:
     result = await db.execute(
         select(ClientPortalLink)
         .options(
-            selectinload(ClientPortalLink.project),
+            _portal_project_without_collections(),
             selectinload(ClientPortalLink.contact),
         )
         .where(ClientPortalLink.id == link_id)
@@ -263,7 +282,7 @@ async def _get_link_by_token(token: str, db: AsyncSession) -> ClientPortalLink |
     result = await db.execute(
         select(ClientPortalLink)
         .options(
-            selectinload(ClientPortalLink.project),
+            _portal_project_without_collections(),
             selectinload(ClientPortalLink.contact),
         )
         .where(ClientPortalLink.token == token)
@@ -828,7 +847,7 @@ async def bulk_create_active_links(
     existing_links = (
         await db.execute(
             select(ClientPortalLink)
-            .options(selectinload(ClientPortalLink.project), selectinload(ClientPortalLink.contact))
+            .options(_portal_project_without_collections(), selectinload(ClientPortalLink.contact))
         )
     ).scalars().all()
     links_by_pair = {(link.project_id, link.contact_id): link for link in existing_links if link.contact_id is not None}
@@ -924,7 +943,7 @@ async def list_links(request: Request, db: AsyncSession = Depends(get_db)):
     links = (
         await db.execute(
             select(ClientPortalLink)
-            .options(selectinload(ClientPortalLink.project), selectinload(ClientPortalLink.contact))
+            .options(_portal_project_without_collections(), selectinload(ClientPortalLink.contact))
             .order_by(ClientPortalLink.created_at.desc())
         )
     ).scalars().all()
