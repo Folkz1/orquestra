@@ -172,15 +172,66 @@ export function deletePushSubscription(endpoint) {
 }
 
 // Recordings
-export function uploadRecording(file, title, projectId) {
+// Uma gravacao de 2h em webm/opus passa facil de 50MB. O envio leva minutos e
+// pode morrer no meio sem que o socket caia — foi assim que a tela ficou em
+// "Transcrevendo..." para sempre. Teto explicito, e o usuario ve o progresso.
+const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function uploadRecording(file, title, projectId, { signal, onProgress } = {}) {
   const formData = new FormData();
   formData.append('file', file);
   if (title) formData.append('title', title);
   if (projectId) formData.append('project_id', projectId);
 
-  return request('/api/recordings/upload', {
-    method: 'POST',
-    body: formData,
+  // XHR e nao fetch: fetch nao reporta progresso de upload. Sem progresso,
+  // "subindo devagar" e "travado" sao a mesma tela para quem esta olhando.
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const fail = (message, extra = {}) => reject(Object.assign(new Error(message), extra));
+
+    if (signal?.aborted) {
+      fail('Envio cancelado', { aborted: true });
+      return;
+    }
+
+    xhr.open('POST', `${BASE_URL}/api/recordings/upload`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+      xhr.upload.onload = () => onProgress(1);
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(xhr.responseText ? JSON.parse(xhr.responseText) : null);
+        } catch {
+          fail('Resposta invalida do servidor', { status: xhr.status });
+        }
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        // resposta pode nao ser JSON
+      }
+      fail(`HTTP ${xhr.status}: ${xhr.statusText}`, { status: xhr.status, data });
+    };
+    xhr.onerror = () => fail('Falha de rede ao enviar o audio', { network: true });
+    xhr.ontimeout = () =>
+      fail(`Envio passou de ${Math.round(UPLOAD_TIMEOUT_MS / 60000)}min sem terminar`, {
+        timeout: true,
+      });
+    xhr.onabort = () => fail('Envio cancelado', { aborted: true });
+
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(formData);
   });
 }
 

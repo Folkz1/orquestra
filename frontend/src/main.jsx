@@ -16,8 +16,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // conexao". Só que nada no app mandava SYNC_RECORDINGS de volta: a fila era
 // write-only e a promessa da tela nunca se cumpria. Uma call de 30min do Emilio
 // (31MB) ficou presa assim, e so foi recuperada na marra dos blobs do Chrome.
+// O token vai junto: o service worker nao enxerga o localStorage, entao subia
+// sem Authorization, levava 401 e — como fetch nao rejeita em 4xx — apagava a
+// gravacao achando que tinha entregue.
 function drainPendingRecordings() {
-  navigator.serviceWorker.controller?.postMessage({ type: 'SYNC_RECORDINGS' })
+  navigator.serviceWorker.controller?.postMessage({
+    type: 'SYNC_RECORDINGS',
+    token: localStorage.getItem('orquestra_token') || '',
+  })
 }
 
 if ('serviceWorker' in navigator) {

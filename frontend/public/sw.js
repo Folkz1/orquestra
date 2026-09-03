@@ -90,6 +90,8 @@ function openDB() {
   });
 }
 
+const MAX_QUEUE_ATTEMPTS = 3;
+
 self.addEventListener('message', async (event) => {
   if (event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, data } = event.data;
@@ -124,14 +126,34 @@ self.addEventListener('message', async (event) => {
         req.onsuccess = () => resolve(req.result);
       });
 
+      const token = event.data.token;
+
       for (const item of all) {
+        // Para de martelar o servidor com um audio que ele ja recusou tres
+        // vezes. O item continua na fila: quem apaga gravacao e o usuario.
+        if ((item.attempts || 0) >= MAX_QUEUE_ATTEMPTS) continue;
+
         const formData = new FormData();
         formData.append('file', new Blob([item.blob], { type: 'audio/webm' }), 'recording.webm');
         if (item.title) formData.append('title', item.title);
         if (item.projectId) formData.append('project_id', item.projectId);
 
         try {
-          await fetch('/api/recordings/upload', { method: 'POST', body: formData });
+          // fetch nao rejeita em 401/413. Sem checar res.ok, a fila apagava a
+          // gravacao ao receber a recusa do servidor e o audio sumia calado.
+          const res = await fetch('/api/recordings/upload', {
+            method: 'POST',
+            body: formData,
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+
+          if (!res.ok) {
+            console.error('[SW] Upload recusado (HTTP ' + res.status + '), item mantido na fila');
+            const keepTx = db.transaction(STORE_NAME, 'readwrite');
+            keepTx.objectStore(STORE_NAME).put({ ...item, attempts: (item.attempts || 0) + 1 });
+            continue;
+          }
+
           const delTx = db.transaction(STORE_NAME, 'readwrite');
           delTx.objectStore(STORE_NAME).delete(item.id);
         } catch (err) {

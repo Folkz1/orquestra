@@ -86,7 +86,33 @@ export async function loadOrphan() {
     blob: new Blob(rows.map((r) => r.blob), { type: 'audio/webm' }),
     chunks: rows.length,
     startedAt: meta?.startedAt || null,
+    attempts: meta?.attempts || 0,
   }
+}
+
+/**
+ * Registra mais uma tentativa de reenvio da gravacao orfa.
+ *
+ * Sem isso o recovery do Recorder era um loop: toda abertura do app reenviava a
+ * mesma gravacao, falhava pelo mesmo motivo e deixava a tela presa em
+ * "Transcrevendo..." — sem tentativa maxima, sem aviso e sem saida.
+ */
+export async function markAttempt() {
+  const db = await openDB()
+  const atual = await new Promise((res) => {
+    const r = tx(db, META, 'readonly').get('current')
+    r.onsuccess = () => res(r.result || {})
+    r.onerror = () => res({})
+  })
+  const attempts = (atual.attempts || 0) + 1
+  await new Promise((res) => {
+    const t = db.transaction(META, 'readwrite')
+    t.objectStore(META).put({ ...atual, key: 'current', attempts, lastAttemptAt: Date.now() })
+    t.oncomplete = res
+    t.onerror = res
+  })
+  db.close()
+  return attempts
 }
 
 /** Limpa o backup — chamado quando a gravacao foi entregue com sucesso. */
