@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getTasks, createTask, updateTask, deleteTask, getProjects } from '../api'
+import ConsumoTokens from '../components/ConsumoTokens'
 
 const COLUMNS = [
   { id: 'backlog', label: 'Backlog', color: '#6b7280', icon: '📋' },
@@ -498,8 +499,10 @@ export default function Kanban() {
   const [draggedTask, setDraggedTask] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
 
-  const loadData = async () => {
-    setLoading(true)
+  // silencioso=true no refetch periodico: acender o spinner de 20 em 20 segundos
+  // faria a tela piscar por cima do que a pessoa esta a ler.
+  const loadData = async (silencioso = false) => {
+    if (!silencioso) setLoading(true)
     try {
       const [taskData, projectData] = await Promise.all([
         getTasks(projectFilter ? { project_id: projectFilter } : {}),
@@ -511,10 +514,23 @@ export default function Kanban() {
     } catch (err) {
       console.error('[Kanban] Load failed:', err)
     }
-    setLoading(false)
+    if (!silencioso) setLoading(false)
   }
 
   useEffect(() => { loadData() }, [projectFilter])
+
+  // O quadro carregava UMA vez e nunca mais: quem o deixava aberto via o estado da hora
+  // em que o abriu, e cartao movido por um hook so aparecia com F5. Era esta a causa do
+  // "o kanban nao atualiza" -- nao faltava hook nenhum, faltava voltar a buscar.
+  // Para de bater quando a aba esta escondida, para nao gastar rede em segundo plano.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') loadData(true)
+    }, 20000)
+    const aoVoltar = () => { if (document.visibilityState === 'visible') loadData(true) }
+    document.addEventListener('visibilitychange', aoVoltar)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', aoVoltar) }
+  }, [projectFilter])
 
   const openCreate = () => {
     setEditingTask(null)
@@ -610,6 +626,8 @@ export default function Kanban() {
 
   return (
     <div>
+      <ConsumoTokens />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
