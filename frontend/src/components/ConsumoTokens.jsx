@@ -107,8 +107,16 @@ export default function ConsumoTokens() {
 
   const frentes = (t.frentes || []).slice(0, 5)
   const maior = frentes.length ? frentes[0].usd || 1 : 1
-  const jarbas = Object.entries(t.origens || {}).filter(([o]) => /^jarbas:/.test(o)).reduce((a, [, n]) => a + n, 0)
   const quando = idade(t.colhidoEm || t.gerado)
+
+  // Duas maquinas medem: o PC do Diego (que ve as suas sessoes e as do servidor por ssh)
+  // e o proprio servidor (que so ve as dele). A leitura completa e a do PC. Quando ele
+  // desliga, a do servidor toma conta -- e o total CAI, porque cobre menos, nao porque
+  // se gastou menos. Sem esta etiqueta, essa queda parece boa noticia.
+  const origens = Object.keys(t.origens || {})
+  const temServidor = origens.some((o) => /^jarbas:/.test(o))
+  const temPc = origens.some((o) => !/^jarbas:/.test(o))
+  const cobertura = !temServidor ? 'sem o servidor' : !temPc ? 'só o servidor (PC desligado)' : null
 
   return (
     <div className="mb-5 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3">
@@ -119,8 +127,7 @@ export default function ConsumoTokens() {
         <div className="text-[11px] text-zinc-600 tabular-nums">
           {usd(t.total && t.total.usd)} no total
           {quando ? ' · medido ' + quando : ''}
-          {/* zero sessoes do jarbas significa que a metade servidor nao entrou nesta leitura */}
-          {jarbas === 0 && <span className="text-amber-500/80"> · sem o servidor</span>}
+          {cobertura && <span className="text-amber-500/80"> · {cobertura}</span>}
         </div>
       </div>
 
