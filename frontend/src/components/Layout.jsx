@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { getInitials } from '../lib/formatters'
 import { desktopNavSections, getNavMeta, nativeMobileTabs } from '../lib/navigation'
 import { isNativeApp } from '../lib/native'
+import { getPainelResumo } from '../api'
 
-function DesktopItem({ item }) {
+function DesktopItem({ item, badge }) {
   return (
     <NavLink
       to={item.to}
@@ -14,8 +15,15 @@ function DesktopItem({ item }) {
       }
     >
       <span className="nav-sigil">{getInitials(item.label)}</span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">{item.label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {item.label}
+          {badge > 0 && (
+            <span className="rounded-full bg-[#8bd450]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[#c9f28f]">
+              {badge}
+            </span>
+          )}
+        </span>
         <span className="mt-0.5 block text-xs text-zinc-500">{item.description}</span>
       </span>
     </NavLink>
@@ -76,8 +84,28 @@ function NativeDockItem({ item }) {
   )
 }
 
+// Quantos gates esperam por ele. Fica no shell de propósito: é a única coisa do painel que ele precisa
+// de ver sem lá entrar, e uma resposta falhada não pode partir a navegação — por isso o catch é mudo.
+function useGatesAbertos() {
+  const [n, setN] = useState(null)
+  useEffect(() => {
+    let vivo = true
+    const ler = async () => {
+      try {
+        const r = await getPainelResumo()
+        if (vivo) setN(r?.gates?.abertos ?? null)
+      } catch { /* sem badge é melhor do que um número errado */ }
+    }
+    ler()
+    const t = setInterval(ler, 60000)
+    return () => { vivo = false; clearInterval(t) }
+  }, [])
+  return n
+}
+
 export default function Layout({ children, onLogout }) {
   const location = useLocation()
+  const gatesAbertos = useGatesAbertos()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const nativeApp = useMemo(() => isNativeApp(), [])
   const meta = getNavMeta(location.pathname)
@@ -102,7 +130,7 @@ export default function Layout({ children, onLogout }) {
                 </p>
                 <div className="space-y-1.5">
                   {section.items.map((item) => (
-                    <DesktopItem key={item.to} item={item} />
+                    <DesktopItem key={item.to} item={item} badge={item.badge === 'gates' ? gatesAbertos : null} />
                   ))}
                 </div>
               </div>
