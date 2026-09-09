@@ -391,6 +391,13 @@ function BlocoAgora({ agora, fallbackUsd }) {
         {agora.usd != null ? `US$ ${Math.round(agora.usd).toLocaleString('en-US')}` : '—'}
         {agora.ativas != null && <span className="text-zinc-500"> · {agora.ativas} {agora.ativas === 1 ? 'sessão ativa' : 'sessões ativas'}</span>}
       </p>
+      {agora.ritmo && (
+        <p className={`text-[11px] ${agora.ritmo.alarme ? 'text-rose-300' : 'text-zinc-500'}`}>
+          {agora.ritmo.pctDia != null && `${agora.ritmo.pctDia}%/dia`}
+          {agora.ritmo.tetoDia != null && ` · teto ${agora.ritmo.tetoDia}`}
+          {agora.ritmo.esgotaAntesDoReset && ' · esgota antes do reset'}
+        </p>
+      )}
       <p className="text-[11px] text-zinc-600">
         gasto {idadeCurta(agora.ts)}
         {parcial && <span className="text-amber-500/80"> · só {agora.cobertura}</span>}
