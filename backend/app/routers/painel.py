@@ -85,6 +85,42 @@ def parse_ts(v: Any) -> Optional[datetime]:
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
+# ⛔ 09/09: cinco gates chegaram com a hora LOCAL de quem os escreveu carimbada como "Z" — três em hora
+# do Brasil (UTC-3) e dois em hora de Berlim (UTC+2, que é onde o jarbas corre). O painel mostrava
+# «respondido 3 h ANTES de nascer». O parse aqui está certo (Z é Z); o erro vem no corpo.
+# Duas coisas nunca são verdade, e é por isso que dá para as corrigir sem adivinhar nada:
+#   · um gate não nasce no futuro          · uma resposta não chega antes da pergunta
+# Nesses dois casos manda o relógio do SERVIDOR — é quando o pedido chegou, e é UTC de verdade. O que
+# veio no corpo NÃO se perde: fica em extra.carimbo_corrigido, com a razão.
+# Hora no PASSADO continua a ser aceite sem discussão: é backfill legítimo, e é assim que a Mesa entrou.
+TOLERANCIA_RELOGIO = timedelta(minutes=2)
+
+
+def sanear_carimbo(v: Optional[datetime], ref: datetime, campo: str,
+                   nao_antes: Optional[datetime] = None) -> tuple[Optional[datetime], Optional[dict]]:
+    """Devolve (valor a gravar, registo do que foi corrigido). O registo é None quando está tudo bem."""
+    if v is None:
+        return None, None
+    motivo = None
+    if v > ref + TOLERANCIA_RELOGIO:
+        motivo = "no futuro: o relógio de quem escreveu está à frente do UTC"
+    elif nao_antes is not None and v < nao_antes:
+        motivo = "antes da abertura do gate: hora local carimbada como Z"
+    if motivo is None:
+        return v, None
+    return ref, {"campo": campo, "recebido": v.isoformat(), "usado": ref.isoformat(),
+                 "porque": motivo, "corrigido_em": ref.isoformat()}
+
+
+def anotar_carimbo(g: PainelGate, registo: Optional[dict]) -> None:
+    """Guarda a correção no gate. Uma lista, porque o mesmo gate pode ser reescrito muitas vezes."""
+    if not registo:
+        return
+    antes = list((g.extra or {}).get("carimbo_corrigido", []))
+    antes.append(registo)
+    g.extra = {**(g.extra or {}), "carimbo_corrigido": antes[-10:]}
+
+
 def estado_efetivo(g: PainelGate, ref: Optional[datetime] = None) -> str:
     """Aberto com prazo no passado conta como expirado, sem ninguém ter de escrever isso."""
     ref = ref or agora()
@@ -130,6 +166,7 @@ def gate_dict(g: PainelGate, ref: Optional[datetime] = None) -> dict:
         "fonte_atualizado": g.fonte_atualizado.isoformat() if g.fonte_atualizado else None,
         "origem": g.origem,
         "extra": g.extra or {},
+        "carimbo_corrigido": (g.extra or {}).get("carimbo_corrigido") or None,
         "criado_em": g.criado_em.isoformat() if g.criado_em else None,
         "atualizado_em": g.atualizado_em.isoformat() if g.atualizado_em else None,
     }
@@ -221,7 +258,19 @@ async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, str]
     if "urg" in dado:
         g.urg = bool(body.urg)
     if body.ts_aberto is not None:
-        g.ts_aberto = parse_ts(body.ts_aberto)
+        ref_upsert = agora()
+        novo_aberto, corrigido = sanear_carimbo(parse_ts(body.ts_aberto), ref_upsert, "ts_aberto")
+        # e uma abertura nova não pode saltar para depois de uma resposta que já lá está: nesse caso
+        # a que sobreviveu à coerência vale mais do que a que acabou de chegar — fica a antiga.
+        if novo_aberto and g.ts_resposta and novo_aberto > g.ts_resposta:
+            corrigido = {"campo": "ts_aberto", "recebido": novo_aberto.isoformat(),
+                         "usado": g.ts_aberto.isoformat() if g.ts_aberto else None,
+                         "porque": "depois da resposta já gravada: alteração recusada",
+                         "corrigido_em": ref_upsert.isoformat()}
+        elif novo_aberto is not None:
+            g.ts_aberto = novo_aberto
+        # (parse falhado devolve None: uma hora ilegível não apaga a abertura boa que lá estava)
+        anotar_carimbo(g, corrigido)
     if body.ts_expira is not None:
         g.ts_expira = parse_ts(body.ts_expira)
     if body.origem is not None:
@@ -328,7 +377,9 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
         if body.nota is not None:
             g.nota = body.nota
         g.estado = "respondido"
-        g.ts_resposta = parse_ts(body.ts_resposta) or ref
+        g.ts_resposta, corrigido = sanear_carimbo(parse_ts(body.ts_resposta) or ref, ref,
+                                                  "ts_resposta", nao_antes=g.ts_aberto)
+        anotar_carimbo(g, corrigido)
         if body.por is not None:
             g.respondido_por = body.por
     elif body.estado == "expirado":
