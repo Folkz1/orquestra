@@ -22,6 +22,8 @@ const TETO = 80 // política da casa: aos 80% o Eduardo pára e o Diego entra em
 // real. Não se apagam nem se recalculam (as leituras antigas só guardam o total), dizem-se.
 const REGUA_CORRIGIDA = '2026-09-09T19:20:00Z'
 const reguaAntiga = (ts) => ts && new Date(ts) < new Date(REGUA_CORRIGIDA)
+// a % é colhida de 5 em 5 min; passados 8 min alguma coisa parou, e isso diz-se em vez de se esconder
+const velha = (ts) => !ts || (Date.now() - new Date(ts).getTime()) > 8 * 60000
 const CHART_TICK = { fill: '#71717a', fontSize: 11 }
 const CHART_TOOLTIP = { background: '#10141b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 12 }
 const CORES = ['#8bd450', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399']
@@ -424,11 +426,15 @@ function CartaoConta({ c }) {
           </div>
         ))}
       </div>
+      {/* a idade da % vai COLADA à % — foi a idade escondida no rodapé que a fez parecer parada */}
+      <p className={`mt-1 text-[11px] ${velha(c.limites_ts) ? 'text-amber-400' : 'text-zinc-600'}`}>
+        % {idadeCurta(c.limites_ts || c.ts)}{velha(c.limites_ts) ? ' · a leitura pode estar atrasada' : ''}
+      </p>
       {c.pct_desconhecido != null && c.pct_semana == null && (
         <p className="mt-1 text-[11px] text-zinc-500">{c.pct_desconhecido}% no log (limite não identificado)</p>
       )}
       <BlocoAgora agora={c.agora} fallbackUsd={c.usd} />
-      <p className="mt-1 text-[11px] text-zinc-600">% do limite: {idade(c.ts)} · fonte {c.fonte}</p>
+      <p className="mt-1 text-[11px] text-zinc-600">fonte {c.fonte}</p>
     </div>
   )
 }
@@ -723,7 +729,7 @@ export default function Painel() {
           const p = c.pct_semana ?? c.pct_desconhecido
           const ag = c.agora
           return <StatCard key={c.conta} label={`Conta ${c.conta}`} value={p == null ? '—' : `${p}%`} alert={p != null && p >= TETO - 15}
-            sub={ag ? `US$ ${Math.round(ag.usd || 0).toLocaleString('en-US')} · ${ag.ativas ?? 0} ativas · ${idadeCurta(ag.ts)}` : `${c.pct_fable != null ? `Fable ${c.pct_fable}% · ` : ''}${idade(c.ts)}`} />
+            sub={ag ? `% ${idadeCurta(c.limites_ts || c.ts)} · US$ ${Math.round(ag.usd || 0).toLocaleString('en-US')} ${idadeCurta(ag.ts)}` : `${c.pct_fable != null ? `Fable ${c.pct_fable}% · ` : ''}${idade(c.ts)}`} />
         })}
         {contas.length === 0 && <StatCard label="Contas" value="—" sub="sem leitura" />}
       </div>
