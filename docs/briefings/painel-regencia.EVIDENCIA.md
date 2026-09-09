@@ -107,6 +107,34 @@ Achados de infraestrutura, já na memória da casa
 `updateEnv` substitui o env INTEIRO (um env vazio deixou a API sem `DATABASE_URL`, health `db:false` sem
 erro no deploy); imagem local não deploya, precisa de registry (`registry:2` em `127.0.0.1:5055`).
 
+## 5b. Avaliador independente (subagente `verifier`, contra o staging vivo)
+
+**Veredito: APROVADO COM RESSALVAS.** O que ele confirmou, medindo por SQL direto na base (não pela API,
+para não herdar o viés da agregação):
+
+- os números todos batem: `gates=153 · respondidos=138 · telemetria=339 · kpi=150 · placar=10 projetos`,
+  `alembic_version=027_painel_qg`, health `db:true`;
+- **138 de 138 decisões do Diego** conferidas uma a uma contra os ficheiros do export da Mesa: escolha,
+  nota e `ts_resposta` batem em todas. `mismatches: 0`. (Eu tinha provado por amostra; ele provou inteiro.)
+- as garantias resistiram ao ataque: POST no id de um gate respondido não altera a resposta; telemetria
+  repetida não duplica; carimbo mais velho não reescreve; conflito de fontes aparece em vez de sumir;
+  **403 em todas as rotas sem token**, GET e POST; corpo vazio dá 422, data inválida dá 400, id inexistente
+  404 — **nenhum 500** em nenhum caso malformado; id com `<script>`/`DROP TABLE` fica string literal e o
+  frontend não usa `dangerouslySetInnerHTML` em lado nenhum.
+
+**Três defeitos que ele achou, os três corrigidos e reprovados (commit `832907f`, 9/9 contra o staging):**
+
+1. **`POST /gates` com corpo parcial apagava `why`/`ctx`/`opts`/`rec`.** Um watcher com um JSON mais pobre,
+   ou um script que só quisesse corrigir o título, apagava o contexto todo do gate. Agora só se escreve o
+   que veio explicitamente no corpo; mencionar o campo vazio continua a poder limpá-lo.
+2. **`PATCH` só com nota sobrescrevia a nota de um gate respondido sem passar pelo histórico** — e é
+   exatamente o caminho que o `mesa-importar.js` usa para as decisões «só nota».
+3. **Higiene**: a EVIDENCIA e o teste do conflito estavam por commitar.
+
+O quarto ponto dele — a suíte de integração deixa rasto no staging — fica como está, declarado: não há
+DELETE na API de propósito, e o cabeçalho do teste traz o SQL de limpeza. ⛔ Por isso ela só se corre
+contra staging.
+
 ## 6. NOT VERIFIED (o que não foi provado, e porquê)
 
 - **Nada em produção.** A Orquestra em produção continua com a imagem de 18/08; subir é gate do Diego
@@ -120,5 +148,5 @@ erro no deploy); imagem local não deploya, precisa de registry (`registry:2` em
 - **`respondido_por`** fica nulo quando se responde pelo browser: a página não sabe quem é o utilizador
   (o Bearer é um só). Quem repassa por API declara o `por`.
 - **Chrome real e outros browsers**: provado no browser embutido, em 375×812 e em desktop. Não testei
-  Safari/iOS.
+  Safari/iOS. O avaliador não teve ferramenta de browser: a parte visual foi verificada só por mim.
 - **Carga**: 153 gates e 339 leituras são poucos. Não medi o painel com milhares de linhas.

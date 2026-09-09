@@ -25,10 +25,12 @@ próximo deploy de qualquer pessoa vai puxar.
 ```
 ⛔ GATE — subir o Painel de Regência (feat/painel-regencia → master → produção da Orquestra)
 Por que é seu   · deploy em produção; leva 11 commits de master (PRs #13–#18) que não estão no ar desde 18/08
-Já feito e provado · staging em https://painel-staging.jz9bd8.easypanel.host (API fba0458, web fba0458-stg,
-                     1/1, health db:true); contrato provado por teste de integração (6/6); 153 gates + 138
-                     decisões importados; 339 leituras de telemetria (série desde 02/09); 141 linhas de custo
-                     por dia/frente; gate respondido no browser e confirmado pela API; avaliador independente
+Já feito e provado · staging em https://painel-staging.jz9bd8.easypanel.host (API 832907f, web 3f3f2b7-stg,
+                     1/1, health db:true, alembic 027); 9/9 no contrato contra o staging vivo; 153 gates +
+                     138 decisões (avaliador conferiu 138/138: escolha, nota e hora batem); 339 leituras de
+                     telemetria, série de 02/09 a 09/09; 150 linhas de KPI de 2 fontes; placar de 10 frentes;
+                     gate nascido de FICHEIRO JSON, respondido no telemóvel e lido em /api/painel/decisoes;
+                     avaliador independente: aprovado com ressalvas, 3 defeitos achados e corrigidos
 Opções          · A) subir agora (merge + deploy backend e frontend com tag :<sha>, prova, importar)
                   B) subir só o backend primeiro (o painel fica acessível pela API; a página vem a seguir)
                   C) ficar em staging mais um dia e olhar a série a encher
