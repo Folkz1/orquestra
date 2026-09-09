@@ -451,8 +451,16 @@ async def mais_recentes_por_conta(db: AsyncSession, conta: Optional[str] = None,
     diferentes: o PC do Diego via 32.618 dólares e 320 sessões, o jarbas via 22.574 e 201, ambos
     corretos para o que alcançam. Mostrar sempre a última faria o total saltar de 32 mil para 22 mil
     de minuto a minuto — pior do que estar parado, porque parece que o gasto desceu.
-    Regra: entre as leituras dos últimos `janela_min`, fica a que VIU MAIS SESSÕES; empate, a mais
-    recente. Fora dessa janela, a mais recente que houver."""
+
+    ⛔ E também não é «quem viu mais sessões». Essa foi a minha primeira regra e estava errada, medida
+    em produção em 09/09 na conta do Eduardo: o PC vê 180 sessões dele mas só 98 dólares (sessões
+    antigas e baratas), o jarbas vê 46 e 424 dólares (poucas e caras). A regra das sessões escolhia o
+    PC e mostrava 98 onde havia pelo menos 424 — a mesma família de erro que já fez esta casa publicar
+    156 dólares onde eram 1.870.
+
+    A regra certa: fica a que MEDIU MAIS GASTO. Cada leitura deduplica por dentro (message.id e sid),
+    portanto o gasto de cada uma é a soma de um subconjunto das sessões reais — quem soma mais viu
+    mais, e nenhuma pode inflar. É um piso, não o total: a cobertura vai ao lado a dizê-lo."""
     q = select(PainelTelemetria)
     if conta:
         q = q.where(PainelTelemetria.conta == conta)
@@ -462,9 +470,8 @@ async def mais_recentes_por_conta(db: AsyncSession, conta: Optional[str] = None,
     agora_ts = max(t.ts for t in linhas)
     corte = agora_ts - timedelta(minutes=janela_min)
 
-    def cobertura(t: PainelTelemetria) -> int:
-        v = (t.extra or {}).get("sessoes")
-        return int(v) if isinstance(v, (int, float)) else -1
+    def cobertura(t: PainelTelemetria) -> float:
+        return float(t.usd) if t.usd is not None else -1.0
 
     out: dict[str, PainelTelemetria] = {}
     for t in linhas:                                    # já vem por ts desc

@@ -165,18 +165,15 @@ def test_ultima_leitura_prefere_a_completa_recente_e_nao_a_parcial_do_jarbas():
     assert esc[0].id == 3
 
 
-def test_numero_que_mexe_prefere_quem_viu_mais_sessoes():
-    """Duas máquinas medem ao mesmo tempo e veem conjuntos diferentes. Mostrar sempre a última faria o
-    total saltar de 32 mil para 22 mil de minuto a minuto — e parecer que o gasto desceu."""
-    pc = tele(id=1, ts=AGORA, usd=32618, extra={"sessoes": 320, "cobertura": "esta maquina"})
-    jarbas = tele(id=2, ts=AGORA + timedelta(seconds=20), usd=22574, extra={"sessoes": 201, "cobertura": "servidor"})
-    escolhido = painel.mais_recentes_por_conta.__wrapped__ if hasattr(painel.mais_recentes_por_conta, "__wrapped__") else None
-    # a função é async e fala com o banco: testa-se aqui a regra pura que ela aplica
+def test_numero_que_mexe_prefere_quem_mediu_mais_gasto():
+    """Duas máquinas medem ao mesmo tempo e veem conjuntos diferentes.
+    ⛔ Medido em produção 09/09: o PC vê 180 sessões do Eduardo e 98 dólares; o jarbas vê 46 e 424.
+    Preferir quem viu mais SESSÕES mostrava 98 onde havia pelo menos 424. O que cobre mais é quem
+    MEDIU MAIS GASTO — cada leitura deduplica por dentro, portanto nenhuma pode inflar."""
     def melhor(linhas, janela_min=5.0):
         linhas = sorted(linhas, key=lambda t: t.ts, reverse=True)
-        agora_ts = linhas[0].ts
-        corte = agora_ts - timedelta(minutes=janela_min)
-        cob = lambda t: t.extra.get("sessoes", -1)
+        corte = linhas[0].ts - timedelta(minutes=janela_min)
+        cob = lambda t: float(t.usd) if t.usd is not None else -1.0
         out = {}
         for t in linhas:
             a = out.get(t.conta)
@@ -185,10 +182,19 @@ def test_numero_que_mexe_prefere_quem_viu_mais_sessoes():
             elif t.ts >= corte and a.ts >= corte and cob(t) > cob(a):
                 out[t.conta] = t
         return out
-    assert melhor([pc, jarbas])["Diego"].id == 1        # fica a do PC, que viu 320
-    # e se a do PC envelhecer para fora da janela, a do servidor toma conta (com a etiqueta a dizê-lo)
-    velha = tele(id=3, ts=AGORA - timedelta(minutes=30), usd=32618, extra={"sessoes": 320})
-    assert melhor([velha, jarbas])["Diego"].id == 2
+
+    pc = tele(id=1, ts=AGORA, conta="Eduardo", usd=98, extra={"sessoes": 180, "cobertura": "esta maquina"})
+    jarbas = tele(id=2, ts=AGORA + timedelta(seconds=20), conta="Eduardo", usd=424, extra={"sessoes": 46, "cobertura": "servidor"})
+    assert melhor([pc, jarbas])["Eduardo"].id == 2, "tem de ficar a que mediu mais gasto, não a que viu mais sessões"
+
+    # e para o Diego, onde é o PC que cobre mais, fica o PC — a regra não é «o servidor ganha»
+    d_pc = tele(id=3, ts=AGORA, conta="Diego", usd=32618, extra={"sessoes": 320})
+    d_jb = tele(id=4, ts=AGORA + timedelta(seconds=20), conta="Diego", usd=22574, extra={"sessoes": 201})
+    assert melhor([d_pc, d_jb])["Diego"].id == 3
+
+    # leitura velha não segura o lugar: fora da janela, a recente toma conta
+    velha = tele(id=5, ts=AGORA - timedelta(minutes=30), conta="Diego", usd=99999, extra={"sessoes": 320})
+    assert melhor([velha, d_jb])["Diego"].id == 4
 
 
 # ─── integração (staging vivo) ────────────────────────────────────────────
