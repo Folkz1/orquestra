@@ -97,11 +97,24 @@ Abrir `https://guyyfolkz.mbest.site/painel` no telemóvel: cabeçalho, três aba
    (`mv coletores/telemetria-tick.js coletores/telemetria-tick.js.pre-merge`), senão o pull recusa.
    ⚠️ Outro chip está a consertar o `telemetria-tick.js` («servia 92% de cache de ontem»): fundir os dois, a
    alteração daqui é aditiva (bloco `--postOrquestra`).
-5. **Cron do jarbas** (utilizador `diego`; cópia de segurança em `/home/diego/painel-staging/crontab.bak-0909`):
-   trocar a linha de staging por
+5. **Cron do jarbas** (utilizador `diego`). ⛔ **ARMADILHA MEDIDA em 09/09, não repetir**: eu apontei o cron
+   à worktree da branch para alimentar o staging e **quebrei o push da telemetria para a Orquestra de
+   produção durante 7 minutos**, sem erro visível em lado nenhum. A causa: `telemetria-push.js` é um
+   ficheiro **não rastreado** que só existe em `/srv/projetos/cerebro/coletores/`, e `lib-orquestra.js`
+   (novo) só existia na worktree. Cada pasta tinha metade do que o tick precisa. Já reverti — o cron está
+   no original e o push voltou a correr (prova no log: «[push] não escrevi: perderia DeA-PC, jarbas:diego,
+   jarbas:claude2», que é a guarda dele a funcionar).
+
+   **A ordem certa, depois do merge:** (a) fundir a branch do cérebro em `master` e fazer `pull` em
+   `/srv/projetos/cerebro`; (b) **confirmar que a MESMA pasta tem os três**: `telemetria-tick.js` (com o
+   bloco `--postOrquestra`), `telemetria-push.js` e `lib-orquestra.js`; (c) só então acrescentar
+   `--postOrquestra` à linha que já existe:
    `*/10 * * * * /usr/bin/node /srv/projetos/cerebro/coletores/telemetria-tick.js --aqui --minutos 8 --postOrquestra >> /srv/projetos/cerebro/coletores/telemetria-cron.log 2>&1`
-   (sem o `. ~/.orquestra-painel.env;` — produção é o destino por defeito e o token vem de `/srv/projetos/orquestra/.env`).
-   Apagar `/home/diego/.orquestra-painel.env` e a worktree `/srv/projetos/cerebro/.claude/worktrees/painel-regencia`.
+   (sem `. ~/.orquestra-painel.env;` — produção é o destino por defeito e o token sai de `/srv/projetos/orquestra/.env`).
+   Depois apagar `/home/diego/.orquestra-painel.env` e a worktree `/srv/projetos/cerebro/.claude/worktrees/painel-regencia`.
+   ⚠️ O primeiro tick a seguir a um redeploy pode dar 404 se apanhar o container a arrancar (aconteceu às
+   17:40:04Z, 10 s antes de o novo estar pronto). Não é defeito: o tick tenta outra vez em 10 min e a
+   linha é única por `(ts, conta, fonte)`.
 6. **Hook do PC do Diego** (`~/.claude/settings.json`, comando `node D:/projetos/cerebro/coletores/telemetria-tick.js`):
    acrescentar `--postOrquestra` para a leitura mais completa (as duas contas com limites, via `--remoto`) chegar também.
 7. A regência deixa de escrever gates na Mesa: `POST /api/painel/gates` (contrato no briefing) e lê respostas com

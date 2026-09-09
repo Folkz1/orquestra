@@ -139,6 +139,12 @@ contra staging.
 
 - **Nada em produção.** A Orquestra em produção continua com a imagem de 18/08; subir é gate do Diego
   (runbook em `painel-regencia.RUNBOOK-deploy.md`).
+- **⚠️ O cron do jarbas está de volta ao original** (restaurado às 17:47Z do backup em
+  `/home/diego/painel-staging/crontab.bak-0909`). Eu tinha-o apontado à worktree da branch para alimentar o
+  staging e isso **quebrou o push da telemetria para a Orquestra de produção durante 7 minutos**, sem erro
+  visível: `telemetria-push.js` é untracked e só existe no checkout principal, `lib-orquestra.js` só existia
+  na worktree — cada pasta tinha metade do que o tick precisa. O push está a correr de novo, provado no log.
+  O `--postOrquestra` só entra depois do merge, com a ordem escrita no passo 6.5 do runbook.
 - **O cron do watcher de gates** (`gates-watch.js` de 30 em 30 s no jarbas) não foi instalado: só corri o
   comando à mão. O cron da telemetria FOI trocado no jarbas para apontar ao staging e tem de voltar ao
   destino de produção no cutover (cópia em `/home/diego/painel-staging/crontab.bak-0909`).
