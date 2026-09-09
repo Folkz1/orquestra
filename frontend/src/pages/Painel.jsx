@@ -73,12 +73,16 @@ function fmtData(value, opts = { dateStyle: 'short', timeStyle: 'short' }) {
 function idadeCurta(value) {
   if (!value) return 'sem hora'
   const s = Math.round((Date.now() - new Date(value).getTime()) / 1000)
-  if (s < 90) return `há ${s}s`
+  if (s < -120) return 'hora adiante do relógio'
+  if (s < 90) return `há ${Math.max(0, s)}s`
   return idade(value)
 }
 function idade(value) {
   if (!value) return 'sem hora'
   const min = Math.round((Date.now() - new Date(value).getTime()) / 60000)
+  // ⛔ carimbo adiante do relógio: dizer "há -180 min" faz parecer defeito do painel, e o defeito é
+  // de quem carimbou hora local como Z. Nomear a coisa em vez de imprimir um número negativo.
+  if (min < -2) return 'hora adiante do relógio'
   if (min < 1) return 'agora'
   if (min < 90) return `há ${min} min`
   if (min < 48 * 60) return `há ${(min / 60).toFixed(1)} h`
@@ -271,6 +275,11 @@ function GateCard({ gate, onResponder, destacado }) {
           {gate.nota && <p className="whitespace-pre-wrap text-zinc-300">«{gate.nota}»</p>}
           <p className="mt-1 text-zinc-600">
             {gate.ts_resposta ? `respondido ${fmtData(gate.ts_resposta)}` : ''}
+            {gate.carimbo_corrigido?.length ? (
+              <span className="ml-2 text-amber-400/70" title={gate.carimbo_corrigido.map(c => `${c.campo}: ${c.porque}`).join(' · ')}>
+                · hora corrigida
+              </span>
+            ) : null}
             {gate.respondido_por ? ` por ${gate.respondido_por}` : ''}
             {gate.origem ? ` · origem ${gate.origem}` : ''}
           </p>
