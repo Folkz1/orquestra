@@ -105,6 +105,30 @@ Abrir `https://guyyfolkz.mbest.site/painel` no telemóvel: cabeçalho, três aba
 7. A regência deixa de escrever gates na Mesa: `POST /api/painel/gates` (contrato no briefing) e lê respostas com
    `GET /api/painel/gates?estado=respondido&desde=<último tick>`.
 
+## 6b. Quartel-general: a porta de ficheiro (depois do passo 6)
+
+1. **Pasta dos gates no jarbas**: `mkdir -p /srv/projetos/hub-deus/gates` (versionada no git do hub-deus).
+   Quem abre um gate escreve `<id>.json` lá (formato no briefing, secção A1.1) e não precisa de mais nada.
+2. **Cron do watcher** (utilizador `diego`, a cada 30 s — o cron mínimo é 1 min, por isso duas linhas):
+   ```
+   * * * * * /usr/bin/node /srv/projetos/cerebro/coletores/gates-watch.js >> /srv/projetos/cerebro/coletores/gates-watch.log 2>&1
+   * * * * * sleep 30; /usr/bin/node /srv/projetos/cerebro/coletores/gates-watch.js >> /srv/projetos/cerebro/coletores/gates-watch.log 2>&1
+   ```
+3. **KPIs**: `valor-sessoes.js --dias 1` uma vez por dia (é ele que faz nascer a série diária), seguido de
+   `painel-push-kpi.js`. Um `--dias 7` continua a valer e entra marcado como `valor-sessoes:7d`.
+4. **Observador de gates**: correr `gate-observador.js --transcript <ficheiro>` à mão sobre um dia de
+   trabalho e ler `despachante/_gates.jsonl` ANTES de sequer falar em instalar hook. ⛔ Ele apanha o
+   gabarito do próprio `CLAUDE.md` (é o formato exato) — esse é o primeiro falso positivo conhecido, e é
+   por isso que o modo observação existe.
+5. **A regência** passa a escrever gates em ficheiro (ou por API) e a ler respostas em
+   `GET /api/painel/decisoes?desde=<último tick>`; ao executar, confirma com
+   `PATCH /api/painel/gates/<id>` mandando `executado_em` e `executado_prova`.
+6. **Cada orquestrador** faz `POST /api/painel/placar` ao fechar ciclo. ⛔ Um código de projeto por frente
+   distinta: a chave é `(projeto, medido_em)`, e dar o mesmo código a duas frentes faz a segunda ser
+   silenciosamente ignorada (aconteceu na carga de teste, 2 linhas perdidas até se corrigir).
+7. **O link que vai ao WhatsApp** é `https://guyyfolkz.mbest.site/qg#gate-<id>` — abre o cartão certo no
+   telemóvel. ⛔ Nunca com token na URL.
+
 ## 7. Rollback
 
 ```

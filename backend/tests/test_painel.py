@@ -218,6 +218,31 @@ def test_contrato_completo_contra_backend_vivo():
     # expirar
     assert c.patch(f"/api/painel/gates/{gid2}", json={"estado": "expirado"}).json()["estado"] == "expirado"
 
+    # ⛔ POST parcial não apaga o que não mencionou (um watcher com JSON mais pobre não perde contexto)
+    gid4 = gid + "-P"
+    c.post("/api/painel/gates", json={"id": gid4, "projeto": "casa", "titulo": "com tudo", "why": "porquê",
+                                      "ctx": ["p1", "p2"], "opts": [["A", "sim", "faz"]], "rec": "A", "urg": True})
+    c.post("/api/painel/gates", json={"id": gid4, "projeto": "casa", "titulo": "só o título mudou"})
+    g4 = c.get(f"/api/painel/gates/{gid4}").json()
+    assert g4["titulo"] == "só o título mudou"
+    assert g4["ctx"] == ["p1", "p2"] and len(g4["opts"]) == 1 and g4["rec"] == "A" and g4["why"] == "porquê"
+    assert g4["urg"] is True
+    # e um POST que MENCIONA o campo vazio continua a poder limpá-lo
+    c.post("/api/painel/gates", json={"id": gid4, "projeto": "casa", "titulo": "t", "ctx": []})
+    assert c.get(f"/api/painel/gates/{gid4}").json()["ctx"] == []
+
+    # ⛔ trocar só a nota de um gate respondido guarda a anterior no histórico (é o caminho do importador)
+    gid5 = gid + "-N"
+    c.post("/api/painel/gates", json={"id": gid5, "projeto": "casa", "titulo": "nota"})
+    c.patch(f"/api/painel/gates/{gid5}", json={"escolha": "A", "nota": "primeira"})
+    c.patch(f"/api/painel/gates/{gid5}", json={"nota": "segunda"})
+    g5 = c.get(f"/api/painel/gates/{gid5}").json()
+    assert g5["nota"] == "segunda" and g5["estado"] == "respondido"
+    assert [h["nota"] for h in g5["extra"]["historico"]] == ["primeira"]
+    # a mesma nota outra vez não enche o histórico
+    c.patch(f"/api/painel/gates/{gid5}", json={"nota": "segunda"})
+    assert len(c.get(f"/api/painel/gates/{gid5}").json()["extra"]["historico"]) == 1
+
     # ficheiro JSON com o mesmo "atualizado" não reescreve, e o lote diz isso em vez de mentir
     gid3 = gid + "-F"
     ficheiro = {"id": gid3, "proj": "casa", "projNome": "Casa (teste)", "titulo": "nascido de ficheiro",
@@ -251,23 +276,33 @@ def test_contrato_completo_contra_backend_vivo():
     pl = c.get("/api/painel/placar", params={"dias": 1, "projeto": "casa"}).json()
     assert pl["atual"] and pl["atual"][0]["estado"] == "a provar o contrato"
 
-    # KPI pelo doc kpi/diario inteiro
+    # KPI pelo doc kpi/diario inteiro. Frente própria: o teste prova o mecanismo, não a limpeza da base.
+    frente_teste = "TesteContratoKPI"
     doc = {"gerado": ts.isoformat(), "janela": {"ini": (ts - timedelta(days=1)).isoformat(), "fim": ts.isoformat(), "dias": 1},
-           "linhas": [{"frente": "casa", "sessoes": 2, "entregas": {"deploy_provado": 1},
+           "linhas": [{"frente": frente_teste, "sessoes": 2, "entregas": {"deploy_provado": 1},
                        "gates": {"respondidos": 3}, "custo_usd": 12, "custo_pct_limite": None, "pontos": 5}]}
     r = c.post("/api/painel/kpi", json=doc).json()
-    assert r["gravados"] == 1 and r["fontes"] == ["valor-sessoes:1d"] and r["frentes"] == ["Cérebro"]
-    k = c.get("/api/painel/kpi", params={"dias": 2, "frente": "Cérebro"}).json()
+    assert r["gravados"] == 1 and r["fontes"] == ["valor-sessoes:1d"] and r["frentes"] == [frente_teste]
+    k = c.get("/api/painel/kpi", params={"dias": 2, "frente": frente_teste}).json()
     linha_kpi = next(i for i in k["itens"] if i["dia"] == ts.date().isoformat())
     assert linha_kpi["metrics"]["deploy_provado"] == 1
     assert "custo_pct_limite" not in linha_kpi["metrics"]      # null não vira zero
-    # ⛔ o que o COLETOR mediu (gates do WhatsApp/fila) não é sobrescrito pelo que o painel conta:
-    # são números de coisas diferentes e vivem em chaves diferentes.
+    # ⛔ o que o COLETOR mediu (gates do canal do WhatsApp e da fila) não partilha nome com o que o
+    # painel conta na sua própria base: são números de coisas diferentes.
     assert linha_kpi["metrics"]["gates_respondidos"] == 3
     assert linha_kpi["fontes"]["gates_respondidos"] == "valor-sessoes:1d"
-    if "painel_gates_respondidos" in linha_kpi["metrics"]:
-        assert linha_kpi["fontes"]["painel_gates_respondidos"] == "painel_gates"
-    assert k.get("conflitos") == []
+    assert "painel_gates_respondidos" not in linha_kpi["metrics"] or         linha_kpi["fontes"]["painel_gates_respondidos"] == "painel_gates"
+
+    # duas fontes a discordar da MESMA métrica: fica a primeira e o conflito é VISÍVEL, nunca silencioso.
+    # (é o defeito medido em 09/09: a contagem do painel escrevera 5 por cima do 3 do coletor)
+    c.post("/api/painel/kpi", json={"dia": ts.date().isoformat(), "frente": frente_teste,
+                                    "metrics": {"sessoes": 99}, "fonte": "outro-coletor"})
+    k2 = c.get("/api/painel/kpi", params={"dias": 2, "frente": frente_teste}).json()
+    l2 = next(i for i in k2["itens"] if i["dia"] == ts.date().isoformat())
+    conflito = [x for x in k2["conflitos"] if x["metrica"] == "sessoes" and x["frente"] == frente_teste]
+    assert len(conflito) == 1, "conflito entre fontes tem de aparecer"
+    assert {conflito[0]["fica"]["valor"], conflito[0]["ignorado"]["valor"]} == {2, 99}
+    assert l2["metrics"]["sessoes"] in (2, 99) and l2["metrics"]["deploy_provado"] == 1
 
     # telemetria: a mesma leitura duas vezes grava uma
     leitura = {"colhidoEm": ts.isoformat(), "fonte": "teste-contrato",

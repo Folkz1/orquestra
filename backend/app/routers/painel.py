@@ -190,15 +190,23 @@ async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, str]
         db.add(g)
     # o texto do gate pode ser reescrito por quem o abriu (a regência atualiza contexto ao longo do dia);
     # a RESPOSTA nunca é tocada por aqui — só o PATCH mexe em escolha/nota/estado.
+    # ⛔ E só se escreve o que veio EXPLICITAMENTE no corpo: um POST parcial (um script que só corrige o
+    # título, um ficheiro JSON mais pobre) NÃO apaga o contexto, as opções nem a recomendação que lá estão.
+    dado = body.model_fields_set
     g.projeto = body.projeto
-    if body.projeto_nome is not None:
-        g.projeto_nome = body.projeto_nome
     g.titulo = body.titulo
-    g.why = body.why
-    g.ctx = list(body.ctx or [])
-    g.opts = list(body.opts or [])
-    g.rec = body.rec
-    g.urg = bool(body.urg)
+    if "projeto_nome" in dado and body.projeto_nome is not None:
+        g.projeto_nome = body.projeto_nome
+    if "why" in dado:
+        g.why = body.why
+    if "ctx" in dado:
+        g.ctx = list(body.ctx or [])
+    if "opts" in dado:
+        g.opts = list(body.opts or [])
+    if "rec" in dado:
+        g.rec = body.rec
+    if "urg" in dado:
+        g.urg = bool(body.urg)
     if body.ts_aberto is not None:
         g.ts_aberto = parse_ts(body.ts_aberto)
     if body.ts_expira is not None:
@@ -286,16 +294,21 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
         raise HTTPException(status_code=400, detail=f"estado inválido: {body.estado}")
 
     ref = agora()
-    responder = body.escolha is not None or body.estado == "respondido"
-    if responder:
-        if not (body.escolha or g.escolha):
-            raise HTTPException(status_code=400, detail="responder exige escolha")
-        # resposta anterior não se perde: vai para o histórico
+
+    def arquivar() -> None:
+        """A resposta que estava lá vai para o histórico antes de ser trocada. Vale para qualquer
+        caminho: escolha nova, nota nova, ou as duas."""
         if g.estado == "respondido" and (g.escolha or g.nota):
             hist = list((g.extra or {}).get("historico", []))
             hist.append({"escolha": g.escolha, "nota": g.nota,
                          "ts_resposta": g.ts_resposta.isoformat() if g.ts_resposta else None})
             g.extra = {**(g.extra or {}), "historico": hist}
+
+    responder = body.escolha is not None or body.estado == "respondido"
+    if responder:
+        if not (body.escolha or g.escolha):
+            raise HTTPException(status_code=400, detail="responder exige escolha")
+        arquivar()          # resposta anterior não se perde
         if body.escolha is not None:
             g.escolha = body.escolha
         if body.nota is not None:
@@ -313,7 +326,11 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
         if body.nota is not None:
             g.nota = body.nota
     elif body.nota is not None:
-        g.nota = body.nota          # só a nota, sem mudar o estado
+        # só a nota, sem mudar o estado — mas se o gate já estava respondido, a nota antiga é uma
+        # resposta do Diego e vai para o histórico como qualquer outra
+        if g.nota != body.nota:
+            arquivar()
+        g.nota = body.nota
 
     # executado: quem executou a decisão confirma, com prova. É o terceiro estado do ciclo, e o que
     # permite medir "respondido -> executado" sem ninguém ir procurar a inbox.
