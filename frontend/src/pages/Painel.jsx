@@ -17,6 +17,11 @@ const TABS = [
   ['kpis', 'KPIs'],
 ]
 const TETO = 80 // política da casa: aos 80% o Eduardo pára e o Diego entra em economia
+// ⛔ Até 09/09/2026 ~19:20Z a tabela de preços cobrava tudo o que não fosse sonnet/haiku a 15/75 — o
+// preço de uma geração que a casa já não usa. Os valores medidos antes desta hora estão 2,74x acima do
+// real. Não se apagam nem se recalculam (as leituras antigas só guardam o total), dizem-se.
+const REGUA_CORRIGIDA = '2026-09-09T19:20:00Z'
+const reguaAntiga = (ts) => ts && new Date(ts) < new Date(REGUA_CORRIGIDA)
 const CHART_TICK = { fill: '#71717a', fontSize: 11 }
 const CHART_TOOLTIP = { background: '#10141b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 12 }
 const CORES = ['#8bd450', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399']
@@ -389,6 +394,7 @@ function BlocoAgora({ agora, fallbackUsd }) {
       <p className="text-[11px] text-zinc-600">
         gasto {idadeCurta(agora.ts)}
         {parcial && <span className="text-amber-500/80"> · só {agora.cobertura}</span>}
+        {reguaAntiga(agora.ts) && <span className="text-amber-500/80"> · régua antiga (2,7× alto)</span>}
       </p>
     </div>
   )
@@ -502,7 +508,12 @@ function AbaContas({ serie, dias, setDias }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[11px] text-zinc-600">«semana» com «?» = % lida do log do tick, que não diz de que limite era. Nada aqui é estimado: o que não foi medido aparece como —.</p>
+      <p className="mt-2 text-[11px] text-zinc-600">
+        «semana» com «?» = % lida do log do tick, que não diz de que limite era. Nada aqui é estimado: o que
+        não foi medido aparece como —. ⛔ Os valores em US$ anteriores a 09/09 19:20Z estão 2,7× acima do real:
+        a tabela de preços cobrava tudo a 15/75, e Opus 5 custa 5/25 e Fable 5.1 10/50. As percentagens do
+        limite não são afetadas.
+      </p>
     </div>
   )
 }
