@@ -161,3 +161,117 @@ contra staging.
 - **Chrome real e outros browsers**: provado no browser embutido, em 375×812 e em desktop. Não testei
   Safari/iOS. O avaliador não teve ferramenta de browser: a parte visual foi verificada só por mim.
 - **Carga**: 153 gates e 339 leituras são poucos. Não medi o painel com milhares de linhas.
+
+## 7. Depois do cutover: o lote de três, já em produção (09/09 à noite)
+
+A regência pediu para reportar três coisas juntas. Ficam aqui com a prova de cada uma.
+
+### 7.1 A percentagem do limite parou de atualizar
+
+O Diego via `30%` com o app dele a dizer `37%`, e mais tarde `—` onde devia estar `43%`. A causa não era
+o painel: a **%** era medida por um coletor (`usage-real.js`) e enviada de boleia por outro
+(`painel-agora.js`), que mede o **gasto**. A mesma linha de comando dava limites à mão e **não dava
+quando o agendador a corria** — sem erro, sem log. Não achei a causa em tempo útil; tirei a boleia e dei
+ao número o seu próprio envio (`painel-push-usage.js`), e voltou.
+
+Regra que fica: **quem mede um número é quem o envia.** Uma boleia é mais um sítio onde ele se perde.
+
+E a cadência tinha um segundo defeito, medido às 23:28Z:
+
+```
+leitura colhida 23:28:17Z, escrita 23:28:51Z   → a leitura leva ~34 s
+validade --minutos 4 numa grelha de 5 min      → a corrida seguinte encontra o ficheiro "fresco" e sai sem colher
+```
+
+Uma corrida em cada duas saía vazia: **a cadência real era de 10 min** num painel que diz 5, e o Diego
+via uma % de 8 minutos. A regra que eu tinha escrito («a validade tem de ser menor que o intervalo») está
+incompleta: tem de ser menor que **o intervalo menos o tempo da leitura**. Corrigido para `--minutos 2`,
+tarefa reinstalada e verificada (2 ações, empurrador leu 36%).
+
+### 7.2 Credenciais na nota de um gate
+
+Está no commit `799f412` e na memória `redigir-um-campo-nao-chega-o-valor-antigo-vai-a-algum-lado`. O que
+importa reter aqui: **redigir o campo não chegou.** A minha própria regra «a resposta anterior vai para
+`extra.historico`» disparou com a substituição e copiou os 1.688 caracteres para outro campo do **mesmo
+registo** — o gate ficou redigido e exposto ao mesmo tempo. Só apareceu porque fui ver o registo inteiro
+depois, não o campo que tinha mudado. Varri os 174 restantes (um falso positivo: uma frase *a falar* do
+padrão). A porta: nota truncada a 120 caracteres em listagens e no poll, inteira só no cartão; e o
+formulário avisa e exige segundo clique quando o texto cheira a credencial. Avisar, não bloquear.
+
+### 7.3 `respondido_em` em hora local — e porque NÃO apliquei a migração prescrita
+
+A regência prescreveu: *«migra as linhas existentes (+3 h onde `respondido_em < aberto`)»*. **Medi antes,
+e essa regra teria corrompido dois dos cinco registos.** São dois defeitos opostos:
+
+| gates | medido contra o relógio do servidor | causa |
+|---|---|---|
+| 3 · `GCASA-0909-ROTEAMENTO`, `GH-0909-GLOSSARIO`, `GH-0909-BACKLOG-PAUTAS` | resposta ~3 h **atrás** do `atualizado_em` | hora do Brasil (UTC-3) como `Z` |
+| 2 · `GLEX-0909-PR31-TOKEN`, `GLEX-0909-RETENCAO-NAO-RESOLVE` | abertura ~2 h **à frente** do `criado_em` | hora de Berlim (UTC+2, o jarbas) como `Z` |
+
+Somar +3 h aos dois de Berlim levá-los-ia a 5 h de erro, na direção errada. Corrigi caso a caso, usando
+`criado_em`/`atualizado_em` como referência (escritas pelo servidor, não passam pelo corpo de ninguém),
+com o original em `extra.hora_original`. Prova no gate que a regência citou:
+
+```
+GH-0909-BACKLOG-PAUTAS
+  aberto    2026-09-09T19:17:29+00:00
+  resposta  2026-09-09T19:21:13+00:00        → respondido 4 min DEPOIS de nascer
+  original guardado: {"campo":"ts_resposta","valor":"2026-09-09T16:21:13+00:00",
+                      "porque":"hora do Brasil (UTC-3) carimbada como Z"}
+
+DEPOIS: 0 incoerentes  (175 gates)
+```
+
+A porta (PR #28, provado no staging com 4 casos, incluindo um **controlo** que tem de ficar intacto): um
+gate não nasce no futuro, uma resposta não chega antes da pergunta, e um `POST` não move a abertura para
+depois de uma resposta já gravada. O corpo recebido fica em `extra.carimbo_corrigido`. Hora no passado
+continua aceite — é backfill legítimo.
+
+⚠️ **O que a porta NÃO apanha, e é o que interessa dizer:** só o impossível. Uma hora errada em 3 h que
+continue a parecer plausível (gate aberto às 16h, respondido às 17h, ambos em hora local) passa e ninguém
+a nota. Por isso a correção verdadeira está no contrato dos orquestradores
+(`cerebro/jarbas/COMO-ABRIR-GATE-NO-PAINEL.md`), com a linha certa nas três linguagens da casa.
+
+### 7.4 NOT VERIFIED deste lote
+
+- **Não sei porque `claude -p "/usage"` devolve limites à mão e não devolve pelo agendador.** Contornei
+  com um envio próprio; a causa continua por achar.
+- **Os 4 gates de teste (`ZT-*`) ficaram no staging**: `DELETE /api/painel/gates/{id}` devolve 405 — a
+  rota não existe. Não é problema (o staging vai abaixo no passo 8), mas em produção **não há como apagar
+  um gate criado por engano**: só respondê-lo ou deixá-lo expirar.
+- **A varredura de credenciais viu forma, não papel** — o mesmo ponto cego de `grep-de-segredo-tem-dois-falsos-positivos`.
+
+### 7.5 O lote no ar (09/09 23:5xZ) — as três juntas, e a sentinela de cada lado
+
+```
+backend  ghcr.io/folkz1/orquestra-backend:5b60333e5fc8fc40b2ac7bf99b2eaa4f798e1be6   1/1
+frontend ghcr.io/folkz1/orquestra-frontend:5b60333e5fc8fc40b2ac7bf99b2eaa4f798e1be6  1/1
+health   {"status":"ok","db":true}
+```
+
+Imagem + réplicas + health não chegam (`/health` 200 não prova versão). As sentinelas:
+
+```
+backend  GET /api/painel/gates/GH-0909-BACKLOG-PAUTAS
+         chave carimbo_corrigido presente: SIM        → o gate_dict novo está a correr
+         hora_original preservada: "hora do Brasil (UTC-3) carimbada como Z"
+         coerência: respondido 4 min DEPOIS de nascer
+
+frontend bundle assets/index-BaycGOgq.js
+         "hora adiante do rel"  1     (procurado sem acentos: o minificador escapa-os)
+         "hora corrigida"       1
+         "carimbo_corrigido"    1
+```
+
+⚠️ **Como este deploy foi feito, e o que isso deixa em aberto.** A via normal (`services.app.updateSourceImage`
++ `deployService` no Easypanel) **não estava disponível**: o token `EASYPANEL_ORQUESTRA_LICITAAI` em
+`~/.credenciais/easypanel.env` devolve **401 em todos os endpoints** — foi rotacionado desde 02/08 e o
+ficheiro não acompanhou. Subi por `docker service update --image ... --update-order start-first
+--with-registry-auth`, que é a mesma via usada no staging e converge sem janela sem serviço.
+
+**A consequência, dita antes que alguém a descubra:** o Swarm corre a imagem nova, mas a **config do
+Easypanel continua a dizer `0b6f266`**. Se alguém clicar *Deploy* no painel do Easypanel, o serviço
+**volta atrás** e o defeito das horas regressa. Handoff no relatório: gerar um token novo e repô-lo em
+`~/.credenciais/easypanel.env` — enquanto isso não acontecer, deploy da Orquestra só por `docker service update`.
+
+Ponto de recuo, se for preciso: `docker service update --image ghcr.io/folkz1/orquestra-{backend,frontend}:0b6f266d74f52920d91656515d635277cdae8c1c`.
