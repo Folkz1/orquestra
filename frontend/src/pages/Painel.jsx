@@ -100,6 +100,30 @@ function StatCard({ label, value, alert, sub }) {
   )
 }
 
+// No telemóvel os 24 filtros ocupavam sete linhas antes do primeiro número. Mostra os primeiros (já
+// ordenados por peso) e esconde o resto atrás de «mais N» — que só existe quando há resto.
+function Filtros({ itens, ativo, onEscolher, rotulo = 'todas', visiveis = 5 }) {
+  const [tudo, setTudo] = useState(false)
+  const mostra = tudo ? itens : itens.slice(0, visiveis)
+  const resto = itens.length - mostra.length
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Chip active={!ativo} onClick={() => onEscolher('')}>{rotulo}</Chip>
+      {mostra.map((it) => (
+        <Chip key={it.id} active={ativo === it.id} onClick={() => onEscolher(it.id)}>{it.nome}</Chip>
+      ))}
+      {resto > 0 && (
+        <button onClick={() => setTudo(true)} className="rounded-full border border-dashed border-white/15 px-3 py-1 text-xs text-zinc-500 hover:text-zinc-300">
+          mais {resto}
+        </button>
+      )}
+      {tudo && itens.length > visiveis && (
+        <button onClick={() => setTudo(false)} className="rounded-full px-2 py-1 text-xs text-zinc-600 hover:text-zinc-400">menos</button>
+      )}
+    </div>
+  )
+}
+
 function Chip({ active, onClick, children }) {
   return (
     <button
@@ -243,11 +267,9 @@ function AbaGates({ dados, onResponder, ancora }) {
   const historico = gates.filter((g) => g.estado !== 'aberto')
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Chip active={!projeto} onClick={() => setProjeto('')}>todos</Chip>
-        {(dados?.projetos || []).map((p) => (
-          <Chip key={p.id} active={projeto === p.id} onClick={() => setProjeto(p.id)}>{p.nome}</Chip>
-        ))}
+      <div className="mb-4">
+        <Filtros itens={(dados?.projetos || []).map((p) => ({ id: p.id, nome: p.nome }))}
+          ativo={projeto} onEscolher={setProjeto} rotulo="todos" visiveis={4} />
       </div>
       {abertos.length === 0 ? (
         <div className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6">
@@ -513,12 +535,11 @@ function AbaKpis({ kpi, dias, setDias }) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Chip active={!frente} onClick={() => setFrente('')}>todas</Chip>
-        {frentesOrdenadas.map((f) => <Chip key={f} active={frente === f} onClick={() => setFrente(f)}>{f}</Chip>)}
-        <div className="ml-auto flex gap-1">
+      <div className="mb-4 space-y-2">
+        <div className="flex justify-end gap-1">
           {[7, 14, 30].map((d) => <Chip key={d} active={dias === d} onClick={() => setDias(d)}>{d}d</Chip>)}
         </div>
+        <Filtros itens={frentesOrdenadas.map((f) => ({ id: f, nome: f }))} ativo={frente} onEscolher={setFrente} visiveis={5} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
