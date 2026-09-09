@@ -48,6 +48,11 @@ const METRICAS = [
   ['custo_usd_eduardo', 'Custo Eduardo', (v) => '$' + Math.round(v).toLocaleString('en-US')],
 ]
 const ESCONDER = new Set(['janela_dias', 'gerado'])
+// ⛔ rácios, medianas e percentagens NÃO se somam. Somar «valor/custo» de 9 frentes deu 53,4 no staging,
+// um número que não quer dizer nada e que estaria na primeira linha do ecrã do Diego. Estes aparecem
+// na tabela, por dia e por frente, onde têm sentido — nunca num cartão de total.
+const NAO_SOMAVEL = new Set(['valor_custo', 'custo_pct_limite', 'retrabalho_pct', 'gates_mediana_min',
+  'gates_mesa_mediana_min', 'cliente_sem_resposta_min'])
 
 function fmtData(value, opts = { dateStyle: 'short', timeStyle: 'short' }) {
   if (!value) return ''
@@ -441,23 +446,31 @@ function AbaKpis({ kpi, dias, setDias }) {
   }, [kpi])
   const totais = useMemo(() => {
     const t = {}
-    for (const it of itens) for (const [k, v] of Object.entries(it.metrics || {})) if (typeof v === 'number' && !ESCONDER.has(k)) t[k] = (t[k] || 0) + v
+    for (const it of itens) for (const [k, v] of Object.entries(it.metrics || {})) {
+      if (typeof v === 'number' && !ESCONDER.has(k) && !NAO_SOMAVEL.has(k)) t[k] = (t[k] || 0) + v
+    }
     return t
   }, [itens])
+  // as frentes que mais custam primeiro: as reais ficam à frente dos nomes de pasta que o mapa não conhece
+  const frentesOrdenadas = useMemo(() => {
+    const custo = {}
+    for (const it of kpi?.itens || []) custo[it.frente] = (custo[it.frente] || 0) + (it.metrics?.custo_usd || 0)
+    return [...(kpi?.frentes || [])].sort((a, b) => (custo[b] || 0) - (custo[a] || 0) || a.localeCompare(b))
+  }, [kpi])
   const janelas = useMemo(() => [...new Set(itens.map((i) => i.metrics?.janela_dias).filter(Boolean))], [itens])
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Chip active={!frente} onClick={() => setFrente('')}>todas</Chip>
-        {(kpi?.frentes || []).map((f) => <Chip key={f} active={frente === f} onClick={() => setFrente(f)}>{f}</Chip>)}
+        {frentesOrdenadas.map((f) => <Chip key={f} active={frente === f} onClick={() => setFrente(f)}>{f}</Chip>)}
         <div className="ml-auto flex gap-1">
           {[7, 14, 30].map((d) => <Chip key={d} active={dias === d} onClick={() => setDias(d)}>{d}d</Chip>)}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {colunas.slice(0, 8).map(([k, rotulo, fmt]) => (
+        {colunas.filter(([k]) => !NAO_SOMAVEL.has(k)).slice(0, 8).map(([k, rotulo, fmt]) => (
           <StatCard key={k} label={rotulo} value={totais[k] != null ? (fmt ? fmt(totais[k]) : totais[k]) : '—'} sub={`soma em ${dias}d`} />
         ))}
         {!colunas.length && <p className="col-span-2 text-sm text-zinc-500 sm:col-span-4">Nenhum KPI gravado na janela. Os coletores escrevem em POST /api/painel/kpi.</p>}
@@ -502,6 +515,7 @@ function AbaKpis({ kpi, dias, setDias }) {
       <p className="mt-2 text-[11px] text-zinc-600">
         Passe o rato numa célula para ver a fonte. «não medido» é ausência de coletor, nunca zero.
         «(painel)» conta os gates desta base; «(canal)» é o que o coletor mediu no WhatsApp e na fila em disco.
+        Rácios e medianas (valor/custo, retrabalho, % do limite, mediana) não têm cartão de total: somá-los não diria nada.
         {janelas.length > 0 && ` Linhas marcadas com «${janelas.join('d, ')}d» são agregados dessa janela, não de um dia.`}
       </p>
     </div>
