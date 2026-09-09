@@ -42,10 +42,36 @@ class PainelGate(Base):
     ts_aberto = Column(TIMESTAMP(timezone=True), nullable=True)   # nulo = não medido (a Mesa nunca guardou)
     ts_resposta = Column(TIMESTAMP(timezone=True), nullable=True)
     ts_expira = Column(TIMESTAMP(timezone=True), nullable=True)   # declarado por quem abre; GET calcula "expirado"
-    origem = Column(String(80), nullable=True)                    # mesa-html | mesa-db | mesa-decisao | regencia | api
+    respondido_por = Column(String(80), nullable=True)            # quem respondeu (declarado por quem escreve)
+    executado_em = Column(TIMESTAMP(timezone=True), nullable=True)   # o dono confirmou que executou a decisão
+    executado_prova = Column(Text, nullable=True)                 # a prova em texto: sha no ar, id da mensagem, link
+    fonte_atualizado = Column(TIMESTAMP(timezone=True), nullable=True)  # o "atualizado" do ficheiro JSON (idempotência do watcher)
+    origem = Column(String(80), nullable=True)                    # mesa-html | mesa-db | mesa-decisao | ficheiro | regencia | api
     extra = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     criado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     atualizado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class PainelPlacar(Base):
+    """Uma linha por envio de placar de um projeto. Histórico, como a telemetria: o painel mostra a última
+    de cada projeto e guarda as anteriores. É o `_hub-placar.md` a deixar de ser um ficheiro que só cresce."""
+
+    __tablename__ = "painel_placar"
+    __table_args__ = (
+        UniqueConstraint("projeto", "medido_em", name="uq_painel_placar_projeto_medido"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    projeto = Column(String(64), nullable=False, index=True)
+    dono = Column(String(160), nullable=True)          # sessão/pessoa responsável pela frente
+    estado = Column(Text, nullable=True)
+    proximo = Column(Text, nullable=True)
+    prazo = Column(String(120), nullable=True)         # texto livre ("hoje", "11/09"): quem escreve decide
+    gate = Column(String(200), nullable=True)          # id(s) do gate que a frente espera
+    medido_em = Column(TIMESTAMP(timezone=True), nullable=False, index=True)
+    fonte = Column(String(120), nullable=True)
+    extra = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    criado_em = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
 
 class PainelTelemetria(Base):

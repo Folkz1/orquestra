@@ -99,3 +99,92 @@ se republica nesta frente) · multiusuário (o Bearer é um só) · KPIs de julg
 *Construiria isto igual se o modelo não existisse?* Sim: é um painel de dados com três tabelas e uma página.
 *Alguma peça depende do modelo acertar sem conferência?* Não. *Quem pode partir isto?* Um coletor a escrever
 com `fonte` errada polui a série sem duplicar; por isso cada linha leva a fonte e o painel mostra-a.
+
+---
+
+# Adendo 1 — o painel é o QUARTEL-GENERAL, e a entrada é JSON simples (09/09/2026 ~19:1xZ)
+
+> Diego, literal, pela regência: «não faz sentido criarmos a mesa em um link nosso e um banco de dados
+> nosso e colocar hooks tudo para atualizar e varias automações para ela ficar util como nosso quartel
+> general e você atualizar gates com json simples?»
+
+Isto muda a hierarquia do desenho: o painel **não é um espelho da Mesa**. O requisito nº 1 passa a ser
+**qualquer sessão, hook, cron ou script cria e atualiza um gate escrevendo JSON simples** — sem ferramenta
+Artifact, sem sessão Claude no caminho. A API continua a existir; o ficheiro é a porta de quem não fala HTTP.
+
+## A1.1 Entrada por ficheiro (a porta principal)
+
+`/srv/projetos/hub-deus/gates/<id>.json` no git é fonte legítima. Um watcher no jarbas
+(`coletores/gates-watch.js`, cron de 30 s) lê a pasta e faz POST do que mudou para `/api/painel/gates/lote`.
+
+O formato é o que a casa já escreve, e o POST aceita os dois vocabulários (o da Mesa e o canónico):
+
+```json
+{ "id": "GSB-0910-PORTA", "proj": "sb", "projNome": "SuperBot (Emílio)", "urg": true,
+  "titulo": "…", "why": "deploy em produção", "ctx": ["…"],
+  "opts": [["A", "abrir já", "o cliente vê [imagem] no lugar do comprovativo"],
+           ["B", "fechar as 2 lacunas antes", "duas frentes pequenas; zero incidente"]],
+  "rec": "B", "aberto": "2026-09-10T08:12:00Z", "sessao": "local_9e455d31",
+  "atualizado": "2026-09-10T08:12:00Z", "prazo": "2026-09-10T20:00:00Z" }
+```
+
+`proj`→`projeto`, `projNome`→`projeto_nome`, `aberto`→`ts_aberto`, `prazo`→`ts_expira`, `sessao`→`extra.sessao`.
+**Idempotência por `id` + `atualizado`**: o watcher guarda o último `atualizado` que empurrou
+(`.gates-watch.estado.json`) e não repete; o servidor, por seu lado, nunca deixa um POST tocar em
+`escolha`/`nota`/`estado` de um gate respondido. Ficheiro apagado **não** apaga o gate: fechar é responder.
+
+## A1.2 Hook que apanha «⛔ GATE» na saída das sessões
+
+O `despachante/_gates.jsonl` existe com 0 bytes desde 28/08 porque nunca teve destino. Passa a ter:
+`coletores/gate-observador.js` lê o transcript de uma sessão, encontra os blocos no formato da casa
+(`⛔ GATE — …` com `Por que é seu`, `Opções`, `Recomendação`) e escreve o JSON.
+
+⛔ **Modo observação primeiro** (regra DIR-CC: hooks no cérebro só em modo LOG). O observador grava em
+`despachante/_gates.jsonl` o que **teria** criado, com o id proposto e o texto extraído; ninguém o instala
+como hook antes de o Diego ver o que ele apanharia. Instalar o hook `Stop` é passo do runbook, não desta v1.
+
+## A1.3 A resposta sai do painel para quem espera
+
+Um gate só serve se a decisão voltar. `GET /api/painel/decisoes?desde=<ISO>` devolve as respostas dadas
+depois daquele instante — a regência e o orq dono do gate fazem poll de 30 s e agem. Cada resposta guarda
+`escolha`, `nota`, `respondido_em` e `por` (quem respondeu). Quando o dono executa, confirma com
+`PATCH /api/painel/gates/<id>` mandando `executado_em` e `executado_prova` (a prova, em texto: sha no ar,
+id da mensagem, link). O painel mostra os três estados do ciclo: **aberto → respondido → executado**, e é
+isso que mede o «respondido→executado» dos KPIs sem ninguém procurar em inbox nenhum.
+
+## A1.4 Placar por projeto
+
+Cada orquestrador faz `POST /api/painel/placar` ao fechar ciclo, com
+`{projeto, dono, estado, proximo, prazo, gate, medido_em}`. A tabela `painel_placar` guarda **uma linha por
+envio** (histórico, como a telemetria), e o painel mostra a última de cada projeto com o histórico por baixo.
+É o `_hub-placar.md` a deixar de ser um ficheiro que só cresce.
+
+## A1.5 `/qg`, mobile e âncora por gate
+
+A página responde em `/painel` **e** em `/qg`, e cada cartão tem âncora `#gate-<id>`: o link do WhatsApp da
+regência abre o gate certo no telemóvel. Autenticação é a da Orquestra (login uma vez no telemóvel);
+⛔ **nunca token na URL** — um link partilhado com token é uma credencial em texto claro num canal de terceiros.
+
+⚠️ A âncora é exatamente onde a Mesa se partiu hoje: um `id` de âncora sobrescreveu o id do cartão e o clique
+deixou de gravar durante **uma hora**, com o parse verde. Por isso a prova desta versão é comportamental, não
+estrutural: responder um gate no telemóvel **e** ver a linha aparecer em `GET /api/painel/decisoes`.
+
+## A1.6 KPIs: o formato que o coletor já produz
+
+`coletores/valor-sessoes.js` (master do cérebro, commit 2b97c48, ~100 s, zero tokens) escreve
+`relatorios/kpi-sessoes.json` — o doc `kpi/diario`. O painel consome esse ficheiro **tal como está**:
+`{gerado, janela:{ini,fim,dias}, linhas:[{frente, sessoes, entregas{deploy_provado, entrega_confirmada,
+pr_fundida, envio_cliente, relatorio_verified}, gates{abertos_na_janela, respondidos, expirados, pendentes,
+mediana_min, mesa_decisoes, mesa_executados_rastreados, mesa_mediana_min}, custo_usd, custo_pct_limite,
+valor_custo, retrabalho_pct, cliente_sem_resposta_min, pontos, pronto_declarado}], notas:[]}`.
+
+⚠️ **As linhas do coletor são por frente numa JANELA, não por dia.** Guardá-las como se fossem de um dia
+seria inventar. Regra: `dia` = o dia de `janela.fim`, e a `fonte` carrega a janela — `valor-sessoes:1d`,
+`valor-sessoes:7d`. Como a chave única é `(dia, frente, fonte)`, um agregado de 7 dias nunca se soma nem se
+sobrepõe a um de 1 dia, e o painel mostra a fonte ao lado de cada número. A série diária nasce do coletor a
+correr com `--dias 1` todos os dias; o histórico de 7 dias fica como está, marcado.
+
+## A1.7 O que continua fora
+
+Apagar gate pela API (fechar é responder) · edição do texto do gate na UI (quem abre, escreve) · notificação
+push · multiutilizador (o `por` é declarado por quem escreve, não autenticado por utilizador).

@@ -128,6 +128,7 @@ function AppRoutes({ onLogout }) {
         <Route path="/jarbas" element={<JarbasChat />} />
         <Route path="/cockpit" element={<Cockpit />} />
         <Route path="/painel" element={<Painel />} />
+        <Route path="/qg" element={<Painel />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<Blog />} />
         <Route path="/settings" element={<Settings />} />

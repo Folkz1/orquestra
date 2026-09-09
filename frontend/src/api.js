@@ -822,3 +822,9 @@ export function getPainelSerie(params = {}) {
 export function getPainelKpi(params = {}) {
   return request(`/api/painel/kpi${painelQs(params)}`);
 }
+export function getPainelPlacar(params = {}) {
+  return request(`/api/painel/placar${painelQs(params)}`);
+}
+export function getPainelDecisoes(params = {}) {
+  return request(`/api/painel/decisoes${painelQs(params)}`);
+}

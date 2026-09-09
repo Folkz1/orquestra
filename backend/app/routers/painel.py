@@ -11,9 +11,17 @@ Bearer do middleware (APP_SECRET_KEY): nada aqui é público.
   PATCH /gates/{id}                             responder {escolha, nota} · expirar {estado} · reabrir
   POST  /telemetria                             corpo = JSON do telemetria-tick --paraMesa (ou lista); 1 linha por conta
   GET   /serie?conta=&dias=&fonte=              a série + a última leitura por conta
-  POST  /kpi                                    {dia, frente, metrics, fonte} ou lista; upsert
+  GET   /decisoes?desde=                        as respostas do Diego, para quem espera por elas (poll de 30 s)
+  POST  /kpi                                    {dia, frente, metrics, fonte}, lista, ou o doc kpi/diario inteiro
   GET   /kpi?dias=&frente=                      linhas fundidas por dia/frente + gates contados de painel_gates
+  POST  /placar                                 {projeto, dono, estado, proximo, prazo, gate, medido_em}
+  GET   /placar?dias=&projeto=                  a última linha de cada projeto + histórico
   GET   /resumo                                 números do cabeçalho
+
+QUARTEL-GENERAL (adendo do Diego, 09/09 ~19:1xZ): quem escreve um gate não precisa de saber que isto é uma
+API. O formato aceite é o mesmo JSON que a casa já escreve em ficheiro (proj, projNome, aberto, prazo,
+sessao, atualizado), e coletores/gates-watch.js leva /srv/projetos/hub-deus/gates/*.json até aqui de 30 em
+30 segundos. O ciclo é aberto -> respondido -> executado, e cada passo tem hora e prova.
 
 O modelo não entra em lado nenhum: tudo o que sai daqui é contado a partir de dado com fonte e hora.
 """
@@ -28,7 +36,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models_painel import PainelGate, PainelKpi, PainelTelemetria
+from app.models_painel import PainelGate, PainelKpi, PainelPlacar, PainelTelemetria
 
 router = APIRouter()
 
@@ -37,7 +45,8 @@ ESTADOS = ("aberto", "respondido", "expirado")
 # código do projeto (como a Mesa e a regência escrevem) -> nome da frente (como painel-tokens.js conta o custo)
 FRENTES = {
     "sb": "SuperBot", "superbot": "SuperBot",
-    "lex": "LexBuild", "lexbuild": "LexBuild", "ag": "LexBuild", "adv": "LexBuild",
+    "lex": "LexBuild", "lexbuild": "LexBuild", "lex-build": "LexBuild",
+    "ag": "Adv de Guerrilha", "adv": "Adv de Guerrilha", "eduardo": "Adv de Guerrilha",
     "donna": "Donna", "dona": "Donna",
     "mc": "Márcio", "marcio": "Márcio", "márcio": "Márcio", "licitaai": "Márcio", "hrai": "Márcio",
     "gf": "GuyFolkz", "guyfolkz": "GuyFolkz", "editorial": "GuyFolkz",
@@ -45,6 +54,7 @@ FRENTES = {
     "hub": "Hub", "regencia": "Hub", "regência": "Hub",
     "hmc": "HMC", "erik": "HMC",
     "fiel": "FielIA", "fielia": "FielIA", "naka": "FielIA",
+    "martin": "Martin", "mt": "Martin",
 }
 
 
@@ -101,6 +111,10 @@ def gate_dict(g: PainelGate, ref: Optional[datetime] = None) -> dict:
         "ts_aberto": g.ts_aberto.isoformat() if g.ts_aberto else None,
         "ts_resposta": g.ts_resposta.isoformat() if g.ts_resposta else None,
         "ts_expira": g.ts_expira.isoformat() if g.ts_expira else None,
+        "respondido_por": g.respondido_por,
+        "executado_em": g.executado_em.isoformat() if g.executado_em else None,
+        "executado_prova": g.executado_prova,
+        "fonte_atualizado": g.fonte_atualizado.isoformat() if g.fonte_atualizado else None,
         "origem": g.origem,
         "extra": g.extra or {},
         "criado_em": g.criado_em.isoformat() if g.criado_em else None,
@@ -129,17 +143,24 @@ def ordenar_gates(gates: list[PainelGate], ref: Optional[datetime] = None) -> li
 
 
 class GateIn(BaseModel):
+    """Aceita os DOIS vocabulários: o canónico e o que a casa já escreve em ficheiro (proj, projNome,
+    aberto, prazo, sessao, atualizado). Quem escreve um gate não tem de aprender nomes novos."""
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
     id: str = Field(min_length=1, max_length=64)
-    projeto: str = Field(min_length=1, max_length=64)
-    projeto_nome: Optional[str] = Field(default=None, max_length=160)
+    projeto: str = Field(min_length=1, max_length=64, alias="proj")
+    projeto_nome: Optional[str] = Field(default=None, max_length=160, alias="projNome")
     titulo: str = Field(min_length=1)
     why: Optional[str] = None
     ctx: list[Any] = Field(default_factory=list)
     opts: list[Any] = Field(default_factory=list)
     rec: Optional[str] = None
     urg: bool = False
-    ts_aberto: Optional[Any] = None
-    ts_expira: Optional[Any] = None
+    ts_aberto: Optional[Any] = Field(default=None, alias="aberto")
+    ts_expira: Optional[Any] = Field(default=None, alias="prazo")
+    fonte_atualizado: Optional[Any] = Field(default=None, alias="atualizado")
+    sessao: Optional[str] = Field(default=None, max_length=120)
     origem: Optional[str] = Field(default=None, max_length=80)
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -150,12 +171,20 @@ class GatePatch(BaseModel):
     estado: Optional[str] = None
     ts_resposta: Optional[Any] = None
     ts_expira: Optional[Any] = None
+    por: Optional[str] = Field(default=None, max_length=80)          # quem respondeu
+    executado_em: Optional[Any] = None                               # o dono confirma que executou
+    executado_prova: Optional[str] = None                            # e diz com que prova
     origem: Optional[str] = Field(default=None, max_length=80)
 
 
 async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, bool]:
     g = await db.get(PainelGate, body.id)
     criado = g is None
+    # idempotência do watcher: ficheiro com o mesmo (ou mais velho) "atualizado" não reescreve nada.
+    # Sem isto um cron de 30 s reescrevia 150 gates por minuto, e o atualizado_em deixava de dizer algo.
+    novo_carimbo = parse_ts(body.fonte_atualizado)
+    if not criado and novo_carimbo and g.fonte_atualizado and novo_carimbo <= g.fonte_atualizado:
+        return g, False
     if criado:
         g = PainelGate(id=body.id, projeto=body.projeto, titulo=body.titulo, ctx=[], opts=[], extra={})
         db.add(g)
@@ -176,6 +205,10 @@ async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, bool
         g.ts_expira = parse_ts(body.ts_expira)
     if body.origem is not None:
         g.origem = body.origem
+    if body.sessao:
+        g.extra = {**(g.extra or {}), "sessao": body.sessao}
+    if novo_carimbo:
+        g.fonte_atualizado = novo_carimbo
     if body.extra:
         g.extra = {**(g.extra or {}), **body.extra}
     await db.flush()
@@ -271,6 +304,8 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
             g.nota = body.nota
         g.estado = "respondido"
         g.ts_resposta = parse_ts(body.ts_resposta) or ref
+        if body.por is not None:
+            g.respondido_por = body.por
     elif body.estado == "expirado":
         g.estado = "expirado"
         if body.nota is not None:
@@ -282,6 +317,12 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
     elif body.nota is not None:
         g.nota = body.nota          # só a nota, sem mudar o estado
 
+    # executado: quem executou a decisão confirma, com prova. É o terceiro estado do ciclo, e o que
+    # permite medir "respondido -> executado" sem ninguém ir procurar a inbox.
+    if body.executado_em is not None or body.executado_prova is not None:
+        g.executado_em = parse_ts(body.executado_em) or ref
+        if body.executado_prova is not None:
+            g.executado_prova = body.executado_prova
     if body.ts_expira is not None:
         g.ts_expira = parse_ts(body.ts_expira)
     if body.origem is not None:
@@ -289,6 +330,46 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
     await db.flush()
     await db.refresh(g)
     return gate_dict(g, ref)
+
+
+@router.get("/decisoes")
+async def decisoes(
+    desde: Optional[str] = Query(default=None, description="ISO: só respostas dadas depois deste instante"),
+    projeto: Optional[str] = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=2000),
+    db: AsyncSession = Depends(get_db),
+):
+    """As respostas do Diego, para quem espera por elas. A regência e o orq dono do gate fazem poll disto e
+    agem. Poll e não webhook: um poll de 30 s que falha e volta é mais fiável do que um envio único, e em
+    09/09 a casa perdeu um gate porque uma falha de envio foi marcada como respondida."""
+    d = parse_ts(desde) if desde else None
+    if desde and not d:
+        raise HTTPException(status_code=400, detail="desde inválido (use ISO 8601)")
+    q = select(PainelGate).where(PainelGate.ts_resposta.is_not(None))
+    if d:
+        q = q.where(PainelGate.ts_resposta > d)
+    if projeto:
+        q = q.where(PainelGate.projeto == projeto)
+    q = q.order_by(PainelGate.ts_resposta.desc()).limit(limit)
+    rows = list((await db.execute(q)).scalars().all())
+    return {
+        "gerado": agora().isoformat(),
+        "desde": d.isoformat() if d else None,
+        "total": len(rows),
+        "decisoes": [
+            {
+                "id": g.id, "projeto": g.projeto, "frente": frente_de(g.projeto), "titulo": g.titulo,
+                "escolha": g.escolha, "nota": g.nota,
+                "respondido_em": g.ts_resposta.isoformat() if g.ts_resposta else None,
+                "por": g.respondido_por,
+                "executado_em": g.executado_em.isoformat() if g.executado_em else None,
+                "executado_prova": g.executado_prova,
+                "sessao": (g.extra or {}).get("sessao"),
+                "opts": g.opts or [],
+            }
+            for g in rows
+        ],
+    }
 
 
 # ─── Telemetria (série) ───────────────────────────────────────────────────
@@ -461,6 +542,45 @@ class KpiIn(BaseModel):
     fonte: str = Field(min_length=1, max_length=120)
 
 
+def achatar_linha_kpi(linha: dict) -> dict:
+    """Uma linha do doc kpi/diario (coletores/valor-sessoes.js) vira métricas planas, para caberem numa
+    tabela. `entregas.deploy_provado` -> `deploy_provado`; `gates.respondidos` -> `gates_respondidos`."""
+    m: dict[str, Any] = {}
+    for k, v in (linha.get("entregas") or {}).items():
+        m[str(k)] = v
+    for k, v in (linha.get("gates") or {}).items():
+        m["gates_" + str(k)] = v
+    for k in ("sessoes", "custo_usd", "custo_pct_limite", "valor_custo", "retrabalho_pct",
+              "cliente_sem_resposta_min", "pontos", "pronto_declarado"):
+        if linha.get(k) is not None:
+            m[k] = linha[k]
+    return m
+
+
+def kpi_do_doc(doc: dict) -> list[KpiIn]:
+    """Converte o doc kpi/diario inteiro em linhas de painel_kpi.
+
+    ⚠️ As linhas do coletor são por frente numa JANELA, não por dia: guardá-las como se fossem de um dia
+    seria inventar. O `dia` é o dia de `janela.fim` e a FONTE carrega a janela (`valor-sessoes:7d`), de
+    modo que um agregado de 7 dias nunca se soma nem se sobrepõe a um de 1 dia — a chave é (dia, frente,
+    fonte) — e o painel mostra a fonte ao lado de cada número."""
+    janela = doc.get("janela") or {}
+    fim = parse_ts(janela.get("fim")) or parse_ts(doc.get("gerado")) or agora()
+    dias = int(janela.get("dias") or 1)
+    fonte = f"valor-sessoes:{dias}d"
+    out: list[KpiIn] = []
+    for linha in doc.get("linhas") or []:
+        fr = str(linha.get("frente") or "").strip()
+        if not fr:
+            continue
+        metrics = achatar_linha_kpi(linha)
+        metrics["janela_dias"] = dias
+        if doc.get("gerado"):
+            metrics["gerado"] = doc["gerado"]
+        out.append(KpiIn(dia=fim.date(), frente=frente_de(fr)[:80], metrics=metrics, fonte=fonte))
+    return out
+
+
 async def _upsert_kpi(db: AsyncSession, k: KpiIn) -> None:
     stmt = pg_insert(PainelKpi).values(dia=k.dia, frente=k.frente, metrics=k.metrics, fonte=k.fonte)
     stmt = stmt.on_conflict_do_update(
@@ -471,11 +591,29 @@ async def _upsert_kpi(db: AsyncSession, k: KpiIn) -> None:
 
 
 @router.post("/kpi", status_code=201)
-async def gravar_kpi(body: Union[KpiIn, list[KpiIn]], db: AsyncSession = Depends(get_db)):
-    itens = body if isinstance(body, list) else [body]
+async def gravar_kpi(
+    body: Union[dict[str, Any], list[dict[str, Any]]] = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Três formas de corpo, todas aceites: uma linha `{dia, frente, metrics, fonte}`, uma lista dessas,
+    ou o doc `kpi/diario` inteiro que `coletores/valor-sessoes.js` escreve em relatorios/kpi-sessoes.json."""
+    itens: list[KpiIn] = []
+    for corpo in (body if isinstance(body, list) else [body]):
+        if not isinstance(corpo, dict):
+            raise HTTPException(status_code=400, detail="corpo inválido")
+        if "linhas" in corpo:                      # doc kpi/diario
+            itens.extend(kpi_do_doc(corpo))
+        else:
+            try:
+                itens.append(KpiIn(**corpo))
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"linha inválida: {exc}") from exc
+    if not itens:
+        raise HTTPException(status_code=400, detail="nenhuma linha para gravar")
     for k in itens:
         await _upsert_kpi(db, k)
-    return {"gravados": len(itens)}
+    return {"gravados": len(itens), "frentes": sorted({k.frente for k in itens}),
+            "fontes": sorted({k.fonte for k in itens})}
 
 
 @router.get("/kpi")
@@ -508,7 +646,8 @@ async def kpis(
         fr = frente_de(g.projeto)
         if frente and fr != frente:
             continue
-        for campo, ts in (("gates_abertos", g.ts_aberto), ("gates_respondidos", g.ts_resposta)):
+        for campo, ts in (("gates_abertos", g.ts_aberto), ("gates_respondidos", g.ts_resposta),
+                          ("gates_executados", g.executado_em)):
             if not ts or ts < ini_ts:
                 continue
             chave = (ts.date().isoformat(), fr)
@@ -524,6 +663,72 @@ async def kpis(
         "frentes": sorted({it["frente"] for it in itens}),
         "metricas": metricas,
         "itens": itens,
+    }
+
+
+# ─── Placar por projeto ───────────────────────────────────────────────────
+
+
+class PlacarIn(BaseModel):
+    """A linha que um orquestrador manda ao fechar ciclo. `prazo` é texto livre de propósito: quem escreve
+    diz "hoje" ou "11/09" e ninguém tem de converter para o painel mostrar."""
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+    projeto: str = Field(min_length=1, max_length=64)
+    dono: Optional[str] = Field(default=None, max_length=160)
+    estado: Optional[str] = None
+    proximo: Optional[str] = None
+    prazo: Optional[str] = Field(default=None, max_length=120)
+    gate: Optional[str] = Field(default=None, max_length=200)
+    medido_em: Optional[Any] = None
+    fonte: Optional[str] = Field(default=None, max_length=120)
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+def placar_dict(r: PainelPlacar) -> dict:
+    return {
+        "id": r.id, "projeto": r.projeto, "frente": frente_de(r.projeto), "dono": r.dono,
+        "estado": r.estado, "proximo": r.proximo, "prazo": r.prazo, "gate": r.gate,
+        "medido_em": r.medido_em.isoformat(), "fonte": r.fonte, "extra": r.extra or {},
+    }
+
+
+@router.post("/placar", status_code=201)
+async def gravar_placar(body: Union[PlacarIn, list[PlacarIn]], db: AsyncSession = Depends(get_db)):
+    itens = body if isinstance(body, list) else [body]
+    gravadas = ignoradas = 0
+    for it in itens:
+        stmt = pg_insert(PainelPlacar).values(
+            projeto=it.projeto, dono=it.dono, estado=it.estado, proximo=it.proximo, prazo=it.prazo,
+            gate=it.gate, medido_em=parse_ts(it.medido_em) or agora(), fonte=it.fonte, extra=it.extra,
+        ).on_conflict_do_nothing(constraint="uq_painel_placar_projeto_medido")
+        r = await db.execute(stmt)
+        if r.rowcount:
+            gravadas += 1
+        else:
+            ignoradas += 1
+    return {"gravadas": gravadas, "ignoradas": ignoradas}
+
+
+@router.get("/placar")
+async def placar(
+    dias: int = Query(default=7, ge=1, le=365),
+    projeto: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    ref = agora()
+    q = select(PainelPlacar).where(PainelPlacar.medido_em >= ref - timedelta(days=dias))
+    if projeto:
+        q = q.where(PainelPlacar.projeto == projeto)
+    rows = list((await db.execute(q.order_by(PainelPlacar.medido_em.desc()).limit(2000))).scalars().all())
+    ultimas: dict[str, PainelPlacar] = {}
+    for r in rows:                                  # já vem por medido_em desc
+        ultimas.setdefault(r.projeto, r)
+    return {
+        "gerado": ref.isoformat(),
+        "atual": [placar_dict(r) for r in sorted(ultimas.values(), key=lambda r: r.projeto)],
+        "historico": [placar_dict(r) for r in rows],
     }
 
 
@@ -546,6 +751,8 @@ async def resumo(db: AsyncSession = Depends(get_db)):
             "urgentes": sum(1 for g in abertos if g.urg),
             "respondidos": len(respondidos),
             "respondidos_hoje": sum(1 for g in respondidos if g.ts_resposta and g.ts_resposta.date() == hoje),
+            "executados": sum(1 for g in gates if g.executado_em),
+            "a_executar": sum(1 for g in respondidos if not g.executado_em),
             "expirados": len(expirados),
             "total": len(gates),
         },

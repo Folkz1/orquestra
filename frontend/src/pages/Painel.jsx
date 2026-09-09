@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { getPainelGates, getPainelKpi, getPainelResumo, getPainelSerie, responderPainelGate } from '../api'
+import { getPainelGates, getPainelKpi, getPainelPlacar, getPainelResumo, getPainelSerie, responderPainelGate } from '../api'
 
-// Painel de Regência — gates do Diego, as duas contas Claude ao longo do tempo e KPIs por frente/dia.
-// Só lê a API (/api/painel/*); quem escreve são os coletores e a regência. Briefing em
-// docs/briefings/painel-regencia.md. Mobile primeiro: uma coluna, cartões, tabela só com scroll próprio.
+// Painel de Regência — o quartel-general: gates do Diego, as duas contas Claude ao longo do tempo,
+// o placar de cada frente e os KPIs por dia. Só lê a API (/api/painel/*); quem escreve são os coletores,
+// as sessões (por ficheiro JSON) e a regência. Briefing em docs/briefings/painel-regencia.md.
+// Mobile primeiro: uma coluna, cartões, tabelas com scroll próprio, âncora #gate-<id> por cartão.
 
 const POLL_MS = 30000
 const TABS = [
   ['gates', 'Gates'],
+  ['frentes', 'Frentes'],
   ['contas', 'Contas'],
   ['kpis', 'KPIs'],
 ]
@@ -18,24 +20,32 @@ const CHART_TICK = { fill: '#71717a', fontSize: 11 }
 const CHART_TOOLTIP = { background: '#10141b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 12 }
 const CORES = ['#8bd450', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399']
 
-// métricas conhecidas dos KPIs, na ordem em que aparecem; o que não estiver aqui entra no fim com o nome cru
+// métricas conhecidas, na ordem em que aparecem; o que não estiver aqui entra no fim com o nome cru
 const METRICAS = [
   ['custo_usd', 'Custo US$', (v) => '$' + Math.round(v).toLocaleString('en-US')],
-  ['respostas', 'Respostas'],
-  ['sessoes', 'Sessões'],
+  ['pontos', 'Valor (pts)'],
+  ['valor_custo', 'Valor/custo', (v) => Number(v).toFixed(4)],
+  ['deploy_provado', 'Deploys provados'],
+  ['entrega_confirmada', 'Entregas confirmadas'],
+  ['pr_fundida', 'PRs fundidas'],
+  ['envio_cliente', 'Envios a cliente'],
+  ['relatorio_verified', 'Reportes VERIFIED'],
   ['gates_abertos', 'Gates abertos'],
   ['gates_respondidos', 'Respondidos'],
   ['gates_executados', 'Executados'],
-  ['entregas_provadas', 'Entregas provadas'],
-  ['prs_fundidas', 'PRs fundidas'],
-  ['envios_cliente', 'Envios a cliente'],
-  ['valor_pontos', 'Valor (pts)'],
-  ['valor_custo', 'Valor/custo', (v) => Number(v).toFixed(2)],
-  ['retrabalho_pct', 'Retrabalho', (v) => Math.round(v) + '%'],
+  ['gates_expirados', 'Expirados'],
+  ['gates_pendentes', 'Pendentes'],
+  ['gates_mediana_min', 'Mediana resposta', (v) => Math.round(v) + ' min'],
+  ['sessoes', 'Sessões'],
+  ['respostas', 'Respostas'],
+  ['retrabalho_pct', 'Retrabalho', (v) => Number(v).toFixed(1) + '%'],
+  ['pronto_declarado', 'PRONTO declarado'],
   ['cliente_sem_resposta_min', 'Cliente s/ resposta', (v) => Math.round(v) + ' min'],
+  ['custo_pct_limite', '% do limite', (v) => Number(v).toFixed(1) + '%'],
   ['custo_usd_diego', 'Custo Diego', (v) => '$' + Math.round(v).toLocaleString('en-US')],
   ['custo_usd_eduardo', 'Custo Eduardo', (v) => '$' + Math.round(v).toLocaleString('en-US')],
 ]
+const ESCONDER = new Set(['janela_dias', 'gerado'])
 
 function fmtData(value, opts = { dateStyle: 'short', timeStyle: 'short' }) {
   if (!value) return ''
@@ -85,7 +95,7 @@ function Chip({ active, onClick, children }) {
 
 // ─── Gates ────────────────────────────────────────────────────────────────
 
-function GateCard({ gate, onResponder }) {
+function GateCard({ gate, onResponder, destacado }) {
   const [escolha, setEscolha] = useState(null)
   const [nota, setNota] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -109,7 +119,12 @@ function GateCard({ gate, onResponder }) {
   }
 
   return (
-    <div className={`rounded-2xl border p-4 sm:p-5 ${gate.urg && aberto ? 'border-rose-500/40 bg-rose-500/[0.04]' : 'border-white/8 bg-white/[0.03]'}`}>
+    // âncora por gate: o link do WhatsApp abre este cartão no telemóvel. O id do DOM é derivado do id do
+    // gate mas vive só aqui — a resposta usa gate.id, nunca o que estiver escrito no DOM.
+    <div
+      id={`gate-${gate.id}`}
+      className={`scroll-mt-4 rounded-2xl border p-4 sm:p-5 ${destacado ? 'border-[#8bd450]/60 bg-[#8bd450]/[0.05] ring-1 ring-[#8bd450]/30' : gate.urg && aberto ? 'border-rose-500/40 bg-rose-500/[0.04]' : 'border-white/8 bg-white/[0.03]'}`}
+    >
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-zinc-300">{gate.id}</span>
         <span className="text-zinc-400">{gate.projeto_nome || gate.frente || gate.projeto}</span>
@@ -119,6 +134,7 @@ function GateCard({ gate, onResponder }) {
             {gate.estado === 'respondido' ? `respondido ${gate.escolha || ''}` : 'expirado'}
           </span>
         )}
+        {gate.executado_em && <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 uppercase tracking-wide text-sky-200">executado</span>}
         <span className="ml-auto text-zinc-600">{gate.ts_aberto ? `aberto ${fmtData(gate.ts_aberto)}` : 'abertura não medida'}</span>
       </div>
 
@@ -184,7 +200,16 @@ function GateCard({ gate, onResponder }) {
       ) : (
         <div className="mt-3 text-xs text-zinc-400">
           {gate.nota && <p className="whitespace-pre-wrap text-zinc-300">«{gate.nota}»</p>}
-          <p className="mt-1 text-zinc-600">{gate.ts_resposta ? `respondido ${fmtData(gate.ts_resposta)}` : ''}{gate.origem ? ` · origem ${gate.origem}` : ''}</p>
+          <p className="mt-1 text-zinc-600">
+            {gate.ts_resposta ? `respondido ${fmtData(gate.ts_resposta)}` : ''}
+            {gate.respondido_por ? ` por ${gate.respondido_por}` : ''}
+            {gate.origem ? ` · origem ${gate.origem}` : ''}
+          </p>
+          {gate.executado_em ? (
+            <p className="mt-1 text-sky-300">executado {fmtData(gate.executado_em)}{gate.executado_prova ? ` · ${gate.executado_prova}` : ''}</p>
+          ) : gate.estado === 'respondido' ? (
+            <p className="mt-1 text-amber-300/80">à espera de execução pela frente</p>
+          ) : null}
         </div>
       )}
       {erro && <p className="mt-2 text-xs text-rose-300">{erro}</p>}
@@ -192,9 +217,9 @@ function GateCard({ gate, onResponder }) {
   )
 }
 
-function AbaGates({ dados, onResponder }) {
+function AbaGates({ dados, onResponder, ancora }) {
   const [projeto, setProjeto] = useState('')
-  const [verHistorico, setVerHistorico] = useState(false)
+  const [verHistorico, setVerHistorico] = useState(!!ancora)
   const gates = (dados?.gates || []).filter((g) => !projeto || g.projeto === projeto)
   const abertos = gates.filter((g) => g.estado === 'aberto')
   const historico = gates.filter((g) => g.estado !== 'aberto')
@@ -210,7 +235,7 @@ function AbaGates({ dados, onResponder }) {
         <p className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-500">Nada à sua espera{projeto ? ' neste projeto' : ''}.</p>
       ) : (
         <div className="space-y-3">
-          {abertos.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} />)}
+          {abertos.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} destacado={ancora === g.id} />)}
         </div>
       )}
       <div className="mt-8">
@@ -219,10 +244,69 @@ function AbaGates({ dados, onResponder }) {
         </button>
         {verHistorico && (
           <div className="mt-3 space-y-3">
-            {historico.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} />)}
+            {historico.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} destacado={ancora === g.id} />)}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Frentes (placar) ─────────────────────────────────────────────────────
+
+function AbaFrentes({ placar, dias, setDias }) {
+  const [aberto, setAberto] = useState(null)
+  const atual = placar?.atual || []
+  const historico = placar?.historico || []
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-sm text-zinc-400">O que cada frente reportou no último ciclo.</p>
+        <div className="flex gap-1">{[1, 7, 30].map((d) => <Chip key={d} active={dias === d} onClick={() => setDias(d)}>{d}d</Chip>)}</div>
+      </div>
+      {atual.length === 0 ? (
+        <p className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-500">
+          Nenhuma frente reportou ainda. Os orquestradores escrevem em POST /api/painel/placar ao fechar ciclo.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {atual.map((p) => {
+            const anteriores = historico.filter((h) => h.projeto === p.projeto && h.id !== p.id)
+            return (
+              <div key={p.projeto} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <h3 className="text-sm font-semibold text-white">{p.frente || p.projeto}</h3>
+                  {p.dono && <span className="text-xs text-zinc-500">{p.dono}</span>}
+                  <span className="ml-auto text-[11px] text-zinc-600">{idade(p.medido_em)} · {fmtData(p.medido_em)}</span>
+                </div>
+                {p.estado && <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">{p.estado}</p>}
+                {p.proximo && <p className="mt-2 text-[13px] text-zinc-400"><span className="text-zinc-500">próximo · </span>{p.proximo}</p>}
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-500">
+                  {p.prazo && <span>prazo · {p.prazo}</span>}
+                  {p.gate && <a href={`#gate-${String(p.gate).split(/[ ,·]/)[0]}`} className="text-sky-300 hover:underline">gate · {p.gate}</a>}
+                  {p.fonte && <span>fonte · {p.fonte}</span>}
+                </div>
+                {anteriores.length > 0 && (
+                  <div className="mt-2">
+                    <button onClick={() => setAberto(aberto === p.projeto ? null : p.projeto)} className="text-xs text-zinc-500 hover:text-zinc-300">
+                      {aberto === p.projeto ? '▾' : '▸'} {anteriores.length} ciclo{anteriores.length === 1 ? '' : 's'} anterior{anteriores.length === 1 ? '' : 'es'}
+                    </button>
+                    {aberto === p.projeto && (
+                      <div className="mt-2 space-y-2 border-l border-white/10 pl-3">
+                        {anteriores.map((h) => (
+                          <div key={h.id} className="text-xs text-zinc-400">
+                            <span className="text-zinc-600">{fmtData(h.medido_em)} · </span>{h.estado}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -259,7 +343,6 @@ function AbaContas({ serie, dias, setDias }) {
   const linhas = serie?.linhas || []
   const contas = serie?.contas || []
   const grafico = useMemo(() => {
-    // pivot por instante (arredondado ao minuto): uma linha por conta e por tipo de limite
     const porTs = new Map()
     for (const l of linhas) {
       const t = Math.round(new Date(l.ts).getTime() / 60000) * 60000
@@ -349,16 +432,17 @@ function AbaKpis({ kpi, dias, setDias }) {
   const [frente, setFrente] = useState('')
   const itens = (kpi?.itens || []).filter((it) => !frente || it.frente === frente)
   const colunas = useMemo(() => {
-    const presentes = new Set(kpi?.metricas || [])
+    const presentes = new Set((kpi?.metricas || []).filter((m) => !ESCONDER.has(m)))
     const ordenadas = METRICAS.filter(([k]) => presentes.has(k))
     const extras = [...presentes].filter((k) => !METRICAS.some(([m]) => m === k)).map((k) => [k, k])
     return [...ordenadas, ...extras]
   }, [kpi])
   const totais = useMemo(() => {
     const t = {}
-    for (const it of itens) for (const [k, v] of Object.entries(it.metrics || {})) if (typeof v === 'number') t[k] = (t[k] || 0) + v
+    for (const it of itens) for (const [k, v] of Object.entries(it.metrics || {})) if (typeof v === 'number' && !ESCONDER.has(k)) t[k] = (t[k] || 0) + v
     return t
   }, [itens])
+  const janelas = useMemo(() => [...new Set(itens.map((i) => i.metrics?.janela_dias).filter(Boolean))], [itens])
 
   return (
     <div>
@@ -389,7 +473,7 @@ function AbaKpis({ kpi, dias, setDias }) {
           <tbody>
             {itens.map((it) => (
               <tr key={it.dia + it.frente} className="border-t border-white/5 text-zinc-300">
-                <td className="px-3 py-1.5 whitespace-nowrap">{it.dia.slice(5)}</td>
+                <td className="px-3 py-1.5 whitespace-nowrap">{it.dia.slice(5)}{it.metrics?.janela_dias > 1 ? <span className="ml-1 text-[10px] text-zinc-600">{it.metrics.janela_dias}d</span> : null}</td>
                 <td className="px-3 py-1.5">{it.frente}</td>
                 {colunas.map(([k, , fmt]) => {
                   const v = it.metrics?.[k]
@@ -405,7 +489,10 @@ function AbaKpis({ kpi, dias, setDias }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[11px] text-zinc-600">Passe o rato numa célula para ver a fonte. «não medido» é ausência de coletor, nunca zero.</p>
+      <p className="mt-2 text-[11px] text-zinc-600">
+        Passe o rato numa célula para ver a fonte. «não medido» é ausência de coletor, nunca zero.
+        {janelas.length > 0 && ` Linhas marcadas com «${janelas.join('d, ')}d» são agregados dessa janela, não de um dia.`}
+      </p>
     </div>
   )
 }
@@ -419,10 +506,16 @@ export default function Painel() {
   const [gates, setGates] = useState(null)
   const [serie, setSerie] = useState(null)
   const [kpi, setKpi] = useState(null)
+  const [placar, setPlacar] = useState(null)
   const [diasSerie, setDiasSerie] = useState(7)
   const [diasKpi, setDiasKpi] = useState(14)
+  const [diasPlacar, setDiasPlacar] = useState(7)
   const [erro, setErro] = useState(null)
   const [atualizado, setAtualizado] = useState(null)
+  // âncora #gate-<id>: o link que a regência manda pelo WhatsApp abre o cartão certo
+  const [ancora] = useState(() => (typeof window !== 'undefined' && window.location.hash.startsWith('#gate-')
+    ? decodeURIComponent(window.location.hash.slice(6)) : null))
+  const jaRolou = useRef(false)
 
   const carregar = useCallback(async () => {
     try {
@@ -431,18 +524,29 @@ export default function Painel() {
       setGates(g)
       if (tab === 'contas') setSerie(await getPainelSerie({ dias: diasSerie }))
       if (tab === 'kpis') setKpi(await getPainelKpi({ dias: diasKpi }))
+      if (tab === 'frentes') setPlacar(await getPainelPlacar({ dias: diasPlacar }))
       setErro(null)
       setAtualizado(new Date())
     } catch (e) {
       setErro(e.message || 'falha ao carregar')
     }
-  }, [tab, diasSerie, diasKpi])
+  }, [tab, diasSerie, diasKpi, diasPlacar])
 
   useEffect(() => {
     carregar()
     const t = setInterval(carregar, POLL_MS)
     return () => clearInterval(t)
   }, [carregar])
+
+  // rola até o gate da âncora depois de ele existir no DOM (uma vez só, para o poll não roubar o ecrã)
+  useEffect(() => {
+    if (!ancora || jaRolou.current || !gates) return
+    const el = document.getElementById(`gate-${ancora}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      jaRolou.current = true
+    }
+  }, [ancora, gates])
 
   async function responder(gate, { escolha, nota }) {
     await responderPainelGate(gate.id, { escolha, nota })
@@ -457,14 +561,14 @@ export default function Painel() {
           <h1 className="text-xl font-semibold text-white">Painel de Regência</h1>
           <p className="text-[11px] text-zinc-600">{atualizado ? `atualizado ${atualizado.toLocaleTimeString('pt-BR')}` : 'carregando…'}</p>
         </div>
-        <p className="mt-1 text-sm text-zinc-400">Gates à sua espera, as duas contas ao longo do tempo e o que as frentes entregam por dia.</p>
+        <p className="mt-1 text-sm text-zinc-400">Gates à sua espera, o estado de cada frente, as duas contas ao longo do tempo e o que se entrega por dia.</p>
       </header>
 
       {erro && <p className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{erro}</p>}
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Aguardando você" value={resumo?.gates?.abertos ?? '—'} alert={(resumo?.gates?.abertos || 0) > 0} sub={resumo ? `${resumo.gates.urgentes} urgente${resumo.gates.urgentes === 1 ? '' : 's'}` : ''} />
-        <StatCard label="Respondidos hoje" value={resumo?.gates?.respondidos_hoje ?? '—'} sub={resumo ? `${resumo.gates.respondidos} no total · ${resumo.gates.expirados} expirados` : ''} />
+        <StatCard label="Respondidos hoje" value={resumo?.gates?.respondidos_hoje ?? '—'} sub={resumo ? `${resumo.gates.a_executar ?? 0} por executar · ${resumo.gates.expirados} expirados` : ''} />
         {contas.slice(0, 2).map((c) => {
           const p = c.pct_semana ?? c.pct_desconhecido
           return <StatCard key={c.conta} label={`Conta ${c.conta}`} value={p == null ? '—' : `${p}%`} alert={p != null && p >= TETO - 15} sub={`${c.pct_fable != null ? `Fable ${c.pct_fable}% · ` : ''}${idade(c.ts)}`} />
@@ -472,12 +576,12 @@ export default function Painel() {
         {contas.length === 0 && <StatCard label="Contas" value="—" sub="sem leitura" />}
       </div>
 
-      <div className="mb-5 flex gap-1 border-b border-white/6">
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-white/6">
         {TABS.map(([id, rotulo]) => (
           <button
             key={id}
             onClick={() => setParams({ tab: id })}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === id ? 'border-[#8bd450] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+            className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm ${tab === id ? 'border-[#8bd450] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
           >
             {rotulo}
             {id === 'gates' && resumo?.gates?.abertos > 0 && <span className="ml-1.5 rounded-full bg-[#8bd450]/20 px-1.5 text-[10px] text-[#c9f28f]">{resumo.gates.abertos}</span>}
@@ -485,7 +589,8 @@ export default function Painel() {
         ))}
       </div>
 
-      {tab === 'gates' && <AbaGates dados={gates} onResponder={responder} />}
+      {tab === 'gates' && <AbaGates dados={gates} onResponder={responder} ancora={ancora} />}
+      {tab === 'frentes' && <AbaFrentes placar={placar} dias={diasPlacar} setDias={setDiasPlacar} />}
       {tab === 'contas' && <AbaContas serie={serie} dias={diasSerie} setDias={setDiasSerie} />}
       {tab === 'kpis' && <AbaKpis kpi={kpi} dias={diasKpi} setDias={setDiasKpi} />}
     </div>

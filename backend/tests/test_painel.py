@@ -86,12 +86,63 @@ def test_pcts_separa_semana_fable_sessao_e_nao_promove_desconhecido():
     assert r["pct_semana"] is None and r["pct_desconhecido"] == 70
 
 
-def test_frente_de_junta_codigos_da_mesa_com_nomes_do_painel_tokens():
-    assert painel.frente_de("sb") == "SuperBot"
-    assert painel.frente_de("ag") == "LexBuild"
-    assert painel.frente_de("casa") == "Cérebro"
+def test_frente_de_junta_codigos_da_mesa_com_nomes_do_coletor_sem_colidir():
+    assert painel.frente_de("sb") == painel.frente_de("superbot") == "SuperBot"
+    assert painel.frente_de("casa") == painel.frente_de("cerebro") == "Cérebro"
+    assert painel.frente_de("mc") == painel.frente_de("licitaai") == "Márcio"
+    # ⛔ o construtor (lex-build) e o LMS (eduardo/ag) são frentes DIFERENTES no coletor. Juntá-las faria
+    # duas linhas colidirem na chave (dia, frente, fonte) e uma apagava a outra em silêncio.
+    assert painel.frente_de("lex") == painel.frente_de("lex-build") == "LexBuild"
+    assert painel.frente_de("ag") == painel.frente_de("eduardo") == "Adv de Guerrilha"
+    assert painel.frente_de("lex-build") != painel.frente_de("eduardo")
     assert painel.frente_de("xyz") == "xyz"
     assert painel.frente_de(None) == "?"
+
+
+def test_kpi_do_doc_achata_a_linha_e_poe_a_janela_na_fonte():
+    doc = {
+        "gerado": "2026-09-09T16:00:00Z",
+        "janela": {"ini": "2026-09-02T16:00:00Z", "fim": "2026-09-09T16:00:00Z", "dias": 7},
+        "linhas": [{
+            "frente": "superbot", "sessoes": 9,
+            "entregas": {"deploy_provado": 2, "pr_fundida": 4, "envio_cliente": 1,
+                         "entrega_confirmada": 0, "relatorio_verified": 7},
+            "gates": {"abertos_na_janela": 5, "respondidos": 3, "expirados": 1, "pendentes": 1,
+                      "mediana_min": 152, "mesa_decisoes": 8, "mesa_executados_rastreados": 2,
+                      "mesa_mediana_min": 40},
+            "custo_usd": 5473, "custo_pct_limite": None, "valor_custo": 0.0021,
+            "retrabalho_pct": 3.1, "cliente_sem_resposta_min": None, "pontos": 21, "pronto_declarado": 4,
+        }],
+    }
+    linhas = painel.kpi_do_doc(doc)
+    assert len(linhas) == 1
+    k = linhas[0]
+    assert k.dia.isoformat() == "2026-09-09" and k.frente == "SuperBot"
+    # a janela vive na FONTE: um agregado de 7 dias nunca se sobrepõe a um de 1 dia (chave dia+frente+fonte)
+    assert k.fonte == "valor-sessoes:7d"
+    assert painel.kpi_do_doc({**doc, "janela": {**doc["janela"], "dias": 1}})[0].fonte == "valor-sessoes:1d"
+    assert k.metrics["deploy_provado"] == 2 and k.metrics["gates_respondidos"] == 3
+    assert k.metrics["custo_usd"] == 5473 and k.metrics["janela_dias"] == 7
+    # o que o coletor mediu como "não medido" (None) não entra como zero
+    assert "custo_pct_limite" not in k.metrics and "cliente_sem_resposta_min" not in k.metrics
+    # pronto_declarado NÃO é entrega: entra como métrica própria, nunca somado às entregas
+    assert k.metrics["pronto_declarado"] == 4
+
+
+def test_gate_in_aceita_o_vocabulario_do_ficheiro_da_casa():
+    g = painel.GateIn(**{
+        "id": "GSB-0910-PORTA", "proj": "sb", "projNome": "SuperBot (Emílio)", "titulo": "t",
+        "aberto": "2026-09-10T08:12:00Z", "prazo": "2026-09-10T20:00:00Z",
+        "atualizado": "2026-09-10T08:12:00Z", "sessao": "local_9e455d31",
+        "opts": [["A", "abrir já", "o cliente vê [imagem]"]], "urg": True,
+        "campo_que_nao_existe": "ignorado sem erro",
+    })
+    assert g.projeto == "sb" and g.projeto_nome == "SuperBot (Emílio)" and g.sessao == "local_9e455d31"
+    assert painel.parse_ts(g.ts_aberto).hour == 8 and painel.parse_ts(g.ts_expira).hour == 20
+    assert painel.parse_ts(g.fonte_atualizado) is not None
+    # e o canónico continua a valer
+    g2 = painel.GateIn(id="X", projeto="casa", titulo="t")
+    assert g2.projeto == "casa"
 
 
 def tele(**kw):
