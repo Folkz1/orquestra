@@ -49,6 +49,9 @@ const METRICAS = [
   ['custo_usd_eduardo', 'Custo Eduardo', (v) => '$' + Math.round(v).toLocaleString('en-US')],
 ]
 const ESCONDER = new Set(['janela_dias', 'gerado'])
+// No telemóvel uma tabela de 27 colunas não se lê: cada frente vira um cartão com as cinco métricas que
+// respondem «esta frente valeu o que custou?». A tabela inteira fica no desktop, onde cabe.
+const NO_CARTAO = ['custo_usd', 'pontos', 'deploy_provado', 'pr_fundida', 'envio_cliente']
 // ⛔ rácios, medianas e percentagens NÃO se somam. Somar «valor/custo» de 9 frentes deu 53,4 no staging,
 // um número que não quer dizer nada e que estaria na primeira linha do ecrã do Diego. Estes aparecem
 // na tabela, por dia e por frente, onde têm sentido — nunca num cartão de total.
@@ -247,7 +250,26 @@ function AbaGates({ dados, onResponder, ancora }) {
         ))}
       </div>
       {abertos.length === 0 ? (
-        <p className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-500">Nada à sua espera{projeto ? ' neste projeto' : ''}.</p>
+        <div className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6">
+          <p className="text-center text-sm text-zinc-400">Nada à sua espera{projeto ? ' neste projeto' : ''}.</p>
+          {historico.length > 0 && (
+            <>
+              <p className="mt-4 text-[11px] uppercase tracking-[0.28em] text-zinc-600">as suas últimas decisões</p>
+              <ul className="mt-2 space-y-2">
+                {historico.slice(0, 3).map((g) => (
+                  <li key={g.id} className="text-[13px] leading-snug text-zinc-300">
+                    <a href={`#gate-${g.id}`} className="font-mono text-[11px] text-zinc-500 hover:text-[#c9f28f]">{g.id}</a>
+                    <span className="ml-2 font-semibold text-[#c9f28f]">{g.escolha}</span>
+                    <span className="ml-2">{g.titulo}</span>
+                    {g.executado_em
+                      ? <span className="ml-2 text-[11px] text-sky-300">executado</span>
+                      : <span className="ml-2 text-[11px] text-amber-300/70">por executar</span>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       ) : (
         <div className="space-y-3">
           {abertos.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} destacado={ancora === g.id} />)}
@@ -506,7 +528,33 @@ function AbaKpis({ kpi, dias, setDias }) {
         {!colunas.length && <p className="col-span-2 text-sm text-zinc-500 sm:col-span-4">Nenhum KPI gravado na janela. Os coletores escrevem em POST /api/painel/kpi.</p>}
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-white/6">
+      {/* telemóvel: um cartão por frente, ordenado por custo */}
+      <div className="mt-6 space-y-2 sm:hidden">
+        {itens.map((it) => (
+          <div key={it.dia + it.frente} className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="flex items-baseline justify-between">
+              <p className="text-sm font-semibold text-white">{it.frente}</p>
+              <p className="text-[11px] text-zinc-600">{it.dia.slice(5)}{it.metrics?.janela_dias > 1 ? ` · ${it.metrics.janela_dias}d` : ''}</p>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              {NO_CARTAO.map((k) => {
+                const def = METRICAS.find(([m]) => m === k)
+                const v = it.metrics?.[k]
+                if (v == null || !def) return null
+                return (
+                  <span key={k} className="text-xs text-zinc-300">
+                    <span className="text-zinc-500">{def[1].replace(' US$', '').replace(' (pts)', '')} </span>
+                    {def[2] ? def[2](v) : v}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+        {!itens.length && <p className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-500">Sem linhas na janela.</p>}
+      </div>
+
+      <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-white/6 sm:block">
         <table className="w-full min-w-[640px] text-xs">
           <thead className="bg-white/[0.03] text-[10px] uppercase tracking-wider text-zinc-500">
             <tr>

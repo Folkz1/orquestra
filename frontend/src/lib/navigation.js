@@ -5,7 +5,7 @@ export const desktopNavSections = [
     items: [
       { to: '/', label: 'Home', description: 'KPIs executivos e radar do dia' },
       { to: '/cockpit', label: 'Cockpit', description: 'Perguntas do Claude que precisam de você' },
-      { to: '/painel', label: 'Painel', description: 'Gates, contas Claude e KPIs ao longo do tempo' },
+      { to: '/painel', label: 'QG', description: 'Gates à sua espera, contas ao vivo e o que cada frente entrega', badge: 'gates' },
       { to: '/chat', label: 'Chat', description: 'WhatsApp realtime com contexto do cliente' },
       { to: '/briefs', label: 'Briefings', description: 'Resumo diario e contexto acionavel' },
     ],
@@ -73,6 +73,7 @@ export function getNavMeta(pathname) {
   if (pathname.startsWith('/gravador')) return flatItems.find((item) => item.to === '/gravador')
   if (pathname.startsWith('/assinaturas')) return flatItems.find((item) => item.to === '/assinaturas')
   if (pathname.startsWith('/jarbas')) return flatItems.find((item) => item.to === '/jarbas')
+  if (pathname.startsWith('/qg') || pathname.startsWith('/painel')) return flatItems.find((item) => item.to === '/painel')
 
   return flatItems.find((item) => item.to === '/') || { label: 'Orquestra', description: '' }
 }
