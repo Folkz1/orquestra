@@ -179,6 +179,9 @@ async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, bool
     if body.extra:
         g.extra = {**(g.extra or {}), **body.extra}
     await db.flush()
+    # server_default/onupdate expiram criado_em/atualizado_em: sem refresh, ler o objeto dispara IO sincrono
+    # dentro do asyncpg (sqlalchemy MissingGreenlet). Medido no staging em 09/09: todo PATCH dava 500.
+    await db.refresh(g)
     return g, criado
 
 
@@ -284,6 +287,7 @@ async def responder_gate(gate_id: str, body: GatePatch, db: AsyncSession = Depen
     if body.origem is not None:
         g.origem = body.origem
     await db.flush()
+    await db.refresh(g)
     return gate_dict(g, ref)
 
 
@@ -326,6 +330,24 @@ def telemetria_dict(t: PainelTelemetria) -> dict:
         "fonte": t.fonte,
         "extra": t.extra or {},
     }
+
+
+async def ultimas_por_conta(db: AsyncSession, conta: Optional[str] = None) -> list[PainelTelemetria]:
+    """A última leitura de cada conta que traz limites de verdade; se nenhuma trouxer, a última que houver.
+    O tick do jarbas lê só o gasto (não vê os limites), e sem esta regra o cabeçalho mostrava «—»
+    um minuto depois de o PC ter gravado os três números."""
+    q = select(PainelTelemetria)
+    if conta:
+        q = q.where(PainelTelemetria.conta == conta)
+    q = q.order_by(PainelTelemetria.ts.desc()).limit(600)
+    com_limites: dict[str, PainelTelemetria] = {}
+    qualquer: dict[str, PainelTelemetria] = {}
+    for t in (await db.execute(q)).scalars().all():
+        qualquer.setdefault(t.conta, t)
+        p = pcts(t.limites or [])
+        if any(p[k] is not None for k in ("pct_semana", "pct_fable", "pct_sessao")):
+            com_limites.setdefault(t.conta, t)
+    return sorted((com_limites.get(c, t) for c, t in qualquer.items()), key=lambda t: t.conta)
 
 
 async def _gravar_leitura(db: AsyncSession, leitura: dict, fonte_padrao: str) -> tuple[int, int]:
@@ -399,22 +421,16 @@ async def serie(
     q = q.order_by(PainelTelemetria.ts.asc()).limit(limit)
     linhas = list((await db.execute(q)).scalars().all())
 
-    # a última leitura de cada conta, seja de que fonte for, mesmo fora da janela pedida
-    ultimas: dict[str, PainelTelemetria] = {}
-    qu = select(PainelTelemetria).order_by(PainelTelemetria.ts.desc()).limit(400)
-    if conta:
-        qu = qu.where(PainelTelemetria.conta == conta)
-    for t in (await db.execute(qu)).scalars().all():
-        if t.conta not in ultimas:
-            ultimas[t.conta] = t
+    # a última leitura de cada conta (com limites, se houver), mesmo fora da janela pedida
+    ultimas = await ultimas_por_conta(db, conta)
     return {
         "gerado": ref.isoformat(),
         "desde": ini.isoformat(),
         "total": len(linhas),
-        "contas": sorted({t.conta for t in linhas} | set(ultimas.keys())),
+        "contas": sorted({t.conta for t in linhas} | {t.conta for t in ultimas}),
         "fontes": sorted({t.fonte for t in linhas}),
         "linhas": [telemetria_dict(t) for t in linhas],
-        "ultimas": [telemetria_dict(t) for t in sorted(ultimas.values(), key=lambda t: t.conta)],
+        "ultimas": [telemetria_dict(t) for t in ultimas],
     }
 
 
@@ -505,10 +521,7 @@ async def resumo(db: AsyncSession = Depends(get_db)):
     abertos = [g for g in gates if estado_efetivo(g, ref) == "aberto"]
     expirados = [g for g in gates if estado_efetivo(g, ref) == "expirado"]
     respondidos = [g for g in gates if estado_efetivo(g, ref) == "respondido"]
-    ultimas: dict[str, PainelTelemetria] = {}
-    for t in (await db.execute(select(PainelTelemetria).order_by(PainelTelemetria.ts.desc()).limit(400))).scalars().all():
-        if t.conta not in ultimas:
-            ultimas[t.conta] = t
+    ultimas = await ultimas_por_conta(db)
     return {
         "gerado": ref.isoformat(),
         "gates": {
@@ -519,5 +532,5 @@ async def resumo(db: AsyncSession = Depends(get_db)):
             "expirados": len(expirados),
             "total": len(gates),
         },
-        "contas": [telemetria_dict(t) for t in sorted(ultimas.values(), key=lambda t: t.conta)],
+        "contas": [telemetria_dict(t) for t in ultimas],
     }
