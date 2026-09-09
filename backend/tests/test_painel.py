@@ -94,6 +94,26 @@ def test_frente_de_junta_codigos_da_mesa_com_nomes_do_painel_tokens():
     assert painel.frente_de(None) == "?"
 
 
+def tele(**kw):
+    base = dict(id=1, ts=AGORA, conta="Diego", limites=[], usd=0, nivel=None, fonte="x", extra={})
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_ultima_leitura_prefere_a_completa_recente_e_nao_a_parcial_do_jarbas():
+    lim = [{"kind": "weekly_all", "rotulo": "geral", "percent": 5}]
+    parcial = tele(id=3, ts=AGORA, usd=991, limites=lim, fonte="vmi2571201", extra={"leitura": {"remotoOk": False}})
+    completa = tele(id=2, ts=AGORA - timedelta(seconds=4), usd=32350, limites=lim, fonte="DeA-PC", extra={"leitura": {"remotoOk": True}})
+    so_usd = tele(id=4, ts=AGORA + timedelta(minutes=5), usd=1000, limites=[], fonte="tick.log:jarbas")
+    eduardo = tele(id=5, ts=AGORA - timedelta(hours=1), conta="Eduardo", limites=lim, usd=2, extra={})
+    esc = painel.escolher_ultimas([so_usd, parcial, completa, eduardo])
+    assert [(t.conta, t.id) for t in esc] == [("Diego", 2), ("Eduardo", 5)]
+    # completa velha demais (5 h) perde para a parcial recente com limites
+    velha = tele(id=6, ts=AGORA - timedelta(hours=5), usd=30000, limites=lim, extra={"leitura": {"remotoOk": True}})
+    esc = painel.escolher_ultimas([parcial, velha])
+    assert esc[0].id == 3
+
+
 # ─── integração (staging vivo) ────────────────────────────────────────────
 
 URL = os.environ.get("PAINEL_API_URL", "").rstrip("/")

@@ -340,14 +340,31 @@ async def ultimas_por_conta(db: AsyncSession, conta: Optional[str] = None) -> li
     if conta:
         q = q.where(PainelTelemetria.conta == conta)
     q = q.order_by(PainelTelemetria.ts.desc()).limit(600)
-    com_limites: dict[str, PainelTelemetria] = {}
-    qualquer: dict[str, PainelTelemetria] = {}
-    for t in (await db.execute(q)).scalars().all():
-        qualquer.setdefault(t.conta, t)
-        p = pcts(t.limites or [])
-        if any(p[k] is not None for k in ("pct_semana", "pct_fable", "pct_sessao")):
-            com_limites.setdefault(t.conta, t)
-    return sorted((com_limites.get(c, t) for c, t in qualquer.items()), key=lambda t: t.conta)
+    rows = list((await db.execute(q)).scalars().all())
+    return escolher_ultimas(rows)
+
+
+def leitura_completa(t: PainelTelemetria) -> bool:
+    """O tick do jarbas (--aqui) só vê as sessões do servidor e grava remotoOk=false; o do PC vê as duas
+    máquinas quando o ssh funciona (remotoOk=true). Em 09/09 as duas leituras nasceram com 4 s de
+    diferença e o cabeçalho mostrou US$ 991 (só jarbas) onde a completa dizia US$ 32 mil."""
+    return bool(((t.extra or {}).get("leitura") or {}).get("remotoOk"))
+
+
+def escolher_ultimas(rows: list[PainelTelemetria], janela_h: float = 3.0) -> list[PainelTelemetria]:
+    """rows vem por ts desc. Por conta: a leitura mais recente COMPLETA e com limites, se não for mais velha
+    do que janela_h em relação à mais recente de todas; senão a mais recente com limites; senão a mais recente."""
+    por_conta: dict[str, list[PainelTelemetria]] = {}
+    for t in rows:
+        por_conta.setdefault(t.conta, []).append(t)
+    out = []
+    for conta, lista in por_conta.items():
+        mais_nova = lista[0]
+        limite = mais_nova.ts - timedelta(hours=janela_h)
+        com_lim = [t for t in lista if any(v is not None for k, v in pcts(t.limites or []).items() if k != "pct_desconhecido")]
+        completa = [t for t in com_lim if leitura_completa(t) and t.ts >= limite]
+        out.append(completa[0] if completa else (com_lim[0] if com_lim else mais_nova))
+    return sorted(out, key=lambda t: t.conta)
 
 
 async def _gravar_leitura(db: AsyncSession, leitura: dict, fonte_padrao: str) -> tuple[int, int]:
