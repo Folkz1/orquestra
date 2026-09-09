@@ -137,8 +137,13 @@ contra staging.
 
 ## 6. NOT VERIFIED (o que não foi provado, e porquê)
 
-- **Nada em produção.** A Orquestra em produção continua com a imagem de 18/08; subir é gate do Diego
-  (runbook em `painel-regencia.RUNBOOK-deploy.md`).
+- **Nada em produção.** Subir é gate do Diego (runbook em `painel-regencia.RUNBOOK-deploy.md`).
+  ⛔ **Correção a mim próprio, 18:0xZ:** eu escrevi aqui e na PR que a produção era «a imagem de 18/08» e que
+  subir levaria 11 commits junto. Falso — inferi a versão pelo campo `DEPLOY_TIMESTAMP` em vez de a provar.
+  Medido depois: o bundle servido em produção contém as sentinelas da PR #17 («Consumo de tokens», «sem o
+  servidor») **e da PR #18** («PC desligado»), portanto o frontend no ar já é `origin/master`; e nenhum commit
+  tocou `backend/` desde antes da imagem. **Subir esta branch leva só o painel.** A lição fica: nem `GIT_SHA`
+  (que está `undefined`) nem `DEPLOY_TIMESTAMP` provam a versão quando a tag é `:latest` — só o conteúdo servido.
 - **⚠️ O cron do jarbas está de volta ao original** (restaurado às 17:47Z do backup em
   `/home/diego/painel-staging/crontab.bak-0909`). Eu tinha-o apontado à worktree da branch para alimentar o
   staging e isso **quebrou o push da telemetria para a Orquestra de produção durante 7 minutos**, sem erro

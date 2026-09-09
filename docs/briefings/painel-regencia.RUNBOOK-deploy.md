@@ -11,9 +11,23 @@
 | `wordpress_orquestra-frontend` | `ghcr.io/folkz1/orquestra-frontend:latest` | — | `GIT_SHA=undefined` |
 | `wordpress_orquestra-db` | `pgvector/pgvector:pg16` | — | base de produção |
 
-`origin/master` está em `59d7e24` (PR #18 «tokens no kanban») e tem **11 commits desde 15/08** que a imagem de
-18/08 provavelmente não tem (PRs #13–#18: gravações, áudio, recorder crash-safe, tokens no Kanban). ⛔ **Subir
-:latest a partir de master leva tudo isso junto, não só o painel.** É a primeira coisa a dizer no gate.
+⛔ **CORREÇÃO à primeira versão deste runbook (medida 09/09 18:0xZ).** Eu tinha escrito que subir levaria
+«11 commits de master que não estão no ar desde 18/08». **É falso, e o erro foi inferir a versão pela data do
+campo `DEPLOY_TIMESTAMP` em vez de a provar no mundo.** O que se mede:
+
+- `GIT_SHA` é `undefined` nos dois serviços e `DEPLOY_TIMESTAMP` do frontend diz `2026-08-18T23:10Z` — mas o
+  bundle servido em `https://guyyfolkz.mbest.site` contém código de commits de **08/09**. A tag `:latest` foi
+  reescrita pelo CI e o Swarm puxou-a num restart, sem ninguém tocar no painel do Easypanel. **Nenhum campo do
+  serviço prova a versão; só o conteúdo servido prova.**
+- Sentinelas no bundle de produção (strings que só existem a partir de cada PR): «Consumo de tokens» e «sem o
+  servidor» (PR #17) → presentes; «PC desligado» (PR #18, commit `809277e`) → **presente**. Logo o frontend no
+  ar já é `origin/master` (`59d7e24`).
+- `git log origin/master -- backend/` desde a imagem: **nenhum commit**. O último a tocar o backend é `84afd81`,
+  de 18/08. O backend de master é o mesmo que está no ar.
+
+**Portanto: subir esta branch leva SÓ o painel.** `git merge-base --is-ancestor origin/master HEAD` confirma que
+master é ancestral (não regride nada), e o diff da branch contra master são 13 ficheiros, todos do painel
+(+2543/−1), sem tocar em Recorder, Kanban ou gravações.
 
 Como o CI funciona (`.github/workflows/docker.yml`): `on: push: branches: [master]` constrói e publica
 `ghcr.io/folkz1/orquestra-{backend,frontend,ai-agent}:latest` **e** `:<sha>`. Não faz deploy: o Easypanel só puxa
@@ -24,17 +38,17 @@ próximo deploy de qualquer pessoa vai puxar.
 
 ```
 ⛔ GATE — subir o Painel de Regência (feat/painel-regencia → master → produção da Orquestra)
-Por que é seu   · deploy em produção; leva 11 commits de master (PRs #13–#18) que não estão no ar desde 18/08
+Por que é seu   · deploy em produção (e só isso: medido, leva apenas o painel — ver secção 0)
 Já feito e provado · staging em https://painel-staging.jz9bd8.easypanel.host (API 832907f, web 3f3f2b7-stg,
                      1/1, health db:true, alembic 027); 9/9 no contrato contra o staging vivo; 153 gates +
                      138 decisões (avaliador conferiu 138/138: escolha, nota e hora batem); 339 leituras de
                      telemetria, série de 02/09 a 09/09; 150 linhas de KPI de 2 fontes; placar de 10 frentes;
                      gate nascido de FICHEIRO JSON, respondido no telemóvel e lido em /api/painel/decisoes;
                      avaliador independente: aprovado com ressalvas, 3 defeitos achados e corrigidos
-Opções          · A) subir agora (merge + deploy backend e frontend com tag :<sha>, prova, importar)
-                  B) subir só o backend primeiro (o painel fica acessível pela API; a página vem a seguir)
+Opções          · A) subir agora (merge + deploy dos dois serviços com tag :<sha>, prova, importar os dados)
+                  B) subir só o backend primeiro (a API do painel fica de pé; a página vem a seguir)
                   C) ficar em staging mais um dia e olhar a série a encher
-Recomendação    · A com tag :<sha> fixada (nunca :latest), de dia, com os passos 3–6 abaixo; rollback = passo 7
+Recomendação    · A com tag :<sha> fixada (nunca :latest), de dia, com os passos 3–6; rollback é um comando
 ```
 
 ## 2. Antes de tocar: prova do ar
