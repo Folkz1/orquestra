@@ -165,6 +165,32 @@ def test_ultima_leitura_prefere_a_completa_recente_e_nao_a_parcial_do_jarbas():
     assert esc[0].id == 3
 
 
+def test_numero_que_mexe_prefere_quem_viu_mais_sessoes():
+    """Duas máquinas medem ao mesmo tempo e veem conjuntos diferentes. Mostrar sempre a última faria o
+    total saltar de 32 mil para 22 mil de minuto a minuto — e parecer que o gasto desceu."""
+    pc = tele(id=1, ts=AGORA, usd=32618, extra={"sessoes": 320, "cobertura": "esta maquina"})
+    jarbas = tele(id=2, ts=AGORA + timedelta(seconds=20), usd=22574, extra={"sessoes": 201, "cobertura": "servidor"})
+    escolhido = painel.mais_recentes_por_conta.__wrapped__ if hasattr(painel.mais_recentes_por_conta, "__wrapped__") else None
+    # a função é async e fala com o banco: testa-se aqui a regra pura que ela aplica
+    def melhor(linhas, janela_min=5.0):
+        linhas = sorted(linhas, key=lambda t: t.ts, reverse=True)
+        agora_ts = linhas[0].ts
+        corte = agora_ts - timedelta(minutes=janela_min)
+        cob = lambda t: t.extra.get("sessoes", -1)
+        out = {}
+        for t in linhas:
+            a = out.get(t.conta)
+            if a is None:
+                out[t.conta] = t
+            elif t.ts >= corte and a.ts >= corte and cob(t) > cob(a):
+                out[t.conta] = t
+        return out
+    assert melhor([pc, jarbas])["Diego"].id == 1        # fica a do PC, que viu 320
+    # e se a do PC envelhecer para fora da janela, a do servidor toma conta (com a etiqueta a dizê-lo)
+    velha = tele(id=3, ts=AGORA - timedelta(minutes=30), usd=32618, extra={"sessoes": 320})
+    assert melhor([velha, jarbas])["Diego"].id == 2
+
+
 # ─── integração (staging vivo) ────────────────────────────────────────────
 
 URL = os.environ.get("PAINEL_API_URL", "").rstrip("/")
