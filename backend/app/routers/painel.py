@@ -393,7 +393,7 @@ async def decisoes(
 # novo do lado do coletor tem de o acrescentar aqui, senão manda e nada aparece — sem erro nenhum.
 # `ritmo` vem da frente «Controle de gasto» (% da semana por dia, teto, projeção de esgotar, alarme).
 _CAMPOS_CONTA_EXTRA = ("respostas", "sessoes", "ativas", "estimado", "pico", "regra", "teto", "lidoMs",
-                       "manual", "fonte", "ritmo")
+                       "manual", "fonte", "ritmo", "limitesColhidosEm")
 _CAMPOS_LEITURA_EXTRA = ("remotoOk", "sessoesJarbas", "origens", "janela", "regua", "total", "gerado",
                          "colhidoEm", "cobertura", "medido_ms", "ficheiros", "lidos")
 
@@ -438,6 +438,9 @@ def telemetria_dict(t: PainelTelemetria) -> dict:
     return {
         "id": t.id,
         "ts": t.ts.isoformat(),
+        # a % do limite e o gasto têm idades diferentes: a primeira é colhida por outro coletor, mais
+        # devagar. O Diego leu 30% quando o app dizia 37% porque só se mostrava UMA idade, a do gasto.
+        "limites_ts": (t.extra or {}).get("limitesColhidosEm") or t.ts.isoformat(),
         "conta": t.conta,
         "limites": t.limites or [],
         **pcts(t.limites or []),
