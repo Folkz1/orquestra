@@ -259,8 +259,15 @@ def test_contrato_completo_contra_backend_vivo():
     assert r["gravados"] == 1 and r["fontes"] == ["valor-sessoes:1d"] and r["frentes"] == ["Cérebro"]
     k = c.get("/api/painel/kpi", params={"dias": 2, "frente": "Cérebro"}).json()
     linha_kpi = next(i for i in k["itens"] if i["dia"] == ts.date().isoformat())
-    assert linha_kpi["metrics"]["deploy_provado"] == 1 and linha_kpi["metrics"]["gates_respondidos"] == 3
+    assert linha_kpi["metrics"]["deploy_provado"] == 1
     assert "custo_pct_limite" not in linha_kpi["metrics"]      # null não vira zero
+    # ⛔ o que o COLETOR mediu (gates do WhatsApp/fila) não é sobrescrito pelo que o painel conta:
+    # são números de coisas diferentes e vivem em chaves diferentes.
+    assert linha_kpi["metrics"]["gates_respondidos"] == 3
+    assert linha_kpi["fontes"]["gates_respondidos"] == "valor-sessoes:1d"
+    if "painel_gates_respondidos" in linha_kpi["metrics"]:
+        assert linha_kpi["fontes"]["painel_gates_respondidos"] == "painel_gates"
+    assert k.get("conflitos") == []
 
     # telemetria: a mesma leitura duas vezes grava uma
     leitura = {"colhidoEm": ts.isoformat(), "fonte": "teste-contrato",

@@ -30,11 +30,13 @@ const METRICAS = [
   ['pr_fundida', 'PRs fundidas'],
   ['envio_cliente', 'Envios a cliente'],
   ['relatorio_verified', 'Reportes VERIFIED'],
-  ['gates_abertos', 'Gates abertos'],
-  ['gates_respondidos', 'Respondidos'],
-  ['gates_executados', 'Executados'],
-  ['gates_expirados', 'Expirados'],
-  ['gates_pendentes', 'Pendentes'],
+  ['painel_gates_abertos', 'Gates abertos (painel)'],
+  ['painel_gates_respondidos', 'Respondidos (painel)'],
+  ['painel_gates_executados', 'Executados (painel)'],
+  ['gates_abertos_na_janela', 'Gates abertos (canal)'],
+  ['gates_respondidos', 'Respondidos (canal)'],
+  ['gates_expirados', 'Expirados (canal)'],
+  ['gates_pendentes', 'Pendentes (canal)'],
   ['gates_mediana_min', 'Mediana resposta', (v) => Math.round(v) + ' min'],
   ['sessoes', 'Sessões'],
   ['respostas', 'Respostas'],
@@ -489,8 +491,17 @@ function AbaKpis({ kpi, dias, setDias }) {
           </tbody>
         </table>
       </div>
+      {(kpi?.conflitos || []).length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200">
+          {kpi.conflitos.length} métrica{kpi.conflitos.length === 1 ? '' : 's'} com duas fontes a discordar (fica a primeira, nada é sobrescrito em silêncio):
+          {kpi.conflitos.slice(0, 4).map((c, i) => (
+            <span key={i} className="block text-amber-200/80">{c.dia} · {c.frente} · {c.metrica}: {String(c.fica.valor)} ({c.fica.fonte}) vs {String(c.ignorado.valor)} ({c.ignorado.fonte})</span>
+          ))}
+        </div>
+      )}
       <p className="mt-2 text-[11px] text-zinc-600">
         Passe o rato numa célula para ver a fonte. «não medido» é ausência de coletor, nunca zero.
+        «(painel)» conta os gates desta base; «(canal)» é o que o coletor mediu no WhatsApp e na fila em disco.
         {janelas.length > 0 && ` Linhas marcadas com «${janelas.join('d, ')}d» são agregados dessa janela, não de um dia.`}
       </p>
     </div>

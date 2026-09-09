@@ -628,30 +628,48 @@ async def kpis(
     q = q.order_by(PainelKpi.dia.desc(), PainelKpi.frente.asc())
     linhas = list((await db.execute(q)).scalars().all())
 
-    # funde as fontes: uma linha por (dia, frente), com a fonte de cada métrica ao lado
+    # funde as fontes: uma linha por (dia, frente), com a fonte de cada métrica ao lado.
+    # ⛔ Duas fontes com a MESMA chave de métrica não se sobrepõem em silêncio. Medido em 09/09 no
+    # staging: a contagem do painel escreveu 5 por cima do gates_respondidos=3 que o coletor tinha
+    # medido no canal do WhatsApp, e o teste só apanhou porque comparava um número conhecido. Fica a
+    # primeira (a mais recente por dia/frente) e o conflito aparece na resposta, com as duas fontes.
     fundido: dict[tuple[str, str], dict] = {}
+    conflitos: list[dict] = []
+
+    def por(chave: tuple[str, str], campo: str, valor: Any, fonte: str) -> None:
+        item = fundido.setdefault(chave, {"dia": chave[0], "frente": chave[1], "metrics": {}, "fontes": {}})
+        if campo in item["metrics"] and item["fontes"].get(campo) != fonte and item["metrics"][campo] != valor:
+            conflitos.append({"dia": chave[0], "frente": chave[1], "metrica": campo,
+                              "fica": {"valor": item["metrics"][campo], "fonte": item["fontes"][campo]},
+                              "ignorado": {"valor": valor, "fonte": fonte}})
+            return
+        item["metrics"][campo] = valor
+        item["fontes"][campo] = fonte
+
     for k in linhas:
         chave = (k.dia.isoformat(), k.frente)
-        item = fundido.setdefault(chave, {"dia": chave[0], "frente": k.frente, "metrics": {}, "fontes": {}})
         for m, v in (k.metrics or {}).items():
-            item["metrics"][m] = v
-            item["fontes"][m] = k.fonte
+            por(chave, m, v, k.fonte)
 
-    # gates contados da própria tabela: abertos por dia de abertura, respondidos por dia de resposta
+    # gates contados da própria tabela. Nomes com prefixo `painel_`: o coletor mede os gates do canal
+    # do WhatsApp e da fila em disco, este conta os que vivem AQUI — são números diferentes de coisas
+    # diferentes, e partilhar o nome faria um apagar o outro.
     ini_ts = datetime.combine(ini_dia, datetime.min.time(), tzinfo=timezone.utc)
     qg = select(PainelGate).where((PainelGate.ts_aberto >= ini_ts) | (PainelGate.ts_resposta >= ini_ts))
+    contagem: dict[tuple[str, str], dict[str, int]] = {}
     for g in (await db.execute(qg)).scalars().all():
         fr = frente_de(g.projeto)
         if frente and fr != frente:
             continue
-        for campo, ts in (("gates_abertos", g.ts_aberto), ("gates_respondidos", g.ts_resposta),
-                          ("gates_executados", g.executado_em)):
+        for campo, ts in (("painel_gates_abertos", g.ts_aberto), ("painel_gates_respondidos", g.ts_resposta),
+                          ("painel_gates_executados", g.executado_em)):
             if not ts or ts < ini_ts:
                 continue
-            chave = (ts.date().isoformat(), fr)
-            item = fundido.setdefault(chave, {"dia": chave[0], "frente": fr, "metrics": {}, "fontes": {}})
-            item["metrics"][campo] = int(item["metrics"].get(campo) or 0) + 1
-            item["fontes"][campo] = "painel_gates"
+            c = contagem.setdefault((ts.date().isoformat(), fr), {})
+            c[campo] = c.get(campo, 0) + 1
+    for chave, campos in contagem.items():
+        for campo, valor in campos.items():
+            por(chave, campo, valor, "painel_gates")
 
     itens = sorted(fundido.values(), key=lambda x: (x["dia"], x["frente"]), reverse=True)
     metricas = sorted({m for it in itens for m in it["metrics"]})
@@ -660,6 +678,7 @@ async def kpis(
         "desde": ini_dia.isoformat(),
         "frentes": sorted({it["frente"] for it in itens}),
         "metricas": metricas,
+        "conflitos": conflitos,
         "itens": itens,
     }
 
