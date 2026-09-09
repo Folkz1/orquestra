@@ -389,7 +389,11 @@ async def decisoes(
 
 # ─── Telemetria (série) ───────────────────────────────────────────────────
 
-_CAMPOS_CONTA_EXTRA = ("respostas", "sessoes", "ativas", "estimado", "pico", "regra", "teto", "lidoMs", "manual", "fonte")
+# ⛔ Lista FECHADA: o que não estiver aqui é descartado em silêncio ao gravar. Quem acrescentar um campo
+# novo do lado do coletor tem de o acrescentar aqui, senão manda e nada aparece — sem erro nenhum.
+# `ritmo` vem da frente «Controle de gasto» (% da semana por dia, teto, projeção de esgotar, alarme).
+_CAMPOS_CONTA_EXTRA = ("respostas", "sessoes", "ativas", "estimado", "pico", "regra", "teto", "lidoMs",
+                       "manual", "fonte", "ritmo")
 _CAMPOS_LEITURA_EXTRA = ("remotoOk", "sessoesJarbas", "origens", "janela", "regua", "total", "gerado",
                          "colhidoEm", "cobertura", "medido_ms", "ficheiros", "lidos")
 
@@ -426,6 +430,7 @@ def bloco_agora(t: PainelTelemetria) -> dict:
         "ts": t.ts.isoformat(),
         "fonte": t.fonte,
         "cobertura": extra.get("cobertura") or (extra.get("leitura") or {}).get("cobertura"),
+        "ritmo": extra.get("ritmo"),
     }
 
 
