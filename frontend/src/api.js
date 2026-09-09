@@ -797,3 +797,28 @@ export function submitTestSession(sessionId) {
     return res.json()
   })
 }
+
+// Painel de Regencia (gates, contas Claude ao longo do tempo, KPIs). Rotas em /api/painel/*.
+function painelQs(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.append(key, String(value));
+  });
+  const qs = query.toString();
+  return qs ? '?' + qs : '';
+}
+export function getPainelResumo() {
+  return request('/api/painel/resumo');
+}
+export function getPainelGates(params = {}) {
+  return request(`/api/painel/gates${painelQs(params)}`);
+}
+export function responderPainelGate(id, data) {
+  return request(`/api/painel/gates/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+export function getPainelSerie(params = {}) {
+  return request(`/api/painel/serie${painelQs(params)}`);
+}
+export function getPainelKpi(params = {}) {
+  return request(`/api/painel/kpi${painelQs(params)}`);
+}

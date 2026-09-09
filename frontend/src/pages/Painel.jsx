@@ -1,0 +1,493 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { getPainelGates, getPainelKpi, getPainelResumo, getPainelSerie, responderPainelGate } from '../api'
+
+// Painel de Regência — gates do Diego, as duas contas Claude ao longo do tempo e KPIs por frente/dia.
+// Só lê a API (/api/painel/*); quem escreve são os coletores e a regência. Briefing em
+// docs/briefings/painel-regencia.md. Mobile primeiro: uma coluna, cartões, tabela só com scroll próprio.
+
+const POLL_MS = 30000
+const TABS = [
+  ['gates', 'Gates'],
+  ['contas', 'Contas'],
+  ['kpis', 'KPIs'],
+]
+const TETO = 80 // política da casa: aos 80% o Eduardo pára e o Diego entra em economia
+const CHART_TICK = { fill: '#71717a', fontSize: 11 }
+const CHART_TOOLTIP = { background: '#10141b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 12 }
+const CORES = ['#8bd450', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399']
+
+// métricas conhecidas dos KPIs, na ordem em que aparecem; o que não estiver aqui entra no fim com o nome cru
+const METRICAS = [
+  ['custo_usd', 'Custo US$', (v) => '$' + Math.round(v).toLocaleString('en-US')],
+  ['respostas', 'Respostas'],
+  ['sessoes', 'Sessões'],
+  ['gates_abertos', 'Gates abertos'],
+  ['gates_respondidos', 'Respondidos'],
+  ['gates_executados', 'Executados'],
+  ['entregas_provadas', 'Entregas provadas'],
+  ['prs_fundidas', 'PRs fundidas'],
+  ['envios_cliente', 'Envios a cliente'],
+  ['valor_pontos', 'Valor (pts)'],
+  ['valor_custo', 'Valor/custo', (v) => Number(v).toFixed(2)],
+  ['retrabalho_pct', 'Retrabalho', (v) => Math.round(v) + '%'],
+  ['cliente_sem_resposta_min', 'Cliente s/ resposta', (v) => Math.round(v) + ' min'],
+  ['custo_usd_diego', 'Custo Diego', (v) => '$' + Math.round(v).toLocaleString('en-US')],
+  ['custo_usd_eduardo', 'Custo Eduardo', (v) => '$' + Math.round(v).toLocaleString('en-US')],
+]
+
+function fmtData(value, opts = { dateStyle: 'short', timeStyle: 'short' }) {
+  if (!value) return ''
+  try { return new Date(value).toLocaleString('pt-BR', opts) } catch { return String(value) }
+}
+function idade(value) {
+  if (!value) return 'sem hora'
+  const min = Math.round((Date.now() - new Date(value).getTime()) / 60000)
+  if (min < 1) return 'agora'
+  if (min < 90) return `há ${min} min`
+  if (min < 48 * 60) return `há ${(min / 60).toFixed(1)} h`
+  return `há ${Math.round(min / 1440)} d`
+}
+function corPct(p) {
+  if (p == null) return 'text-zinc-500'
+  if (p >= TETO) return 'text-rose-300'
+  if (p >= TETO - 15) return 'text-amber-300'
+  return 'text-emerald-300'
+}
+function bordaPct(p) {
+  if (p == null) return 'border-white/6 bg-white/[0.03]'
+  if (p >= TETO) return 'border-rose-500/50 bg-rose-500/[0.07]'
+  if (p >= TETO - 15) return 'border-amber-500/40 bg-amber-500/[0.06]'
+  return 'border-white/6 bg-white/[0.03]'
+}
+
+function StatCard({ label, value, alert, sub }) {
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${alert ? 'border-amber-500/40 bg-amber-500/[0.06]' : 'border-white/6 bg-white/[0.03]'}`}>
+      <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+      {sub && <p className="mt-1 text-xs text-zinc-500">{sub}</p>}
+    </div>
+  )
+}
+
+function Chip({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs transition ${active ? 'border-[#8bd450]/60 bg-[#8bd450]/15 text-[#c9f28f]' : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]'}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ─── Gates ────────────────────────────────────────────────────────────────
+
+function GateCard({ gate, onResponder }) {
+  const [escolha, setEscolha] = useState(null)
+  const [nota, setNota] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState(null)
+  const [verCtx, setVerCtx] = useState(gate.urg)
+  const aberto = gate.estado === 'aberto'
+
+  async function gravar() {
+    if (!escolha) return
+    setEnviando(true)
+    setErro(null)
+    try {
+      await onResponder(gate, { escolha, nota })
+      setEscolha(null)
+      setNota('')
+    } catch (e) {
+      setErro(e.message || 'falha ao gravar')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className={`rounded-2xl border p-4 sm:p-5 ${gate.urg && aberto ? 'border-rose-500/40 bg-rose-500/[0.04]' : 'border-white/8 bg-white/[0.03]'}`}>
+      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-zinc-300">{gate.id}</span>
+        <span className="text-zinc-400">{gate.projeto_nome || gate.frente || gate.projeto}</span>
+        {gate.urg && aberto && <span className="rounded-full border border-rose-500/40 bg-rose-500/15 px-2 py-0.5 font-semibold uppercase tracking-wide text-rose-200">urgente</span>}
+        {!aberto && (
+          <span className={`rounded-full border px-2 py-0.5 uppercase tracking-wide ${gate.estado === 'respondido' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-500/40 bg-zinc-500/10 text-zinc-300'}`}>
+            {gate.estado === 'respondido' ? `respondido ${gate.escolha || ''}` : 'expirado'}
+          </span>
+        )}
+        <span className="ml-auto text-zinc-600">{gate.ts_aberto ? `aberto ${fmtData(gate.ts_aberto)}` : 'abertura não medida'}</span>
+      </div>
+
+      <h3 className="mt-2 text-[15px] font-semibold leading-snug text-white">{gate.titulo}</h3>
+      {gate.why && <p className="mt-1 text-xs text-zinc-500">Por que é seu · {gate.why}</p>}
+
+      {(gate.ctx || []).length > 0 && (
+        <div className="mt-3">
+          <button onClick={() => setVerCtx((v) => !v)} className="text-xs text-sky-300 hover:underline">
+            {verCtx ? 'esconder contexto' : `ver contexto (${gate.ctx.length})`}
+          </button>
+          {verCtx && (
+            <div className="mt-2 space-y-2 border-l border-white/10 pl-3">
+              {gate.ctx.map((p, i) => <p key={i} className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">{String(p)}</p>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(gate.opts || []).length > 0 && (
+        <div className="mt-4 space-y-2">
+          {gate.opts.map((o, i) => {
+            const [letra, rotulo, consequencia] = Array.isArray(o) ? o : [String(i + 1), String(o), '']
+            const sel = escolha === letra || (!aberto && gate.escolha === letra)
+            return (
+              <button
+                key={letra + i}
+                disabled={!aberto || enviando}
+                onClick={() => setEscolha(letra)}
+                className={`block w-full rounded-xl border px-3 py-2 text-left transition disabled:cursor-default ${sel ? 'border-[#8bd450]/60 bg-[#8bd450]/10' : 'border-white/10 bg-black/20 hover:bg-white/[0.05]'}`}
+              >
+                <span className="text-sm font-semibold text-white"><span className="mr-2 font-mono text-[#c9f28f]">{letra}</span>{rotulo}</span>
+                {consequencia && <span className="mt-0.5 block text-xs leading-relaxed text-zinc-400">{consequencia}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {gate.rec && (
+        <p className="mt-3 rounded-lg border border-[#8bd450]/20 bg-[#8bd450]/[0.06] px-3 py-2 text-[13px] leading-relaxed text-zinc-200">
+          <span className="font-semibold text-[#c9f28f]">Recomendação · </span>{gate.rec}
+        </p>
+      )}
+
+      {aberto ? (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-start">
+          <textarea
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            rows={2}
+            placeholder="nota (opcional): o que muda, o que quer que se faça…"
+            className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-sky-500/40 focus:outline-none"
+          />
+          <button
+            disabled={!escolha || enviando}
+            onClick={gravar}
+            className="rounded-lg bg-gradient-to-br from-[#8bd450] to-emerald-400 px-4 py-2 text-sm font-semibold text-zinc-950 hover:opacity-90 disabled:opacity-40"
+          >
+            {enviando ? 'Gravando…' : escolha ? `Responder ${escolha}` : 'Escolha uma opção'}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 text-xs text-zinc-400">
+          {gate.nota && <p className="whitespace-pre-wrap text-zinc-300">«{gate.nota}»</p>}
+          <p className="mt-1 text-zinc-600">{gate.ts_resposta ? `respondido ${fmtData(gate.ts_resposta)}` : ''}{gate.origem ? ` · origem ${gate.origem}` : ''}</p>
+        </div>
+      )}
+      {erro && <p className="mt-2 text-xs text-rose-300">{erro}</p>}
+    </div>
+  )
+}
+
+function AbaGates({ dados, onResponder }) {
+  const [projeto, setProjeto] = useState('')
+  const [verHistorico, setVerHistorico] = useState(false)
+  const gates = (dados?.gates || []).filter((g) => !projeto || g.projeto === projeto)
+  const abertos = gates.filter((g) => g.estado === 'aberto')
+  const historico = gates.filter((g) => g.estado !== 'aberto')
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Chip active={!projeto} onClick={() => setProjeto('')}>todos</Chip>
+        {(dados?.projetos || []).map((p) => (
+          <Chip key={p.id} active={projeto === p.id} onClick={() => setProjeto(p.id)}>{p.nome}</Chip>
+        ))}
+      </div>
+      {abertos.length === 0 ? (
+        <p className="rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-500">Nada à sua espera{projeto ? ' neste projeto' : ''}.</p>
+      ) : (
+        <div className="space-y-3">
+          {abertos.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} />)}
+        </div>
+      )}
+      <div className="mt-8">
+        <button onClick={() => setVerHistorico((v) => !v)} className="text-sm text-zinc-400 hover:text-white">
+          {verHistorico ? '▾' : '▸'} Histórico · {historico.length} respondido{historico.length === 1 ? '' : 's'}/expirado{historico.length === 1 ? '' : 's'}
+        </button>
+        {verHistorico && (
+          <div className="mt-3 space-y-3">
+            {historico.map((g) => <GateCard key={g.id} gate={g} onResponder={onResponder} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Contas ───────────────────────────────────────────────────────────────
+
+function CartaoConta({ c }) {
+  const pico = Math.max(c.pct_semana ?? -1, c.pct_fable ?? -1)
+  const p = pico < 0 ? null : pico
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${bordaPct(p)}`}>
+      <div className="flex items-baseline justify-between">
+        <p className="text-sm font-semibold text-white">{c.conta}</p>
+        <p className="text-[11px] text-zinc-500">{c.nivel || ''}</p>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {[['semana', c.pct_semana], ['Fable', c.pct_fable], ['sessão', c.pct_sessao]].map(([r, v]) => (
+          <div key={r}>
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500">{r}</p>
+            <p className={`text-xl font-semibold ${corPct(v)}`}>{v == null ? '—' : `${v}%`}</p>
+          </div>
+        ))}
+      </div>
+      {c.pct_desconhecido != null && c.pct_semana == null && (
+        <p className="mt-1 text-[11px] text-zinc-500">{c.pct_desconhecido}% no log (limite não identificado)</p>
+      )}
+      <p className="mt-2 text-xs text-zinc-400">{c.usd != null ? `US$ ${Math.round(c.usd).toLocaleString('en-US')} medidos` : 'gasto não medido'}{c.extra?.ativas != null ? ` · ${c.extra.ativas} ativas` : ''}</p>
+      <p className="mt-1 text-[11px] text-zinc-600">leitura {idade(c.ts)} · {fmtData(c.ts)} · fonte {c.fonte}</p>
+    </div>
+  )
+}
+
+function AbaContas({ serie, dias, setDias }) {
+  const linhas = serie?.linhas || []
+  const contas = serie?.contas || []
+  const grafico = useMemo(() => {
+    // pivot por instante (arredondado ao minuto): uma linha por conta e por tipo de limite
+    const porTs = new Map()
+    for (const l of linhas) {
+      const t = Math.round(new Date(l.ts).getTime() / 60000) * 60000
+      const row = porTs.get(t) || { t }
+      if (l.pct_semana != null) row[`${l.conta} semana`] = l.pct_semana
+      if (l.pct_fable != null) row[`${l.conta} Fable`] = l.pct_fable
+      if (l.pct_sessao != null) row[`${l.conta} sessão`] = l.pct_sessao
+      porTs.set(t, row)
+    }
+    return [...porTs.values()].sort((a, b) => a.t - b.t)
+  }, [linhas])
+  const series = useMemo(() => {
+    const out = []
+    contas.forEach((c, i) => {
+      out.push({ k: `${c} semana`, cor: CORES[i % CORES.length], dash: '' })
+      out.push({ k: `${c} Fable`, cor: CORES[i % CORES.length], dash: '2 4' })
+      out.push({ k: `${c} sessão`, cor: CORES[i % CORES.length], dash: '6 3' })
+    })
+    return out.filter((s) => grafico.some((r) => r[s.k] != null))
+  }, [contas, grafico])
+  const ultimas = [...linhas].reverse().slice(0, 40)
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {(serie?.ultimas || []).map((c) => <CartaoConta key={c.conta} c={c} />)}
+        {!(serie?.ultimas || []).length && <p className="text-sm text-zinc-500">Nenhuma leitura ainda. O tick do jarbas escreve aqui a cada 10 min.</p>}
+      </div>
+
+      <div className="mt-6 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-white">% do limite ao longo do tempo</h2>
+        <div className="flex gap-1">
+          {[1, 3, 7, 30].map((d) => <Chip key={d} active={dias === d} onClick={() => setDias(d)}>{d}d</Chip>)}
+        </div>
+      </div>
+      <div className="mt-3 h-64 rounded-2xl border border-white/6 bg-white/[0.02] p-2">
+        {grafico.length < 2 ? (
+          <p className="px-2 py-6 text-center text-xs text-zinc-500">Menos de duas leituras com % na janela. Alargue a janela ou espere o próximo tick.</p>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={grafico} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tick={CHART_TICK} tickLine={false} axisLine={false}
+                tickFormatter={(t) => new Date(t).toLocaleString('pt-BR', dias > 1 ? { day: '2-digit', month: '2-digit' } : { hour: '2-digit', minute: '2-digit' })} />
+              <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} tickFormatter={(v) => v + '%'} />
+              <Tooltip contentStyle={CHART_TOOLTIP} labelFormatter={(t) => fmtData(t)} formatter={(v, n) => [`${v}%`, n]} />
+              <ReferenceLine y={TETO} stroke="#f87171" strokeDasharray="4 4" label={{ value: `${TETO}%`, fill: '#f87171', fontSize: 10, position: 'right' }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {series.map((s) => (
+                <Line key={s.k} type="monotone" dataKey={s.k} stroke={s.cor} strokeDasharray={s.dash} dot={false} connectNulls strokeWidth={1.6} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      <h2 className="mt-6 text-sm font-semibold text-white">Últimas leituras</h2>
+      <div className="mt-2 overflow-x-auto rounded-2xl border border-white/6">
+        <table className="w-full min-w-[560px] text-xs">
+          <thead className="bg-white/[0.03] text-[10px] uppercase tracking-wider text-zinc-500">
+            <tr><th className="px-3 py-2 text-left">quando</th><th className="px-3 py-2 text-left">conta</th><th className="px-3 py-2 text-right">semana</th><th className="px-3 py-2 text-right">Fable</th><th className="px-3 py-2 text-right">sessão</th><th className="px-3 py-2 text-right">US$</th><th className="px-3 py-2 text-left">fonte</th></tr>
+          </thead>
+          <tbody>
+            {ultimas.map((l) => (
+              <tr key={l.id} className="border-t border-white/5 text-zinc-300">
+                <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(l.ts)}</td>
+                <td className="px-3 py-1.5">{l.conta}</td>
+                <td className={`px-3 py-1.5 text-right ${corPct(l.pct_semana)}`}>{l.pct_semana ?? (l.pct_desconhecido != null ? `${l.pct_desconhecido}?` : '—')}</td>
+                <td className={`px-3 py-1.5 text-right ${corPct(l.pct_fable)}`}>{l.pct_fable ?? '—'}</td>
+                <td className="px-3 py-1.5 text-right">{l.pct_sessao ?? '—'}</td>
+                <td className="px-3 py-1.5 text-right">{l.usd != null ? Math.round(l.usd).toLocaleString('en-US') : '—'}</td>
+                <td className="px-3 py-1.5 text-zinc-500">{l.fonte}</td>
+              </tr>
+            ))}
+            {!ultimas.length && <tr><td colSpan={7} className="px-3 py-4 text-center text-zinc-500">sem leituras na janela</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] text-zinc-600">«semana» com «?» = % lida do log do tick, que não diz de que limite era. Nada aqui é estimado: o que não foi medido aparece como —.</p>
+    </div>
+  )
+}
+
+// ─── KPIs ─────────────────────────────────────────────────────────────────
+
+function AbaKpis({ kpi, dias, setDias }) {
+  const [frente, setFrente] = useState('')
+  const itens = (kpi?.itens || []).filter((it) => !frente || it.frente === frente)
+  const colunas = useMemo(() => {
+    const presentes = new Set(kpi?.metricas || [])
+    const ordenadas = METRICAS.filter(([k]) => presentes.has(k))
+    const extras = [...presentes].filter((k) => !METRICAS.some(([m]) => m === k)).map((k) => [k, k])
+    return [...ordenadas, ...extras]
+  }, [kpi])
+  const totais = useMemo(() => {
+    const t = {}
+    for (const it of itens) for (const [k, v] of Object.entries(it.metrics || {})) if (typeof v === 'number') t[k] = (t[k] || 0) + v
+    return t
+  }, [itens])
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Chip active={!frente} onClick={() => setFrente('')}>todas</Chip>
+        {(kpi?.frentes || []).map((f) => <Chip key={f} active={frente === f} onClick={() => setFrente(f)}>{f}</Chip>)}
+        <div className="ml-auto flex gap-1">
+          {[7, 14, 30].map((d) => <Chip key={d} active={dias === d} onClick={() => setDias(d)}>{d}d</Chip>)}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {colunas.slice(0, 8).map(([k, rotulo, fmt]) => (
+          <StatCard key={k} label={rotulo} value={totais[k] != null ? (fmt ? fmt(totais[k]) : totais[k]) : '—'} sub={`soma em ${dias}d`} />
+        ))}
+        {!colunas.length && <p className="col-span-2 text-sm text-zinc-500 sm:col-span-4">Nenhum KPI gravado na janela. Os coletores escrevem em POST /api/painel/kpi.</p>}
+      </div>
+
+      <div className="mt-6 overflow-x-auto rounded-2xl border border-white/6">
+        <table className="w-full min-w-[640px] text-xs">
+          <thead className="bg-white/[0.03] text-[10px] uppercase tracking-wider text-zinc-500">
+            <tr>
+              <th className="px-3 py-2 text-left">dia</th>
+              <th className="px-3 py-2 text-left">frente</th>
+              {colunas.map(([k, rotulo]) => <th key={k} className="px-3 py-2 text-right">{rotulo}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {itens.map((it) => (
+              <tr key={it.dia + it.frente} className="border-t border-white/5 text-zinc-300">
+                <td className="px-3 py-1.5 whitespace-nowrap">{it.dia.slice(5)}</td>
+                <td className="px-3 py-1.5">{it.frente}</td>
+                {colunas.map(([k, , fmt]) => {
+                  const v = it.metrics?.[k]
+                  return (
+                    <td key={k} className={`px-3 py-1.5 text-right ${v == null ? 'text-zinc-600' : ''}`} title={it.fontes?.[k] ? `fonte: ${it.fontes[k]}` : 'não medido'}>
+                      {v == null ? 'não medido' : fmt ? fmt(v) : typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+            {!itens.length && <tr><td colSpan={2 + colunas.length} className="px-3 py-4 text-center text-zinc-500">sem linhas na janela</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] text-zinc-600">Passe o rato numa célula para ver a fonte. «não medido» é ausência de coletor, nunca zero.</p>
+    </div>
+  )
+}
+
+// ─── Página ───────────────────────────────────────────────────────────────
+
+export default function Painel() {
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.some(([t]) => t === params.get('tab')) ? params.get('tab') : 'gates'
+  const [resumo, setResumo] = useState(null)
+  const [gates, setGates] = useState(null)
+  const [serie, setSerie] = useState(null)
+  const [kpi, setKpi] = useState(null)
+  const [diasSerie, setDiasSerie] = useState(7)
+  const [diasKpi, setDiasKpi] = useState(14)
+  const [erro, setErro] = useState(null)
+  const [atualizado, setAtualizado] = useState(null)
+
+  const carregar = useCallback(async () => {
+    try {
+      const [r, g] = await Promise.all([getPainelResumo(), getPainelGates()])
+      setResumo(r)
+      setGates(g)
+      if (tab === 'contas') setSerie(await getPainelSerie({ dias: diasSerie }))
+      if (tab === 'kpis') setKpi(await getPainelKpi({ dias: diasKpi }))
+      setErro(null)
+      setAtualizado(new Date())
+    } catch (e) {
+      setErro(e.message || 'falha ao carregar')
+    }
+  }, [tab, diasSerie, diasKpi])
+
+  useEffect(() => {
+    carregar()
+    const t = setInterval(carregar, POLL_MS)
+    return () => clearInterval(t)
+  }, [carregar])
+
+  async function responder(gate, { escolha, nota }) {
+    await responderPainelGate(gate.id, { escolha, nota })
+    await carregar()
+  }
+
+  const contas = resumo?.contas || []
+  return (
+    <div className="mx-auto max-w-5xl px-1 py-4 sm:px-4 sm:py-6">
+      <header className="mb-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="text-xl font-semibold text-white">Painel de Regência</h1>
+          <p className="text-[11px] text-zinc-600">{atualizado ? `atualizado ${atualizado.toLocaleTimeString('pt-BR')}` : 'carregando…'}</p>
+        </div>
+        <p className="mt-1 text-sm text-zinc-400">Gates à sua espera, as duas contas ao longo do tempo e o que as frentes entregam por dia.</p>
+      </header>
+
+      {erro && <p className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{erro}</p>}
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Aguardando você" value={resumo?.gates?.abertos ?? '—'} alert={(resumo?.gates?.abertos || 0) > 0} sub={resumo ? `${resumo.gates.urgentes} urgente${resumo.gates.urgentes === 1 ? '' : 's'}` : ''} />
+        <StatCard label="Respondidos hoje" value={resumo?.gates?.respondidos_hoje ?? '—'} sub={resumo ? `${resumo.gates.respondidos} no total · ${resumo.gates.expirados} expirados` : ''} />
+        {contas.slice(0, 2).map((c) => {
+          const p = c.pct_semana ?? c.pct_desconhecido
+          return <StatCard key={c.conta} label={`Conta ${c.conta}`} value={p == null ? '—' : `${p}%`} alert={p != null && p >= TETO - 15} sub={`${c.pct_fable != null ? `Fable ${c.pct_fable}% · ` : ''}${idade(c.ts)}`} />
+        })}
+        {contas.length === 0 && <StatCard label="Contas" value="—" sub="sem leitura" />}
+      </div>
+
+      <div className="mb-5 flex gap-1 border-b border-white/6">
+        {TABS.map(([id, rotulo]) => (
+          <button
+            key={id}
+            onClick={() => setParams({ tab: id })}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === id ? 'border-[#8bd450] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+          >
+            {rotulo}
+            {id === 'gates' && resumo?.gates?.abertos > 0 && <span className="ml-1.5 rounded-full bg-[#8bd450]/20 px-1.5 text-[10px] text-[#c9f28f]">{resumo.gates.abertos}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'gates' && <AbaGates dados={gates} onResponder={responder} />}
+      {tab === 'contas' && <AbaContas serie={serie} dias={diasSerie} setDias={setDiasSerie} />}
+      {tab === 'kpis' && <AbaKpis kpi={kpi} dias={diasKpi} setDias={setDiasKpi} />}
+    </div>
+  )
+}
