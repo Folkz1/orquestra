@@ -93,6 +93,19 @@ def estado_efetivo(g: PainelGate, ref: Optional[datetime] = None) -> str:
     return g.estado
 
 
+# ⛔ A nota é escrita pelo Diego à pressa, no telemóvel, e em 09/09 ele colou lá credenciais de contas
+# de um cliente. Oito orquestradores fazem poll destas rotas. Por isso a nota vai TRUNCADA em tudo o que
+# é listagem; inteira só no cartão (`/gates/{id}`) e para quem pedir `notas=inteiras` de propósito.
+NOTA_CURTA = 120
+
+
+def encolher_nota(d: dict) -> dict:
+    n = d.get("nota")
+    if n and len(n) > NOTA_CURTA:
+        d = {**d, "nota": n[:NOTA_CURTA] + "…", "nota_truncada": True, "nota_chars": len(n)}
+    return d
+
+
 def gate_dict(g: PainelGate, ref: Optional[datetime] = None) -> dict:
     return {
         "id": g.id,
@@ -232,6 +245,7 @@ async def listar_gates(
     projeto: Optional[str] = Query(default=None),
     desde: Optional[str] = Query(default=None, description="ISO: só gates respondidos/atualizados a partir daqui"),
     limit: int = Query(default=500, ge=1, le=2000),
+    notas: str = Query(default="curtas", description="curtas (padrão) | inteiras"),
     db: AsyncSession = Depends(get_db),
 ):
     if estado and estado not in ESTADOS:
@@ -257,7 +271,7 @@ async def listar_gates(
         "gerado": ref.isoformat(),
         "total": len(rows),
         "projetos": [{"id": k, "nome": v or k, "frente": frente_de(k)} for k, v in sorted(projetos.items())],
-        "gates": [gate_dict(g, ref) for g in rows],
+        "gates": [gate_dict(g, ref) if notas == "inteiras" else encolher_nota(gate_dict(g, ref)) for g in rows],
     }
 
 
@@ -352,6 +366,7 @@ async def decisoes(
     desde: Optional[str] = Query(default=None, description="ISO: só respostas dadas depois deste instante"),
     projeto: Optional[str] = Query(default=None),
     limit: int = Query(default=200, ge=1, le=2000),
+    notas: str = Query(default="curtas", description="curtas (padrão) | inteiras"),
     db: AsyncSession = Depends(get_db),
 ):
     """As respostas do Diego, para quem espera por elas. A regência e o orq dono do gate fazem poll disto e
@@ -381,7 +396,16 @@ async def decisoes(
                 "executado_prova": g.executado_prova,
                 "sessao": (g.extra or {}).get("sessao"),
                 "opts": g.opts or [],
-            }
+            } if notas == "inteiras" else encolher_nota({
+                "id": g.id, "projeto": g.projeto, "frente": frente_de(g.projeto), "titulo": g.titulo,
+                "escolha": g.escolha, "nota": g.nota,
+                "respondido_em": g.ts_resposta.isoformat() if g.ts_resposta else None,
+                "por": g.respondido_por,
+                "executado_em": g.executado_em.isoformat() if g.executado_em else None,
+                "executado_prova": g.executado_prova,
+                "sessao": (g.extra or {}).get("sessao"),
+                "opts": g.opts or [],
+            })
             for g in rows
         ],
     }
@@ -441,6 +465,7 @@ def telemetria_dict(t: PainelTelemetria) -> dict:
         # a % do limite e o gasto têm idades diferentes: a primeira é colhida por outro coletor, mais
         # devagar. O Diego leu 30% quando o app dizia 37% porque só se mostrava UMA idade, a do gasto.
         "limites_ts": (t.extra or {}).get("limitesColhidosEm") or t.ts.isoformat(),
+        "limites_fonte": t.fonte,
         "conta": t.conta,
         "limites": t.limites or [],
         **pcts(t.limites or []),
@@ -502,6 +527,24 @@ async def ultimas_por_conta(db: AsyncSession, conta: Optional[str] = None) -> li
     q = q.order_by(PainelTelemetria.ts.desc()).limit(600)
     rows = list((await db.execute(q)).scalars().all())
     return escolher_ultimas(rows)
+
+
+async def ultima_com_percentagem(db: AsyncSession, conta: Optional[str] = None) -> dict[str, PainelTelemetria]:
+    """A última leitura de cada conta que TRAZ a % do limite, sem janela nenhuma.
+
+    ⛔ Uma leitura sem % NUNCA apaga a % conhecida. Medido em 09/09 às 19:58: o coletor do servidor
+    corre a cada minuto e não tem lá o ficheiro do /usage, portanto manda `limites: []`; como era a mais
+    recente, o cartão do Diego passou a mostrar «—» onde dizia 38%. O gasto e a % vêm de coletores
+    diferentes, com ritmos diferentes — cada um sobrevive por si, e a idade de cada um vai à tela."""
+    q = select(PainelTelemetria)
+    if conta:
+        q = q.where(PainelTelemetria.conta == conta)
+    out: dict[str, PainelTelemetria] = {}
+    for t in (await db.execute(q.order_by(PainelTelemetria.ts.desc()).limit(400))).scalars().all():
+        p = pcts(t.limites or [])
+        if any(p[k] is not None for k in ("pct_semana", "pct_fable", "pct_sessao")):
+            out.setdefault(t.conta, t)
+    return out
 
 
 def leitura_completa(t: PainelTelemetria) -> bool:
@@ -603,9 +646,11 @@ async def serie(
     # a última leitura de cada conta (com limites, se houver), mesmo fora da janela pedida
     ultimas = await ultimas_por_conta(db, conta)
     recentes = await mais_recentes_por_conta(db, conta)
+    com_pct = await ultima_com_percentagem(db, conta)
     ultimas_d = []
     for t in ultimas:
-        d = telemetria_dict(t)
+        base = com_pct.get(t.conta) or t          # a % sobrevive à leitura que não a traz
+        d = telemetria_dict(base)
         r = recentes.get(t.conta)
         d["agora"] = bloco_agora(r) if r is not None else None
         ultimas_d.append(d)
@@ -852,12 +897,21 @@ async def resumo(db: AsyncSession = Depends(get_db)):
     respondidos = [g for g in gates if estado_efetivo(g, ref) == "respondido"]
     ultimas = await ultimas_por_conta(db)
     recentes = await mais_recentes_por_conta(db)
+    com_pct = await ultima_com_percentagem(db)
     contas = []
     for t in ultimas:
-        d = telemetria_dict(t)
+        base = com_pct.get(t.conta) or t          # a % sobrevive à leitura que não a traz
+        d = telemetria_dict(base)
         r = recentes.get(t.conta)
         d["agora"] = bloco_agora(r) if r is not None else None
         contas.append(d)
+    for conta, t in com_pct.items():              # conta que só aparece na leitura com %
+        if not any(c["conta"] == conta for c in contas):
+            d = telemetria_dict(t)
+            r = recentes.get(conta)
+            d["agora"] = bloco_agora(r) if r is not None else None
+            contas.append(d)
+    contas.sort(key=lambda c: c["conta"])
     return {
         "gerado": ref.isoformat(),
         "gates": {

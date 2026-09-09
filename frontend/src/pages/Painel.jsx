@@ -144,16 +144,34 @@ function Chip({ active, onClick, children }) {
 
 // ─── Gates ────────────────────────────────────────────────────────────────
 
+// ⛔ Em 09/09 o Diego colou credenciais de um cliente no campo de nota, do telemóvel, à pressa. Isto
+// não impede — avisa antes de gravar, porque a nota viaja para o poll de oito orquestradores.
+const PADRAO_CREDENCIAL = [
+  [/senha\s*[:=]\s*\S/i, 'senha:'],
+  [/password\s*[:=]\s*\S/i, 'password:'],
+  [/api[_-]?key\s*[:=]\s*\S/i, 'apikey:'],
+  [/sk-[a-zA-Z0-9]{16,}/, 'chave sk-'],
+  [/gh[pous]_[A-Za-z0-9]{20,}/, 'token do GitHub'],
+  [/[\w.+-]+@[\w.-]+\.\w+\s*[:|]\s*\S{6,}/, 'email:senha'],
+]
+function cheiraACredencial(txt) {
+  return PADRAO_CREDENCIAL.filter(([re]) => re.test(txt || '')).map(([, nome]) => nome)
+}
+
 function GateCard({ gate, onResponder, destacado }) {
   const [escolha, setEscolha] = useState(null)
   const [nota, setNota] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [confirmou, setConfirmou] = useState(false)
   const [erro, setErro] = useState(null)
   const [verCtx, setVerCtx] = useState(gate.urg)
   const aberto = gate.estado === 'aberto'
 
+  const suspeita = cheiraACredencial(nota)
+
   async function gravar() {
     if (!escolha) return
+    if (suspeita.length && !confirmou) { setConfirmou(true); return }   // um aviso, não um bloqueio
     setEnviando(true)
     setErro(null)
     try {
@@ -235,15 +253,17 @@ function GateCard({ gate, onResponder, destacado }) {
             value={nota}
             onChange={(e) => setNota(e.target.value)}
             rows={2}
-            placeholder="nota (opcional): o que muda, o que quer que se faça…"
-            className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-sky-500/40 focus:outline-none"
+            placeholder="nota (opcional): o que muda, o que quer que se faça — sem senhas nem chaves"
+            className={`flex-1 rounded-lg border bg-black/30 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none ${suspeita.length ? 'border-amber-500/60' : 'border-white/10 focus:border-sky-500/40'}`}
           />
           <button
             disabled={!escolha || enviando}
             onClick={gravar}
-            className="rounded-lg bg-gradient-to-br from-[#8bd450] to-emerald-400 px-4 py-2 text-sm font-semibold text-zinc-950 hover:opacity-90 disabled:opacity-40"
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-zinc-950 hover:opacity-90 disabled:opacity-40 ${suspeita.length && !confirmou ? 'bg-gradient-to-br from-amber-400 to-amber-300' : 'bg-gradient-to-br from-[#8bd450] to-emerald-400'}`}
           >
-            {enviando ? 'Gravando…' : escolha ? `Responder ${escolha}` : 'Escolha uma opção'}
+            {enviando ? 'Gravando…'
+              : suspeita.length && !confirmou ? 'Gravar mesmo assim'
+              : escolha ? `Responder ${escolha}` : 'Escolha uma opção'}
           </button>
         </div>
       ) : (
@@ -260,6 +280,12 @@ function GateCard({ gate, onResponder, destacado }) {
             <p className="mt-1 text-amber-300/80">à espera de execução pela frente</p>
           ) : null}
         </div>
+      )}
+      {suspeita.length > 0 && (
+        <p className="mt-2 text-xs text-amber-300">
+          Isto parece uma credencial ({suspeita.join(', ')}). A nota fica gravada e viaja para as frentes que
+          esperam a decisão. Ponha a senha no cofre e escreva aqui só onde ela está.
+        </p>
       )}
       {erro && <p className="mt-2 text-xs text-rose-300">{erro}</p>}
     </div>

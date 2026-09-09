@@ -811,7 +811,9 @@ export function getPainelResumo() {
   return request('/api/painel/resumo');
 }
 export function getPainelGates(params = {}) {
-  return request(`/api/painel/gates${painelQs(params)}`);
+  // o painel é o cartão: aqui a nota vai inteira. As listagens e o poll dos orquestradores levam-na
+  // truncada, porque a nota é escrita à pressa e já lá foram parar credenciais.
+  return request(`/api/painel/gates${painelQs({ notas: 'inteiras', ...params })}`);
 }
 export function responderPainelGate(id, data) {
   return request(`/api/painel/gates/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) });
