@@ -390,7 +390,8 @@ async def decisoes(
 # ─── Telemetria (série) ───────────────────────────────────────────────────
 
 _CAMPOS_CONTA_EXTRA = ("respostas", "sessoes", "ativas", "estimado", "pico", "regra", "teto", "lidoMs", "manual", "fonte")
-_CAMPOS_LEITURA_EXTRA = ("remotoOk", "sessoesJarbas", "origens", "janela", "regua", "total", "gerado", "colhidoEm")
+_CAMPOS_LEITURA_EXTRA = ("remotoOk", "sessoesJarbas", "origens", "janela", "regua", "total", "gerado",
+                         "colhidoEm", "cobertura", "medido_ms", "ficheiros", "lidos")
 
 
 def pcts(limites: list) -> dict:
@@ -414,6 +415,20 @@ def pcts(limites: list) -> dict:
     return out
 
 
+def bloco_agora(t: PainelTelemetria) -> dict:
+    """O que muda a cada minuto, com a hora e a cobertura à vista. `cobertura` diz o que esta leitura
+    NÃO viu — sem isso, um total que cai porque o servidor não entrou parece boa notícia."""
+    extra = t.extra or {}
+    return {
+        "usd": t.usd,
+        "ativas": extra.get("ativas"),
+        "respostas": extra.get("respostas"),
+        "ts": t.ts.isoformat(),
+        "fonte": t.fonte,
+        "cobertura": extra.get("cobertura") or (extra.get("leitura") or {}).get("cobertura"),
+    }
+
+
 def telemetria_dict(t: PainelTelemetria) -> dict:
     return {
         "id": t.id,
@@ -426,6 +441,40 @@ def telemetria_dict(t: PainelTelemetria) -> dict:
         "fonte": t.fonte,
         "extra": t.extra or {},
     }
+
+
+async def mais_recentes_por_conta(db: AsyncSession, conta: Optional[str] = None,
+                                  janela_min: float = 5.0) -> dict[str, PainelTelemetria]:
+    """O número que mexe, por conta.
+
+    ⛔ NÃO é simplesmente «a mais recente». Duas máquinas medem ao mesmo tempo e veem conjuntos
+    diferentes: o PC do Diego via 32.618 dólares e 320 sessões, o jarbas via 22.574 e 201, ambos
+    corretos para o que alcançam. Mostrar sempre a última faria o total saltar de 32 mil para 22 mil
+    de minuto a minuto — pior do que estar parado, porque parece que o gasto desceu.
+    Regra: entre as leituras dos últimos `janela_min`, fica a que VIU MAIS SESSÕES; empate, a mais
+    recente. Fora dessa janela, a mais recente que houver."""
+    q = select(PainelTelemetria)
+    if conta:
+        q = q.where(PainelTelemetria.conta == conta)
+    linhas = list((await db.execute(q.order_by(PainelTelemetria.ts.desc()).limit(300))).scalars().all())
+    if not linhas:
+        return {}
+    agora_ts = max(t.ts for t in linhas)
+    corte = agora_ts - timedelta(minutes=janela_min)
+
+    def cobertura(t: PainelTelemetria) -> int:
+        v = (t.extra or {}).get("sessoes")
+        return int(v) if isinstance(v, (int, float)) else -1
+
+    out: dict[str, PainelTelemetria] = {}
+    for t in linhas:                                    # já vem por ts desc
+        atual = out.get(t.conta)
+        if atual is None:
+            out[t.conta] = t
+            continue
+        if t.ts >= corte and atual.ts >= corte and cobertura(t) > cobertura(atual):
+            out[t.conta] = t
+    return out
 
 
 async def ultimas_por_conta(db: AsyncSession, conta: Optional[str] = None) -> list[PainelTelemetria]:
@@ -486,6 +535,8 @@ async def _gravar_leitura(db: AsyncSession, leitura: dict, fonte_padrao: str) ->
         except (TypeError, ValueError):
             usd = None
         extra = {k: c[k] for k in _CAMPOS_CONTA_EXTRA if k in c}
+        if leitura.get("cobertura"):
+            extra["cobertura"] = leitura["cobertura"]
         if extra_leitura:
             extra["leitura"] = extra_leitura
         stmt = pg_insert(PainelTelemetria).values(
@@ -536,6 +587,13 @@ async def serie(
 
     # a última leitura de cada conta (com limites, se houver), mesmo fora da janela pedida
     ultimas = await ultimas_por_conta(db, conta)
+    recentes = await mais_recentes_por_conta(db, conta)
+    ultimas_d = []
+    for t in ultimas:
+        d = telemetria_dict(t)
+        r = recentes.get(t.conta)
+        d["agora"] = bloco_agora(r) if r is not None else None
+        ultimas_d.append(d)
     return {
         "gerado": ref.isoformat(),
         "desde": ini.isoformat(),
@@ -543,7 +601,7 @@ async def serie(
         "contas": sorted({t.conta for t in linhas} | {t.conta for t in ultimas}),
         "fontes": sorted({t.fonte for t in linhas}),
         "linhas": [telemetria_dict(t) for t in linhas],
-        "ultimas": [telemetria_dict(t) for t in ultimas],
+        "ultimas": ultimas_d,
     }
 
 
@@ -778,6 +836,13 @@ async def resumo(db: AsyncSession = Depends(get_db)):
     expirados = [g for g in gates if estado_efetivo(g, ref) == "expirado"]
     respondidos = [g for g in gates if estado_efetivo(g, ref) == "respondido"]
     ultimas = await ultimas_por_conta(db)
+    recentes = await mais_recentes_por_conta(db)
+    contas = []
+    for t in ultimas:
+        d = telemetria_dict(t)
+        r = recentes.get(t.conta)
+        d["agora"] = bloco_agora(r) if r is not None else None
+        contas.append(d)
     return {
         "gerado": ref.isoformat(),
         "gates": {
@@ -790,5 +855,5 @@ async def resumo(db: AsyncSession = Depends(get_db)):
             "expirados": len(expirados),
             "total": len(gates),
         },
-        "contas": [telemetria_dict(t) for t in ultimas],
+        "contas": contas,
     }

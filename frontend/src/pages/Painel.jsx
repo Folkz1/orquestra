@@ -9,6 +9,7 @@ import { getPainelGates, getPainelKpi, getPainelPlacar, getPainelResumo, getPain
 // Mobile primeiro: uma coluna, cartões, tabelas com scroll próprio, âncora #gate-<id> por cartão.
 
 const POLL_MS = 30000
+const POLL_AGORA_MS = 15000   // o consumo mexe a cada minuto; o resto do painel não precisa disto
 const TABS = [
   ['gates', 'Gates'],
   ['frentes', 'Frentes'],
@@ -57,6 +58,13 @@ const NAO_SOMAVEL = new Set(['valor_custo', 'custo_pct_limite', 'retrabalho_pct'
 function fmtData(value, opts = { dateStyle: 'short', timeStyle: 'short' }) {
   if (!value) return ''
   try { return new Date(value).toLocaleString('pt-BR', opts) } catch { return String(value) }
+}
+// idade em SEGUNDOS enquanto é recente: é o que prova ao Diego que o número é de agora e não de há uma hora
+function idadeCurta(value) {
+  if (!value) return 'sem hora'
+  const s = Math.round((Date.now() - new Date(value).getTime()) / 1000)
+  if (s < 90) return `há ${s}s`
+  return idade(value)
 }
 function idade(value) {
   if (!value) return 'sem hora'
@@ -320,6 +328,28 @@ function AbaFrentes({ placar, dias, setDias }) {
 
 // ─── Contas ───────────────────────────────────────────────────────────────
 
+// O gasto e as sessões ativas vêm de uma leitura diferente da do % do limite: aquela custa dinheiro e
+// refresca devagar, esta é de graça e refresca a cada minuto. Mostrar as duas horas evita o erro de ler
+// um número de há uma hora como se fosse de agora.
+function BlocoAgora({ agora, fallbackUsd }) {
+  if (!agora) {
+    return <p className="mt-2 text-xs text-zinc-400">{fallbackUsd != null ? `US$ ${Math.round(fallbackUsd).toLocaleString('en-US')} medidos` : 'gasto não medido'}</p>
+  }
+  const parcial = agora.cobertura && agora.cobertura !== 'completa'
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-zinc-300">
+        {agora.usd != null ? `US$ ${Math.round(agora.usd).toLocaleString('en-US')}` : '—'}
+        {agora.ativas != null && <span className="text-zinc-500"> · {agora.ativas} {agora.ativas === 1 ? 'sessão ativa' : 'sessões ativas'}</span>}
+      </p>
+      <p className="text-[11px] text-zinc-600">
+        gasto {idadeCurta(agora.ts)}
+        {parcial && <span className="text-amber-500/80"> · só {agora.cobertura}</span>}
+      </p>
+    </div>
+  )
+}
+
 function CartaoConta({ c }) {
   const pico = Math.max(c.pct_semana ?? -1, c.pct_fable ?? -1)
   const p = pico < 0 ? null : pico
@@ -340,8 +370,8 @@ function CartaoConta({ c }) {
       {c.pct_desconhecido != null && c.pct_semana == null && (
         <p className="mt-1 text-[11px] text-zinc-500">{c.pct_desconhecido}% no log (limite não identificado)</p>
       )}
-      <p className="mt-2 text-xs text-zinc-400">{c.usd != null ? `US$ ${Math.round(c.usd).toLocaleString('en-US')} medidos` : 'gasto não medido'}{c.extra?.ativas != null ? ` · ${c.extra.ativas} ativas` : ''}</p>
-      <p className="mt-1 text-[11px] text-zinc-600">leitura {idade(c.ts)} · {fmtData(c.ts)} · fonte {c.fonte}</p>
+      <BlocoAgora agora={c.agora} fallbackUsd={c.usd} />
+      <p className="mt-1 text-[11px] text-zinc-600">% do limite: {idade(c.ts)} · fonte {c.fonte}</p>
     </div>
   )
 }
@@ -563,6 +593,14 @@ export default function Painel() {
     return () => clearInterval(t)
   }, [carregar])
 
+  // o consumo tem ritmo próprio: só o resumo (que traz as contas) volta a buscar de 15 em 15 s
+  useEffect(() => {
+    const t = setInterval(async () => {
+      try { setResumo(await getPainelResumo()); setAtualizado(new Date()) } catch { /* o poll grande reporta */ }
+    }, POLL_AGORA_MS)
+    return () => clearInterval(t)
+  }, [])
+
   // rola até o gate da âncora depois de ele existir no DOM (uma vez só, para o poll não roubar o ecrã)
   useEffect(() => {
     if (!ancora || jaRolou.current || !gates) return
@@ -596,7 +634,9 @@ export default function Painel() {
         <StatCard label="Respondidos hoje" value={resumo?.gates?.respondidos_hoje ?? '—'} sub={resumo ? `${resumo.gates.a_executar ?? 0} por executar · ${resumo.gates.expirados} expirados` : ''} />
         {contas.slice(0, 2).map((c) => {
           const p = c.pct_semana ?? c.pct_desconhecido
-          return <StatCard key={c.conta} label={`Conta ${c.conta}`} value={p == null ? '—' : `${p}%`} alert={p != null && p >= TETO - 15} sub={`${c.pct_fable != null ? `Fable ${c.pct_fable}% · ` : ''}${idade(c.ts)}`} />
+          const ag = c.agora
+          return <StatCard key={c.conta} label={`Conta ${c.conta}`} value={p == null ? '—' : `${p}%`} alert={p != null && p >= TETO - 15}
+            sub={ag ? `US$ ${Math.round(ag.usd || 0).toLocaleString('en-US')} · ${ag.ativas ?? 0} ativas · ${idadeCurta(ag.ts)}` : `${c.pct_fable != null ? `Fable ${c.pct_fable}% · ` : ''}${idade(c.ts)}`} />
         })}
         {contas.length === 0 && <StatCard label="Contas" value="—" sub="sem leitura" />}
       </div>
