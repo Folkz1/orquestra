@@ -93,6 +93,19 @@ def estado_efetivo(g: PainelGate, ref: Optional[datetime] = None) -> str:
     return g.estado
 
 
+# ⛔ A nota é escrita pelo Diego à pressa, no telemóvel, e em 09/09 ele colou lá credenciais de contas
+# de um cliente. Oito orquestradores fazem poll destas rotas. Por isso a nota vai TRUNCADA em tudo o que
+# é listagem; inteira só no cartão (`/gates/{id}`) e para quem pedir `notas=inteiras` de propósito.
+NOTA_CURTA = 120
+
+
+def encolher_nota(d: dict) -> dict:
+    n = d.get("nota")
+    if n and len(n) > NOTA_CURTA:
+        d = {**d, "nota": n[:NOTA_CURTA] + "…", "nota_truncada": True, "nota_chars": len(n)}
+    return d
+
+
 def gate_dict(g: PainelGate, ref: Optional[datetime] = None) -> dict:
     return {
         "id": g.id,
@@ -232,6 +245,7 @@ async def listar_gates(
     projeto: Optional[str] = Query(default=None),
     desde: Optional[str] = Query(default=None, description="ISO: só gates respondidos/atualizados a partir daqui"),
     limit: int = Query(default=500, ge=1, le=2000),
+    notas: str = Query(default="curtas", description="curtas (padrão) | inteiras"),
     db: AsyncSession = Depends(get_db),
 ):
     if estado and estado not in ESTADOS:
@@ -257,7 +271,7 @@ async def listar_gates(
         "gerado": ref.isoformat(),
         "total": len(rows),
         "projetos": [{"id": k, "nome": v or k, "frente": frente_de(k)} for k, v in sorted(projetos.items())],
-        "gates": [gate_dict(g, ref) for g in rows],
+        "gates": [gate_dict(g, ref) if notas == "inteiras" else encolher_nota(gate_dict(g, ref)) for g in rows],
     }
 
 
@@ -352,6 +366,7 @@ async def decisoes(
     desde: Optional[str] = Query(default=None, description="ISO: só respostas dadas depois deste instante"),
     projeto: Optional[str] = Query(default=None),
     limit: int = Query(default=200, ge=1, le=2000),
+    notas: str = Query(default="curtas", description="curtas (padrão) | inteiras"),
     db: AsyncSession = Depends(get_db),
 ):
     """As respostas do Diego, para quem espera por elas. A regência e o orq dono do gate fazem poll disto e
@@ -381,7 +396,16 @@ async def decisoes(
                 "executado_prova": g.executado_prova,
                 "sessao": (g.extra or {}).get("sessao"),
                 "opts": g.opts or [],
-            }
+            } if notas == "inteiras" else encolher_nota({
+                "id": g.id, "projeto": g.projeto, "frente": frente_de(g.projeto), "titulo": g.titulo,
+                "escolha": g.escolha, "nota": g.nota,
+                "respondido_em": g.ts_resposta.isoformat() if g.ts_resposta else None,
+                "por": g.respondido_por,
+                "executado_em": g.executado_em.isoformat() if g.executado_em else None,
+                "executado_prova": g.executado_prova,
+                "sessao": (g.extra or {}).get("sessao"),
+                "opts": g.opts or [],
+            })
             for g in rows
         ],
     }
