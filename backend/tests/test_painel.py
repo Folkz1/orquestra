@@ -218,6 +218,50 @@ def test_contrato_completo_contra_backend_vivo():
     # expirar
     assert c.patch(f"/api/painel/gates/{gid2}", json={"estado": "expirado"}).json()["estado"] == "expirado"
 
+    # ficheiro JSON com o mesmo "atualizado" não reescreve, e o lote diz isso em vez de mentir
+    gid3 = gid + "-F"
+    ficheiro = {"id": gid3, "proj": "casa", "projNome": "Casa (teste)", "titulo": "nascido de ficheiro",
+                "opts": [["A", "sim", ""], ["B", "não", ""]], "atualizado": ts.isoformat(), "sessao": "local_teste"}
+    r = c.post("/api/painel/gates/lote", json=[ficheiro]).json()
+    assert r == {"criados": 1, "atualizados": 0, "inalterados": 0}
+    r = c.post("/api/painel/gates/lote", json=[ficheiro]).json()
+    assert r == {"criados": 0, "atualizados": 0, "inalterados": 1}
+    g = c.get(f"/api/painel/gates/{gid3}").json()
+    assert g["projeto"] == "casa" and g["extra"]["sessao"] == "local_teste" and g["fonte_atualizado"]
+    # carimbo mais novo passa
+    r = c.post("/api/painel/gates/lote", json=[{**ficheiro, "atualizado": (ts + timedelta(minutes=1)).isoformat(),
+                                               "titulo": "texto revisto"}]).json()
+    assert r == {"criados": 0, "atualizados": 1, "inalterados": 0}
+    assert c.get(f"/api/painel/gates/{gid3}").json()["titulo"] == "texto revisto"
+
+    # decisões: a resposta sai do painel para quem espera
+    d = c.get("/api/painel/decisoes", params={"desde": (ts - timedelta(minutes=1)).isoformat()}).json()
+    assert any(x["id"] == gid and x["escolha"] == "B" for x in d["decisoes"])
+    # e o ciclo fecha quando a frente confirma que executou, com prova
+    r = c.patch(f"/api/painel/gates/{gid}", json={"executado_em": ts.isoformat(), "executado_prova": "sha no ar 1234abc, 1/1, health 200"})
+    assert r.json()["executado_em"] and "1234abc" in r.json()["executado_prova"]
+    d = c.get("/api/painel/decisoes").json()
+    assert any(x["id"] == gid and x["executado_em"] for x in d["decisoes"])
+
+    # placar: uma linha por ciclo, com histórico
+    linha = {"projeto": "casa", "dono": "teste", "estado": "a provar o contrato", "proximo": "nada",
+             "prazo": "hoje", "gate": gid, "medido_em": ts.isoformat(), "fonte": "teste"}
+    assert c.post("/api/painel/placar", json=linha).json() == {"gravadas": 1, "ignoradas": 0}
+    assert c.post("/api/painel/placar", json=linha).json() == {"gravadas": 0, "ignoradas": 1}
+    pl = c.get("/api/painel/placar", params={"dias": 1, "projeto": "casa"}).json()
+    assert pl["atual"] and pl["atual"][0]["estado"] == "a provar o contrato"
+
+    # KPI pelo doc kpi/diario inteiro
+    doc = {"gerado": ts.isoformat(), "janela": {"ini": (ts - timedelta(days=1)).isoformat(), "fim": ts.isoformat(), "dias": 1},
+           "linhas": [{"frente": "casa", "sessoes": 2, "entregas": {"deploy_provado": 1},
+                       "gates": {"respondidos": 3}, "custo_usd": 12, "custo_pct_limite": None, "pontos": 5}]}
+    r = c.post("/api/painel/kpi", json=doc).json()
+    assert r["gravados"] == 1 and r["fontes"] == ["valor-sessoes:1d"] and r["frentes"] == ["Cérebro"]
+    k = c.get("/api/painel/kpi", params={"dias": 2, "frente": "Cérebro"}).json()
+    linha_kpi = next(i for i in k["itens"] if i["dia"] == ts.date().isoformat())
+    assert linha_kpi["metrics"]["deploy_provado"] == 1 and linha_kpi["metrics"]["gates_respondidos"] == 3
+    assert "custo_pct_limite" not in linha_kpi["metrics"]      # null não vira zero
+
     # telemetria: a mesma leitura duas vezes grava uma
     leitura = {"colhidoEm": ts.isoformat(), "fonte": "teste-contrato",
                "contas": [{"nome": "TesteContrato", "usd": 1, "nivel": "NORMAL",

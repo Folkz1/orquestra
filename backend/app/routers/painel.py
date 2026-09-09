@@ -177,14 +177,14 @@ class GatePatch(BaseModel):
     origem: Optional[str] = Field(default=None, max_length=80)
 
 
-async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, bool]:
+async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, str]:
     g = await db.get(PainelGate, body.id)
     criado = g is None
     # idempotência do watcher: ficheiro com o mesmo (ou mais velho) "atualizado" não reescreve nada.
     # Sem isto um cron de 30 s reescrevia 150 gates por minuto, e o atualizado_em deixava de dizer algo.
     novo_carimbo = parse_ts(body.fonte_atualizado)
     if not criado and novo_carimbo and g.fonte_atualizado and novo_carimbo <= g.fonte_atualizado:
-        return g, False
+        return g, "inalterado"
     if criado:
         g = PainelGate(id=body.id, projeto=body.projeto, titulo=body.titulo, ctx=[], opts=[], extra={})
         db.add(g)
@@ -215,7 +215,7 @@ async def _upsert_gate(db: AsyncSession, body: GateIn) -> tuple[PainelGate, bool
     # server_default/onupdate expiram criado_em/atualizado_em: sem refresh, ler o objeto dispara IO sincrono
     # dentro do asyncpg (sqlalchemy MissingGreenlet). Medido no staging em 09/09: todo PATCH dava 500.
     await db.refresh(g)
-    return g, criado
+    return g, ("criado" if criado else "atualizado")
 
 
 @router.get("/gates")
@@ -255,20 +255,18 @@ async def listar_gates(
 
 @router.post("/gates", status_code=201)
 async def criar_ou_atualizar_gate(body: GateIn, db: AsyncSession = Depends(get_db)):
-    g, criado = await _upsert_gate(db, body)
-    return {"criado": criado, "gate": gate_dict(g)}
+    g, o_que = await _upsert_gate(db, body)
+    return {"criado": o_que == "criado", "resultado": o_que, "gate": gate_dict(g)}
 
 
 @router.post("/gates/lote", status_code=201)
 async def criar_ou_atualizar_gates(body: list[GateIn], db: AsyncSession = Depends(get_db)):
-    criados = atualizados = 0
+    conta = {"criado": 0, "atualizado": 0, "inalterado": 0}
     for item in body:
-        _, criado = await _upsert_gate(db, item)
-        if criado:
-            criados += 1
-        else:
-            atualizados += 1
-    return {"criados": criados, "atualizados": atualizados}
+        _, o_que = await _upsert_gate(db, item)
+        conta[o_que] += 1
+    return {"criados": conta["criado"], "atualizados": conta["atualizado"],
+            "inalterados": conta["inalterado"]}
 
 
 @router.get("/gates/{gate_id}")
