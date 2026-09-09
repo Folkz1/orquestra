@@ -8,6 +8,11 @@ Integração (opcional): com PAINEL_API_URL e PAINEL_API_TOKEN no ambiente, perc
 backend vivo (staging): cria um gate de teste, responde-o, grava uma leitura de telemetria duas vezes
 (a segunda tem de ser ignorada), grava um KPI e lê a série e o resumo. Sem as variáveis, é saltado.
 
+⛔ Só contra STAGING. O teste deixa rasto (gates GTEST-*, conta "TesteContrato", fonte "teste-contrato"):
+não há DELETE na API de propósito, e em produção isso apareceria no painel do Diego. Limpar no staging:
+  DELETE FROM painel_gates WHERE id LIKE 'GTEST-%'; DELETE FROM painel_telemetria WHERE fonte='teste-contrato';
+  DELETE FROM painel_kpi WHERE fonte='teste';
+
   cd backend && python -m pytest tests/test_painel.py -q
   PAINEL_API_URL=https://... PAINEL_API_TOKEN=... python -m pytest tests/test_painel.py -q -m integracao
 """
@@ -144,14 +149,14 @@ def test_contrato_completo_contra_backend_vivo():
 
     # telemetria: a mesma leitura duas vezes grava uma
     leitura = {"colhidoEm": ts.isoformat(), "fonte": "teste-contrato",
-               "contas": [{"nome": "Diego", "usd": 1, "nivel": "NORMAL",
+               "contas": [{"nome": "TesteContrato", "usd": 1, "nivel": "NORMAL",
                            "limites": [{"kind": "weekly_all", "rotulo": "geral", "percent": 7}]},
-                          {"nome": "Eduardo", "usd": 2, "limites": []}]}
+                          {"nome": "TesteContrato2", "usd": 2, "limites": []}]}
     r1 = c.post("/api/painel/telemetria", json=leitura).json()
     r2 = c.post("/api/painel/telemetria", json=leitura).json()
     assert r1 == {"gravadas": 2, "ignoradas": 0} and r2 == {"gravadas": 0, "ignoradas": 2}
     serie = c.get("/api/painel/serie", params={"dias": 1, "fonte": "teste-contrato"}).json()
-    assert any(l["conta"] == "Diego" and l["pct_semana"] == 7 for l in serie["linhas"])
+    assert any(l["conta"] == "TesteContrato" and l["pct_semana"] == 7 for l in serie["linhas"])
     assert c.post("/api/painel/telemetria", json={"contas": []}).status_code == 400
 
     # kpi: upsert substitui as métricas da mesma chave
