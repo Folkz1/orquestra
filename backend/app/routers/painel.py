@@ -598,6 +598,24 @@ async def ultima_com_percentagem(db: AsyncSession, conta: Optional[str] = None) 
     return out
 
 
+async def ultima_com_ritmo(db: AsyncSession, conta: Optional[str] = None) -> dict[str, PainelTelemetria]:
+    """A última leitura de cada conta que TRAZ o ritmo, sem janela nenhuma. É a regra da % outra vez.
+
+    ⛔ Medido em 10/09: o ritmo é derivado do /usage, portanto só o coletor que lê o /usage o mede.
+    Mas o que ganha o cartão é a leitura que mediu MAIS GASTO, e essa vem do coletor que corre de
+    minuto a minuto sem ler o /usage. Resultado: o ritmo chegava à base e ficava invisível, sem nada
+    a acusar — exatamente o que aconteceu à % em 09/09, noutro campo. Cada número sobrevive por si,
+    e a idade de cada um vai à tela."""
+    q = select(PainelTelemetria)
+    if conta:
+        q = q.where(PainelTelemetria.conta == conta)
+    out: dict[str, PainelTelemetria] = {}
+    for t in (await db.execute(q.order_by(PainelTelemetria.ts.desc()).limit(400))).scalars().all():
+        if (t.extra or {}).get("ritmo"):
+            out.setdefault(t.conta, t)
+    return out
+
+
 def leitura_completa(t: PainelTelemetria) -> bool:
     """O tick do jarbas (--aqui) só vê as sessões do servidor e grava remotoOk=false; o do PC vê as duas
     máquinas quando o ssh funciona (remotoOk=true). Em 09/09 as duas leituras nasceram com 4 s de
@@ -949,19 +967,31 @@ async def resumo(db: AsyncSession = Depends(get_db)):
     ultimas = await ultimas_por_conta(db)
     recentes = await mais_recentes_por_conta(db)
     com_pct = await ultima_com_percentagem(db)
+    com_ritmo = await ultima_com_ritmo(db)
+
+    def montar(base: PainelTelemetria, conta: str) -> dict:
+        d = telemetria_dict(base)
+        r = recentes.get(conta)
+        d["agora"] = bloco_agora(r) if r is not None else None
+        # o ritmo sobrevive à leitura que não o traz, como a %, e leva a SUA hora: sem isso um ritmo
+        # de há uma hora passaria por ser de agora, que é pior do que não o mostrar.
+        rt = com_ritmo.get(conta)
+        if rt is not None and d["agora"] is not None and not d["agora"].get("ritmo"):
+            d["agora"]["ritmo"] = (rt.extra or {}).get("ritmo")
+            d["agora"]["ritmo_ts"] = (rt.extra or {}).get("limitesColhidosEm") or rt.ts.isoformat()
+            d["agora"]["ritmo_fonte"] = rt.fonte
+        elif rt is not None and d["agora"] is not None:
+            d["agora"]["ritmo_ts"] = d["agora"].get("ts")
+            d["agora"]["ritmo_fonte"] = d["agora"].get("fonte")
+        return d
+
     contas = []
     for t in ultimas:
         base = com_pct.get(t.conta) or t          # a % sobrevive à leitura que não a traz
-        d = telemetria_dict(base)
-        r = recentes.get(t.conta)
-        d["agora"] = bloco_agora(r) if r is not None else None
-        contas.append(d)
+        contas.append(montar(base, t.conta))
     for conta, t in com_pct.items():              # conta que só aparece na leitura com %
         if not any(c["conta"] == conta for c in contas):
-            d = telemetria_dict(t)
-            r = recentes.get(conta)
-            d["agora"] = bloco_agora(r) if r is not None else None
-            contas.append(d)
+            contas.append(montar(t, conta))
     contas.sort(key=lambda c: c["conta"])
     return {
         "gerado": ref.isoformat(),
