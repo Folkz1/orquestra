@@ -430,9 +430,15 @@ function BlocoAgora({ agora, fallbackUsd }) {
       </p>
       {agora.ritmo && (
         <p className={`text-[11px] ${agora.ritmo.alarme ? 'text-rose-300' : 'text-zinc-500'}`}>
-          {agora.ritmo.pctDia != null && `${agora.ritmo.pctDia}%/dia`}
+          {/* dois vocabulários, como no resto da casa: quem escreve o ritmo não tem de aprender nomes
+              novos. `razao` e `projecaoEsgota` são os da frente Controle de gasto. */}
+          {(agora.ritmo.pctDia ?? agora.ritmo.razao) != null && `${agora.ritmo.pctDia ?? agora.ritmo.razao}%/dia`}
           {agora.ritmo.tetoDia != null && ` · teto ${agora.ritmo.tetoDia}`}
-          {agora.ritmo.esgotaAntesDoReset && ' · esgota antes do reset'}
+          {agora.ritmo.tetoParaDurar != null && agora.ritmo.tetoDia == null && ` · teto ${agora.ritmo.tetoParaDurar}`}
+          {(agora.ritmo.esgotaAntesDoReset || agora.ritmo.projecaoEsgota) && ' · esgota antes do reset'}
+          {/* o ritmo vem de outro coletor que o gasto e tem idade própria: sem a dizer, um ritmo de há
+              uma hora passa por ser de agora — foi assim que a % enganou o Diego em 09/09. */}
+          {agora.ritmo_ts && <span className="text-zinc-600"> · {idade(agora.ritmo_ts)}</span>}
         </p>
       )}
       <p className="text-[11px] text-zinc-600">
