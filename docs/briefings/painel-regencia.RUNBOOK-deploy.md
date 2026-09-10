@@ -96,6 +96,34 @@ curl -s -H "Authorization: Bearer $APP_SECRET_KEY" https://orquestra-backend.jz9
 ```
 Abrir `https://guyyfolkz.mbest.site/painel` no telemóvel: cabeçalho, três abas, «Nada à sua espera».
 
+## 5b. Higiene do disco — faz parte de promover, não é limpeza de outra pessoa
+
+⛔ **Medido em 09/09 pela regência**: o disco do jarbas foi a **96%** com 12 imagens da Orquestra
+deixadas por 4 deploys (backend 1,18 GB + frontend 297 MB *por sha*). Quatro deploys enchem 6 GB.
+
+Depois de promover **e provar** (imagem + réplicas + health + sentinela), no mesmo turno:
+
+```bash
+# 1. o que está no ar e o recuo — estes dois NUNCA se tocam
+ssh jarbas 'docker service inspect wordpress_orquestra-backend  --format "{{.Spec.TaskTemplate.ContainerSpec.Image}}"'
+ssh jarbas 'docker service inspect wordpress_orquestra-frontend --format "{{.Spec.TaskTemplate.ContainerSpec.Image}}"'
+
+# 2. os containers `exited` seguram as imagens: removê-los primeiro
+ssh jarbas 'docker ps -a --filter status=exited --format "{{.ID}} {{.Image}}" | grep orquestra'
+ssh jarbas 'docker rm <ids das imagens que vão sair>'
+
+# 3. e só então as imagens anteriores à anterior
+ssh jarbas 'docker rmi ghcr.io/folkz1/orquestra-backend:<sha antigo> ghcr.io/folkz1/orquestra-frontend:<sha antigo>'
+```
+
+**Manter sempre o ar + 1 recuo.** ⛔ **Nunca `docker image prune -a`** — apaga imagens locais de serviços
+com `scale=0`, que não têm de onde voltar. E confirmar por **ID**, não por tag: em 09/09 um cruzamento por
+nome marcou como livre a imagem que servia a Donna em produção.
+
+Aplicado em 10/09 ao subir `5b60333`: saíram os 2 containers e as 2 imagens de `0641241`, ficaram o ar
+(`5b60333`) e o recuo (`0b6f266`), 1/1 e `health db:true` depois da limpeza.
+
+
 ## 6. Dados e coletores (cutover da Mesa)
 
 1. **Export fresco da Mesa** (só uma sessão Claude consegue): `read_db` das coleções `gates` e `decisoes` para
