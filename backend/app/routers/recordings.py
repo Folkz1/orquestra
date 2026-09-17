@@ -100,7 +100,9 @@ def _recording_to_light_response(recording: Recording) -> RecordingLightResponse
     return RecordingLightResponse(**data)
 
 
-TRANSCRIPTION_TIMEOUT = 600  # 10 min max for transcription (covers compress + API)
+# Compress (up to 15 min on a loaded box) + Groq per chunk. Nothing blocks the
+# event loop while waiting, so a long budget costs nothing to the rest of the API.
+TRANSCRIPTION_TIMEOUT = 30 * 60
 SUMMARY_TIMEOUT = 120  # 2 min max for LLM summary generation
 
 

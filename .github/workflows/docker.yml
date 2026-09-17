@@ -3,6 +3,8 @@ name: Build and Push Docker Images
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
 
 env:
   REGISTRY: ghcr.io
@@ -11,7 +13,22 @@ env:
   IMAGE_AI_AGENT: ghcr.io/folkz1/orquestra-ai-agent
 
 jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: python -m pytest tests -q
+        working-directory: backend
+
   build-backend:
+    needs: test-backend
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,6 +49,7 @@ jobs:
             ${{ env.IMAGE_BACKEND }}:${{ github.sha }}
 
   build-frontend:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,6 +70,7 @@ jobs:
             ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
 
   build-ai-agent:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
