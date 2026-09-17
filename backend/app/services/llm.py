@@ -231,6 +231,66 @@ _SUMMARY_RULES = (
 )
 
 
+MAX_ACTION_ITEMS = 12
+MAX_DECISIONS = 10
+_PRIORITIES = {"high", "medium", "low"}
+
+
+def _as_text(value) -> str | None:
+    """Coerce a field the model may return as list/dict/number into a plain string (or None)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (list, tuple)):
+        parts = [t for t in (_as_text(v) for v in value) if t]
+        return ", ".join(parts) or None
+    return str(value)
+
+
+def _normalize_summary(raw: dict) -> dict:
+    """
+    Enforce the summary schema in code: the models drift (assignee as a list,
+    20 action items when asked for 12, priority "alta"), and the DB/frontend
+    expect exact types. Never trust the prompt alone for structure.
+    """
+    items = []
+    for item in raw.get("action_items") or []:
+        if not isinstance(item, dict):
+            task = _as_text(item)
+            item = {"task": task}
+        task = _as_text(item.get("task"))
+        if not task:
+            continue
+        priority = _as_text(item.get("priority")) or "medium"
+        priority = priority.lower()
+        if priority not in _PRIORITIES:
+            priority = "medium"
+        items.append({"task": task, "assignee": _as_text(item.get("assignee")), "priority": priority})
+
+    decisions = []
+    for dec in raw.get("decisions") or []:
+        if not isinstance(dec, dict):
+            dec = {"decision": _as_text(dec)}
+        decision = _as_text(dec.get("decision"))
+        if decision:
+            decisions.append({"decision": decision, "context": _as_text(dec.get("context")) or ""})
+
+    topics = raw.get("key_topics") or []
+    if isinstance(topics, str):
+        topics = [topics]
+    topics = [t for t in (_as_text(t) for t in topics) if t][:12]
+
+    return {
+        "title": _as_text(raw.get("title")) or "",
+        "summary": _as_text(raw.get("summary")) or "",
+        "action_items": items[:MAX_ACTION_ITEMS],
+        "decisions": decisions[:MAX_DECISIONS],
+        "key_topics": topics,
+        "detected_project": _as_text(raw.get("detected_project")),
+    }
+
+
 def _project_hint(known_projects: list[str] | None) -> str:
     if not known_projects:
         return ""
@@ -259,10 +319,10 @@ async def _summary_json(user_content: str, known_projects: list[str] | None) -> 
     response_text = await chat_completion(
         messages, model=settings.MODEL_CHAT_SMART, temperature=0.2, max_tokens=4000, json_mode=True
     )
-    return _parse_json_response(response_text)
+    return _normalize_summary(_parse_json_response(response_text))
 
 
-async def _summarize_chunk(chunk: str, index: int, total: int) -> str:
+async def _summarize_chunk(chunk: str, index: int, total: int, known_projects: list[str] | None = None) -> str:
     messages = [
         {
             "role": "system",
@@ -273,6 +333,8 @@ async def _summarize_chunk(chunk: str, index: int, total: int) -> str:
                 "tarefas explicitamente combinadas (com o nome de quem assumiu, so se foi dito), "
                 "numeros, datas, lugares e nomes citados. Separe o que foi DECIDIDO do que foi apenas "
                 "ideia ou conversa solta. Nao invente nada que nao esteja no trecho."
+                + (f" Projetos conhecidos do Diego: {', '.join(known_projects)} — "
+                   "se algum aparecer, cite o nome exato." if known_projects else "")
             ),
         },
         {"role": "user", "content": chunk},
@@ -311,7 +373,7 @@ async def generate_meeting_summary(transcription: str, known_projects: list[str]
     )
     notes = []
     for i, chunk in enumerate(chunks):
-        notes.append(await _summarize_chunk(chunk, i, len(chunks)))
+        notes.append(await _summarize_chunk(chunk, i, len(chunks), known_projects))
 
     joined = "\n\n".join(f"[Trecho {i + 1}/{len(chunks)}]\n{n}" for i, n in enumerate(notes))
     if len(joined) > budget_chars:

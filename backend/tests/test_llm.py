@@ -228,3 +228,45 @@ def test_split_text_keeps_order_and_covers_everything():
 
     assert all(len(p) <= 300 for p in parts)
     assert "".join(parts).replace(" ", "") == text.replace(" ", "")
+
+
+# ---------------------------------------------------------------------------
+# schema enforcement — what gpt-oss actually returned on 2026-09-17
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_summary_fixes_model_drift():
+    raw = {
+        "title": ["Call", "Diego x Emílio"],
+        "summary": None,
+        "action_items": [{"task": f"tarefa {i}", "assignee": ["Diego", "Emílio"], "priority": "alta"} for i in range(20)]
+        + [{"task": "", "assignee": "x"}, "só uma string"],
+        "decisions": [{"decision": "d1"}, "d2 solta", {"decision": None}],
+        "key_topics": "um só",
+        "detected_project": None,
+    }
+
+    out = llm._normalize_summary(raw)
+
+    assert out["title"] == "Call, Diego x Emílio"
+    assert out["summary"] == ""
+    assert len(out["action_items"]) == llm.MAX_ACTION_ITEMS
+    assert out["action_items"][0] == {"task": "tarefa 0", "assignee": "Diego, Emílio", "priority": "medium"}
+    assert all(isinstance(i["assignee"], (str, type(None))) for i in out["action_items"])
+    assert out["decisions"] == [{"decision": "d1", "context": ""}, {"decision": "d2 solta", "context": ""}]
+    assert out["key_topics"] == ["um só"]
+    assert out["detected_project"] is None
+
+
+@pytest.mark.anyio
+async def test_summary_output_is_normalized_end_to_end(groq, llm_http, monkeypatch):
+    monkeypatch.setattr(llm.settings, "LLM_MAX_INPUT_TOKENS", 6000)
+    llm_http.responder = lambda request: _ok(json.dumps({
+        "title": "t", "summary": "s", "decisions": [], "key_topics": [],
+        "action_items": [{"task": "x", "assignee": ["A", "B"], "priority": "HIGH"}],
+        "detected_project": "Projeto Superbot",
+    }))
+
+    result = await llm.generate_meeting_summary("curta.")
+
+    assert result["action_items"] == [{"task": "x", "assignee": "A, B", "priority": "high"}]
