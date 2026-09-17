@@ -34,17 +34,26 @@ async def generate_embedding(content: str) -> list[float]:
     Raises:
         httpx.HTTPStatusError: If the API call fails.
     """
-    if not settings.OPENROUTER_API_KEY:
-        logger.warning("[MEMORY] No OPENROUTER_API_KEY configured, skipping embedding")
+    # Same model either way: the 23k vectors already stored live in the
+    # text-embedding-3-small space. OpenAI direct first, OpenRouter otherwise.
+    if settings.OPENAI_API_KEY:
+        url = "https://api.openai.com/v1/embeddings"
+        api_key = settings.OPENAI_API_KEY
+        model = "text-embedding-3-small"
+    elif settings.OPENROUTER_API_KEY:
+        url = f"{settings.OPENROUTER_BASE_URL}/embeddings"
+        api_key = settings.OPENROUTER_API_KEY
+        model = EMBEDDING_MODEL
+    else:
+        logger.warning("[MEMORY] No OPENAI_API_KEY/OPENROUTER_API_KEY configured, skipping embedding")
         return []
 
-    url = f"{settings.OPENROUTER_BASE_URL}/embeddings"
     headers = {
-        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": EMBEDDING_MODEL,
+        "model": model,
         "input": content[:8000],  # Truncate to avoid token limits
     }
 
@@ -58,7 +67,7 @@ async def generate_embedding(content: str) -> list[float]:
         logger.info(
             "[MEMORY] Generated embedding: dim=%d, model=%s",
             len(embedding),
-            EMBEDDING_MODEL,
+            model,
         )
         return embedding
 
