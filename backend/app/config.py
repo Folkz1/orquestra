@@ -23,8 +23,22 @@ class Settings(BaseSettings):
     MODEL_DELIVERY_REPORT: str = "x-ai/grok-4.1-fast"
     MODEL_DELIVERY_WHATSAPP: str = "x-ai/grok-4.1-fast"
 
-    # Groq (optional, for audio transcription)
+    # Groq: audio transcription (Whisper) and, when LLM_PROVIDER=groq, chat completions
     GROQ_API_KEY: str = ""
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GROQ_MODEL_SMART: str = "openai/gpt-oss-120b"
+    GROQ_MODEL_CHEAP: str = "openai/gpt-oss-20b"
+
+    # Chat-completion provider: "groq" (default since 2026-09-17) or "openrouter".
+    # MODEL_* names that do not exist on the selected provider are mapped onto it.
+    LLM_PROVIDER: str = "groq"
+    # Input budget per request (tokens). Groq free tier is 8k tokens/min, so a
+    # 1h call (~14k tokens) is summarised map-reduce style; raise on the Dev tier.
+    LLM_MAX_INPUT_TOKENS: int = 6000
+
+    # OpenAI direct — embeddings only. Same text-embedding-3-small space as the
+    # 23k vectors already in memory_embeddings; Groq has no embedding model.
+    OPENAI_API_KEY: str = ""
 
     # Evolution API (WhatsApp)
     EVOLUTION_API_URL: str = ""
