@@ -1,13 +1,21 @@
 """
 Orquestra - Transcription & Vision Service
-Audio transcription via OpenRouter Whisper (large files) or Groq Whisper (small files),
-with ffmpeg chunking as extra fallback. Image description via OpenRouter.
+Audio transcription via Groq Whisper (ffmpeg compress/chunk to fit the 25MB limit),
+with OpenRouter as fallback. Image description via OpenRouter.
+
+ffmpeg/ffprobe always run as *async subprocesses*: a 1h recording from the PWA
+takes minutes to re-encode on a loaded box, and running that synchronously used
+to freeze the whole event loop — /api/health stopped answering and Docker killed
+the container mid-transcription (2026-09-17, recording d198a1b1).
 """
 
+import asyncio
 import base64
 import logging
 import os
-import subprocess
+import platform
+import shlex
+import shutil
 import tempfile
 
 import httpx
@@ -20,6 +28,75 @@ logger = logging.getLogger(__name__)
 # Groq Whisper limit is 25MB. Use 20min chunks to stay safe.
 CHUNK_DURATION_SECONDS = 20 * 60  # 20 minutes
 MAX_FILE_SIZE_BYTES = 24 * 1024 * 1024  # 24MB (safe margin under 25MB)
+
+# Voice recordings: mono Opus at 32 kbps is transparent for speech and gives
+# ~14MB per hour, so anything under ~1h40 fits Groq in a single request.
+COMPRESS_BITRATE = "32k"
+COMPRESS_BITRATE_BPS = 32_000
+# Re-encoding is ~1x-2x realtime on a busy 8-core box; 2h40 of audio (longest
+# call so far) needs ~10 min. Nothing blocks while we wait, so be generous.
+COMPRESS_TIMEOUT_SECONDS = 15 * 60
+PROBE_TIMEOUT_SECONDS = 30
+
+
+def _tool_cmd(env_var: str, default: str) -> list[str]:
+    """
+    Command prefix for ffmpeg/ffprobe. Overridable via env (ORQ_FFMPEG / ORQ_FFPROBE)
+    so tests can swap in a fake — the value is shell-split, e.g. '"python" "fake.py" ffmpeg'.
+    """
+    return shlex.split(os.environ.get(env_var) or default, posix=True)
+
+
+def _ffmpeg_cmd() -> list[str]:
+    cmd = _tool_cmd("ORQ_FFMPEG", "ffmpeg")
+    # Don't starve the API (and the other containers) on the shared box.
+    if platform.system() != "Windows" and shutil.which("nice"):
+        cmd = ["nice", "-n", "10", *cmd]
+    return cmd
+
+
+def _ffprobe_cmd() -> list[str]:
+    return _tool_cmd("ORQ_FFPROBE", "ffprobe")
+
+
+async def _run(cmd: list[str], timeout: float) -> tuple[int, str, str]:
+    """
+    Run a command without blocking the event loop. Kills it on timeout or on
+    task cancellation (the router wraps us in asyncio.wait_for) so no orphan
+    ffmpeg keeps burning CPU after we gave up on it.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        raise
+    return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
+
+
+async def _probe_duration(file_path: str) -> float | None:
+    """
+    Duration in seconds via ffprobe, or None when unknown. WebM written by the
+    browser's MediaRecorder has no duration in the header, so ffprobe prints
+    "N/A" for it — that is expected, not an error.
+    """
+    cmd = [
+        *_ffprobe_cmd(), "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        file_path,
+    ]
+    try:
+        _, out, _ = await _run(cmd, timeout=PROBE_TIMEOUT_SECONDS)
+        return float(out.strip())
+    except (ValueError, asyncio.TimeoutError, OSError) as exc:
+        logger.info("[TRANSCRIBER] Duration unknown for %s (%s)", os.path.basename(file_path), exc)
+        return None
 
 
 async def _transcribe_single(file_path: str) -> str:
@@ -97,126 +174,178 @@ async def _transcribe_via_openrouter(file_path: str) -> str:
 
 
 def _cleanup_temp_file(file_path: str):
-    """Remove a temporary file and its parent directory if empty."""
+    """Remove a temporary file (if it exists) and its orquestra_* parent directory if empty."""
     try:
-        os.remove(file_path)
-        parent = os.path.dirname(file_path)
-        if parent and "orquestra_" in parent:
-            os.rmdir(parent)
+        if os.path.exists(file_path):
+            os.remove(file_path)
     except OSError:
         pass
+    parent = os.path.dirname(file_path)
+    if parent and os.path.basename(parent).startswith("orquestra_"):
+        try:
+            os.rmdir(parent)
+        except OSError:
+            pass
 
 
-def _compress_audio(file_path: str) -> str:
+async def _compress_audio(file_path: str, timeout: float = COMPRESS_TIMEOUT_SECONDS) -> str:
     """
-    Compress audio file to OGG Opus via ffmpeg to fit under Groq's 25MB limit.
-    Returns path to compressed file (or original if already small enough).
+    Re-encode to mono OGG Opus (voice profile) so the file fits under Groq's 25MB limit.
+    Returns the compressed path, or the original path if ffmpeg fails or times out.
     """
     file_size = os.path.getsize(file_path)
-    if file_size <= MAX_FILE_SIZE_BYTES:
-        return file_path
-
     tmp_dir = tempfile.mkdtemp(prefix="orquestra_compress_")
     compressed_path = os.path.join(tmp_dir, "compressed.ogg")
 
+    cmd = [
+        *_ffmpeg_cmd(), "-y", "-nostdin", "-loglevel", "error",
+        "-i", file_path,
+        "-vn", "-ac", "1",
+        "-c:a", "libopus", "-b:a", COMPRESS_BITRATE, "-application", "voip",
+        compressed_path,
+    ]
     try:
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", file_path,
-                "-vn",
-                "-acodec", "libopus",
-                "-b:a", "48k",
-                compressed_path,
-            ],
-            capture_output=True, timeout=180,
-        )
-        if os.path.exists(compressed_path) and os.path.getsize(compressed_path) > 0:
+        code, _, err = await _run(cmd, timeout=timeout)
+        if code == 0 and os.path.exists(compressed_path) and os.path.getsize(compressed_path) > 0:
             new_size = os.path.getsize(compressed_path)
             logger.info(
                 "[TRANSCRIBER] Compressed %.1fMB -> %.1fMB",
                 file_size / (1024 * 1024), new_size / (1024 * 1024),
             )
             return compressed_path
-    except Exception as exc:
-        logger.error("[TRANSCRIBER] ffmpeg compression failed: %s", exc)
+        logger.error("[TRANSCRIBER] ffmpeg compression failed (exit %s): %s", code, err.strip()[-300:])
+    except asyncio.TimeoutError:
+        logger.error(
+            "[TRANSCRIBER] ffmpeg compression timed out after %.0fs for %.1fMB file",
+            timeout, file_size / (1024 * 1024),
+        )
+    except OSError as exc:
+        logger.error("[TRANSCRIBER] ffmpeg not runnable: %s", exc)
 
+    _cleanup_temp_file(compressed_path)
     return file_path
 
 
-def _split_audio_chunks(file_path: str, chunk_seconds: int = CHUNK_DURATION_SECONDS) -> list[str]:
+async def _split_audio_chunks(
+    file_path: str, duration: float, chunk_seconds: int = CHUNK_DURATION_SECONDS
+) -> list[str]:
     """
-    Split audio file into chunks using ffmpeg.
-    Always compresses to OGG Opus to fit under Groq's 25MB limit.
-    Returns list of chunk file paths.
+    Cut an (already compressed) audio file into chunks of `chunk_seconds`.
+    Returns the chunk paths; falls back to [file_path] if nothing could be cut.
     """
     tmp_dir = tempfile.mkdtemp(prefix="orquestra_chunks_")
-
-    # Get audio duration using ffprobe
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                file_path,
-            ],
-            capture_output=True, text=True, timeout=30,
-        )
-        duration = float(result.stdout.strip())
-    except Exception as exc:
-        logger.warning("[TRANSCRIBER] ffprobe failed: %s", exc)
-        # Can't determine duration - compress the whole file as single chunk
-        compressed = _compress_audio(file_path)
-        return [compressed]
-
-    if duration <= chunk_seconds:
-        # Short audio but possibly large file (e.g., 30MB WebM) - compress it
-        compressed = _compress_audio(file_path)
-        return [compressed]
-
-    # Split into chunks (always compresses via ffmpeg)
-    chunk_paths = []
-    chunk_index = 0
+    chunk_paths: list[str] = []
     start = 0
+    chunk_index = 0
 
     while start < duration:
         chunk_path = os.path.join(tmp_dir, f"chunk_{chunk_index:03d}.ogg")
+        cmd = [
+            *_ffmpeg_cmd(), "-y", "-nostdin", "-loglevel", "error",
+            "-ss", str(start), "-t", str(chunk_seconds),
+            "-i", file_path,
+            "-vn", "-ac", "1",
+            "-c:a", "libopus", "-b:a", COMPRESS_BITRATE, "-application", "voip",
+            chunk_path,
+        ]
         try:
-            subprocess.run(
-                [
-                    "ffmpeg", "-y", "-i", file_path,
-                    "-ss", str(start),
-                    "-t", str(chunk_seconds),
-                    "-vn",  # no video
-                    "-acodec", "libopus",
-                    "-b:a", "48k",  # compress to fit under limit
-                    chunk_path,
-                ],
-                capture_output=True, timeout=180,
-            )
-            if os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
+            code, _, err = await _run(cmd, timeout=COMPRESS_TIMEOUT_SECONDS)
+            if code == 0 and os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
                 chunk_paths.append(chunk_path)
-        except Exception as exc:
+            else:
+                logger.error("[TRANSCRIBER] ffmpeg chunk %d failed (exit %s): %s", chunk_index, code, err.strip()[-300:])
+        except (asyncio.TimeoutError, OSError) as exc:
             logger.error("[TRANSCRIBER] ffmpeg chunk %d failed: %s", chunk_index, exc)
 
         start += chunk_seconds
         chunk_index += 1
 
-    logger.info(
-        "[TRANSCRIBER] Split %.0fs audio into %d chunks",
-        duration, len(chunk_paths),
-    )
+    logger.info("[TRANSCRIBER] Split %.0fs audio into %d chunks", duration, len(chunk_paths))
     return chunk_paths if chunk_paths else [file_path]
+
+
+async def _transcribe_chunks_via_groq(file_path: str) -> str:
+    """Compress, split by duration and transcribe each piece with Groq. Concatenates the text."""
+    compressed_path = await _compress_audio(file_path)
+    use_compressed = compressed_path != file_path
+    compressed_size = os.path.getsize(compressed_path)
+
+    try:
+        if compressed_size <= MAX_FILE_SIZE_BYTES:
+            logger.info(
+                "[TRANSCRIBER] Compressed file fits Groq limit (%.1fMB), sending directly...",
+                compressed_size / (1024 * 1024),
+            )
+            return await _transcribe_single(compressed_path)
+
+        duration = await _probe_duration(compressed_path)
+        if duration is None:
+            # No header duration (browser WebM): estimate from size at the
+            # bitrate we encode at, rounded up so the tail is never lost.
+            duration = compressed_size * 8 / COMPRESS_BITRATE_BPS * 1.1
+            logger.info("[TRANSCRIBER] Estimated duration %.0fs from size", duration)
+
+        logger.info("[TRANSCRIBER] Splitting %s into chunks...", os.path.basename(file_path))
+        chunks = await _split_audio_chunks(compressed_path, duration)
+
+        transcriptions: list[str] = []
+        failed_chunks = 0
+        for i, chunk_path in enumerate(chunks):
+            try:
+                logger.info("[TRANSCRIBER] Transcribing chunk %d/%d...", i + 1, len(chunks))
+                text = await _transcribe_single(chunk_path)
+                if text:
+                    transcriptions.append(text)
+            except Exception as exc:
+                logger.error("[TRANSCRIBER] Chunk %d/%d failed: %s", i + 1, len(chunks), exc)
+                failed_chunks += 1
+            finally:
+                if chunk_path not in (file_path, compressed_path):
+                    _cleanup_temp_file(chunk_path)
+
+        if not transcriptions:
+            raise RuntimeError(
+                f"All {len(chunks)} transcription chunks failed. No audio content could be extracted."
+            )
+        if failed_chunks:
+            logger.warning(
+                "[TRANSCRIBER] Partial transcription: %d/%d chunks succeeded.",
+                len(transcriptions), len(chunks),
+            )
+
+        full_text = " ".join(transcriptions)
+        logger.info(
+            "[TRANSCRIBER] Chunked transcription: %d/%d chunks -> %d chars",
+            len(transcriptions), len(chunks), len(full_text),
+        )
+        return full_text
+    finally:
+        if use_compressed:
+            _cleanup_temp_file(compressed_path)
+
+
+async def _transcribe_via_openrouter_compressed(file_path: str) -> str:
+    """OpenRouter route: compress first (smaller base64 payload), then send in one request."""
+    compressed_path = file_path
+    if os.path.getsize(file_path) > MAX_FILE_SIZE_BYTES:
+        compressed_path = await _compress_audio(file_path)
+    try:
+        return await _transcribe_via_openrouter(compressed_path)
+    finally:
+        if compressed_path != file_path:
+            _cleanup_temp_file(compressed_path)
 
 
 async def transcribe_audio(file_path: str) -> str:
     """
     Transcribe an audio file.
 
-    Strategy:
-    - Small files (≤24MB): Groq Whisper directly (fast).
-    - Large files (>24MB): OpenRouter Whisper first (no size limit);
-      falls back to ffmpeg chunking via Groq if OpenRouter fails.
+    Strategy (Groq first — it is fast, cheap and has proper Whisper):
+    - Small files (≤24MB): Groq Whisper directly.
+    - Large files (>24MB): re-encode to mono Opus 32k; if it fits, one Groq
+      request, otherwise split into 20-min chunks and transcribe each.
+    - OpenRouter (input_audio chat completion) only as fallback when Groq is
+      not configured or fails.
 
     Args:
         file_path: Path to the audio file on disk.
@@ -233,129 +362,23 @@ async def transcribe_audio(file_path: str) -> str:
         )
 
     file_size = os.path.getsize(file_path)
+    name = os.path.basename(file_path)
 
-    # Small files: Groq Whisper directly (no need to involve OpenRouter)
-    if file_size <= MAX_FILE_SIZE_BYTES:
-        if has_groq:
-            return await _transcribe_single(file_path)
-        return await _transcribe_via_openrouter(file_path)
-
-    # Large files: compress first, then try OpenRouter
-    logger.info(
-        "[TRANSCRIBER] File %s is %.1fMB, compressing before transcription...",
-        os.path.basename(file_path),
-        file_size / (1024 * 1024),
-    )
-
-    # Compress large files to reduce size for API calls
-    compressed_path = _compress_audio(file_path)
-    compressed_size = os.path.getsize(compressed_path)
-    use_compressed = compressed_path != file_path
-
-    if has_openrouter:
+    if has_groq:
         try:
-            result = await _transcribe_via_openrouter(compressed_path)
-            if use_compressed:
-                _cleanup_temp_file(compressed_path)
-            return result
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 403:
-                logger.warning(
-                    "[TRANSCRIBER] OpenRouter 403 (key limit). Skipping to Groq chunking..."
-                )
-            else:
-                logger.warning(
-                    "[TRANSCRIBER] OpenRouter HTTP %d for %.1fMB file. Falling back to chunking...",
-                    exc.response.status_code,
-                    compressed_size / (1024 * 1024),
-                )
-        except Exception as exc:
-            logger.warning(
-                "[TRANSCRIBER] OpenRouter failed for %.1fMB file: %s. Falling back to chunking...",
-                compressed_size / (1024 * 1024),
-                exc,
+            if file_size <= MAX_FILE_SIZE_BYTES:
+                return await _transcribe_single(file_path)
+            logger.info(
+                "[TRANSCRIBER] File %s is %.1fMB, compressing before transcription...",
+                name, file_size / (1024 * 1024),
             )
-
-    # Fallback: split into chunks and transcribe each via Groq
-    if not has_groq:
-        if use_compressed:
-            _cleanup_temp_file(compressed_path)
-        raise RuntimeError(
-            "OpenRouter transcription failed and GROQ_API_KEY is not configured. "
-            "Cannot transcribe large file."
-        )
-
-    # If compressed file fits under Groq limit, use it directly
-    if use_compressed and compressed_size <= MAX_FILE_SIZE_BYTES:
-        logger.info(
-            "[TRANSCRIBER] Compressed file fits Groq limit (%.1fMB), sending directly...",
-            compressed_size / (1024 * 1024),
-        )
-        try:
-            result = await _transcribe_single(compressed_path)
-            _cleanup_temp_file(compressed_path)
-            return result
+            return await _transcribe_chunks_via_groq(file_path)
         except Exception as exc:
-            logger.warning("[TRANSCRIBER] Groq failed on compressed file: %s", exc)
+            if not has_openrouter:
+                raise
+            logger.warning("[TRANSCRIBER] Groq failed for %s: %s. Falling back to OpenRouter...", name, exc)
 
-    # Still too large even after compression - split into chunks
-    if use_compressed:
-        _cleanup_temp_file(compressed_path)
-
-    logger.info(
-        "[TRANSCRIBER] Splitting %s into chunks...",
-        os.path.basename(file_path),
-    )
-    chunks = _split_audio_chunks(file_path)
-    transcriptions = []
-    failed_chunks = 0
-    tmp_dir = None
-
-    for i, chunk_path in enumerate(chunks):
-        try:
-            logger.info("[TRANSCRIBER] Transcribing chunk %d/%d...", i + 1, len(chunks))
-            text = await _transcribe_single(chunk_path)
-            if text:
-                transcriptions.append(text)
-        except Exception as exc:
-            logger.error("[TRANSCRIBER] Chunk %d/%d failed: %s", i + 1, len(chunks), exc)
-            failed_chunks += 1
-        finally:
-            if chunk_path != file_path:
-                chunk_dir = os.path.dirname(chunk_path)
-                if tmp_dir is None:
-                    tmp_dir = chunk_dir
-                try:
-                    os.remove(chunk_path)
-                except OSError:
-                    pass
-
-    # Cleanup temp directory
-    if tmp_dir and tmp_dir != os.path.dirname(file_path):
-        try:
-            os.rmdir(tmp_dir)
-        except OSError:
-            pass
-
-    if not transcriptions:
-        raise RuntimeError(
-            f"All {len(chunks)} transcription chunks failed. No audio content could be extracted."
-        )
-
-    if failed_chunks:
-        logger.warning(
-            "[TRANSCRIBER] Partial transcription: %d/%d chunks succeeded.",
-            len(transcriptions),
-            len(chunks),
-        )
-
-    full_text = " ".join(transcriptions)
-    logger.info(
-        "[TRANSCRIBER] Chunked transcription: %d/%d chunks -> %d chars",
-        len(transcriptions), len(chunks), len(full_text),
-    )
-    return full_text
-
+    return await _transcribe_via_openrouter_compressed(file_path)
 
 async def describe_image(image_bytes: bytes, mimetype: str = "image/jpeg") -> str:
     """
