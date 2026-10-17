@@ -68,6 +68,47 @@ async def _forward_webhook_to_externals(payload: dict):
         except Exception as exc:
             logger.warning("[WEBHOOK-FWD] %s failed: %s", fwd["name"], exc)
 
+    await _forward_to_superbot(payload)
+
+
+# Eventos que o SuperBot trata (mensagem e ack). O resto fica só aqui.
+SUPERBOT_EVENTOS = ("messages.upsert", "messages.update")
+
+
+def _superbot_forward_target(payload: dict) -> tuple[str, dict] | None:
+    """Destino e cabeçalhos do repasse ao SuperBot, ou None quando não se repassa.
+
+    Só a instância configurada e só os eventos que o SuperBot trata. A apikey vai
+    no cabeçalho porque o SuperBot autentica por ele; a Evolution manda a chave da
+    instância no corpo (`apikey`). Sem URL ou sem chave, não há repasse.
+    """
+    url = (settings.SUPERBOT_EVOLUTION_WEBHOOK_URL or "").strip()
+    if not url:
+        return None
+    if str(payload.get("instance") or "") != settings.SUPERBOT_EVOLUTION_INSTANCIA:
+        return None
+    if str(payload.get("event") or "").lower() not in SUPERBOT_EVENTOS:
+        return None
+    chave = str(payload.get("apikey") or "")
+    if not chave:
+        return None
+    return url, {"apikey": chave}
+
+
+async def _forward_to_superbot(payload: dict):
+    import httpx
+
+    alvo = _superbot_forward_target(payload)
+    if not alvo:
+        return
+    url, headers = alvo
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            logger.info("[WEBHOOK-FWD] SuperBot (status=%s)", resp.status_code)
+    except Exception as exc:
+        logger.warning("[WEBHOOK-FWD] SuperBot failed: %s", exc)
+
 
 # Map Evolution message types to our simplified types
 MESSAGE_TYPE_MAP = {
