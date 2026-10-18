@@ -103,7 +103,9 @@ def _recording_to_light_response(recording: Recording) -> RecordingLightResponse
 # Compress (up to 15 min on a loaded box) + Groq per chunk. Nothing blocks the
 # event loop while waiting, so a long budget costs nothing to the rest of the API.
 TRANSCRIPTION_TIMEOUT = 30 * 60
-SUMMARY_TIMEOUT = 120  # 2 min max for LLM summary generation
+# Map-reduce over a long call on Groq's free tier (8k tokens/min) is ~1 request
+# per minute; a 2h40 call is ~8 requests. Async all the way, nothing blocks.
+SUMMARY_TIMEOUT = 15 * 60
 
 
 async def process_recording(recording_id: str):

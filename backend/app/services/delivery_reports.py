@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import Contact, DeliveryReport, Message, Proposal
-from app.services.llm import chat_completion
+from app.services.llm import chat_completion, is_configured
 from app.services.whatsapp import (
     resolve_contact_whatsapp_channel,
     send_whatsapp_message,
@@ -241,8 +241,8 @@ async def generate_delivery_report(
     if proposal.status not in {"accepted", "viewed"}:
         raise ValueError("Delivery report so pode ser gerado para propostas viewed ou accepted")
 
-    if not settings.OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY nao configurada")
+    if not is_configured():
+        raise RuntimeError("Nenhum provedor LLM configurado (GROQ_API_KEY / OPENROUTER_API_KEY)")
 
     contact = await _resolve_contact(db, proposal)
     if not contact:
@@ -369,7 +369,7 @@ async def build_delivery_report_whatsapp_message(
     proposal: Proposal,
     contact: Contact | None,
 ) -> str:
-    if not settings.OPENROUTER_API_KEY:
+    if not is_configured():
         return _fallback_whatsapp_message(report, proposal, contact)
 
     report_json = json.dumps(
