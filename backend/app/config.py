@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     JARBAS_AI_AGENT_URL: str = "http://localhost:3333"
     CLIENT_PORTAL_URL: str = ""
 
+    # Repasse de uma instância Evolution ao webhook do SuperBot (cliente zero, 17/10/2026).
+    # Vazio = desligado. A instância manda o webhook só para cá (a Evolution guarda uma URL
+    # por instância); o SuperBot recebe a cópia e autentica pela apikey que vem no corpo.
+    SUPERBOT_EVOLUTION_WEBHOOK_URL: str = ""
+    SUPERBOT_EVOLUTION_INSTANCIA: str = "guyfolkz"
+
     # App
     APP_SECRET_KEY: str = ""
     WIKI_SECRET_KEY: str = ""  # chave exclusiva para /api/wiki/* (mais restrita que APP_SECRET_KEY)
