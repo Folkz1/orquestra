@@ -95,6 +95,34 @@ def _superbot_forward_target(payload: dict) -> tuple[str, dict] | None:
     return url, {"apikey": chave}
 
 
+# Nova tentativa do repasse (18/11/2026). Antes era uma tentativa só: um 502 do
+# SuperBot (troca de deploy, build pesado no servidor) perdia o evento em silêncio.
+# Agora são 3 tentativas em ~30 s. O SuperBot NÃO descarta evento repetido pela
+# chave da mensagem (medido: 6 chaves gravadas 2 ou 3 vezes em 7 dias), então só se
+# repete o que com certeza não foi processado, ou o que é idempotente:
+# - messages.update (ack) só faz UPDATE do status: repete em qualquer 5xx e timeout;
+# - messages.upsert repete só quando o pedido não chegou ao app (falha de conexão,
+#   502/503 do proxy). Timeout de leitura ou 500 podem ter sido processados: não repete.
+SUPERBOT_ESPERAS_S = (5, 25)
+SUPERBOT_STATUS_SEM_ENTREGA = (502, 503)
+SUPERBOT_EVENTOS_IDEMPOTENTES = ("messages.update",)
+_dormir = asyncio.sleep
+
+
+def _repetir_repasse_superbot(evento: str, status: int | None = None, erro: Exception | None = None) -> bool:
+    """True quando vale repetir o repasse sem risco de duplicar a mensagem no SuperBot."""
+    import httpx
+
+    idempotente = evento in SUPERBOT_EVENTOS_IDEMPOTENTES
+    if erro is not None:
+        if isinstance(erro, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+            return True
+        return idempotente and isinstance(erro, httpx.TransportError)
+    if status is None or status < 500:
+        return False
+    return status in SUPERBOT_STATUS_SEM_ENTREGA or idempotente
+
+
 async def _forward_to_superbot(payload: dict):
     import httpx
 
@@ -102,12 +130,40 @@ async def _forward_to_superbot(payload: dict):
     if not alvo:
         return
     url, headers = alvo
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            logger.info("[WEBHOOK-FWD] SuperBot (status=%s)", resp.status_code)
-    except Exception as exc:
-        logger.warning("[WEBHOOK-FWD] SuperBot failed: %s", exc)
+    evento = str(payload.get("event") or "").lower()
+    dados = payload.get("data")
+    if isinstance(dados, list):
+        dados = dados[0] if dados else {}
+    chave = str(((dados or {}).get("key") or {}).get("id") or (dados or {}).get("keyId") or "")
+    tentativas = len(SUPERBOT_ESPERAS_S) + 1
+    motivo = ""
+    async with httpx.AsyncClient(timeout=10) as client:
+        for tentativa in range(1, tentativas + 1):
+            status, erro = None, None
+            try:
+                resp = await client.post(url, json=payload, headers=headers)
+                status = resp.status_code
+                logger.info(
+                    "[WEBHOOK-FWD] SuperBot (status=%s) event=%s key=%s tentativa=%s/%s",
+                    status, evento, chave, tentativa, tentativas,
+                )
+                if status < 500:
+                    return
+                motivo = f"status={status}"
+            except Exception as exc:
+                erro = exc
+                motivo = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "[WEBHOOK-FWD] SuperBot failed: %s event=%s key=%s tentativa=%s/%s",
+                    motivo, evento, chave, tentativa, tentativas,
+                )
+            if tentativa == tentativas or not _repetir_repasse_superbot(evento, status, erro):
+                break
+            await _dormir(SUPERBOT_ESPERAS_S[tentativa - 1])
+    logger.error(
+        "[WEBHOOK-FWD] SuperBot PERDIDO event=%s key=%s motivo=%s tentativas=%s",
+        evento, chave, motivo, tentativa,
+    )
 
 
 # Map Evolution message types to our simplified types
